@@ -1723,9 +1723,12 @@ static bool parse (void) {
 #endif
   }
   bool res = false;
-  if (VLO_LENGTH (*frontier) == sizeof (struct pnode *)) {
-    struct symb *symb = ((struct pnode **) VLO_BEGIN (*frontier))[0]->set->symb;
-    res = strcmp (symb->repr, END_MARKER_NAME) == 0;
+  for (int i = 0; i < (int) (VLO_LENGTH (*frontier) / sizeof (struct pnode *)); i++) {
+    struct symb *symb = ((struct pnode **) VLO_BEGIN (*frontier))[i]->set->symb;
+    if (strcmp (symb->repr, END_MARKER_NAME) == 0) {
+      res = true;
+      break;
+    }
   }
   VLO_DELETE (pnode_vlo);
   VLO_DELETE (*frontier);
