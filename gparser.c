@@ -1618,7 +1618,7 @@ static void pnode_GC (struct pnode *pnode) {
     VLO_SHORTEN (pnode_vlo, sizeof (struct pnode *));
     assert (pnode->succs == NULL);
     struct pedge *pedge = pnode->pred;
-    struct pnode *pred_pnode = pedge->from;
+    struct pnode *pred_pnode = pedge->to;
     pedge_remove (pedge);
     if (pred_pnode->succs != NULL) continue;
     VLO_ADD_MEMORY (pnode_vlo, &pred_pnode, sizeof (struct pnode *));
