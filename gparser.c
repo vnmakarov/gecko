@@ -8,7 +8,6 @@
 #include "hashtab.h"
 #include "vlobject.h"
 #include "objstack.h"
-#include "bitmap.h"
 #include "gparser.h"
 
 #ifndef CHAR_BIT
@@ -1588,7 +1587,8 @@ static void print_pnodes_from_vlo (FILE *f, vlo_t *start_nodes, bool new_p) {
     print_pnodes (f, ((struct pnode **) VLO_BEGIN (*start_nodes))[i], new_p);
 }
 
-static void pgraph_print (FILE *f, struct action *a, vlo_t *start_nodes1, vlo_t *start_nodes2) {
+static void pgraph_action_print (FILE *f, struct action *a, vlo_t *start_nodes1,
+                                 vlo_t *start_nodes2) {
   init_pnode_nums (start_nodes1);
   init_pnode_nums (start_nodes2);
   curr_pnode_num = 0;
@@ -1598,6 +1598,14 @@ static void pgraph_print (FILE *f, struct action *a, vlo_t *start_nodes1, vlo_t 
   print_pnodes_from_vlo (f, start_nodes1, false);
   print_pnodes_from_vlo (f, start_nodes2, true);
 }
+
+static void pgraph_merge_print (FILE *f, vlo_t *start_nodes) {
+  init_pnode_nums (start_nodes);
+  curr_pnode_num = 0;
+  fprintf (f, "  Parsing graph after pnode merging\n");
+  print_pnodes_from_vlo (f, start_nodes, false);
+}
+
 #endif
 
 static void pgraph_init (void) {
@@ -1640,15 +1648,41 @@ static struct pnode *get_start_pnode (struct pnode *pnode, struct rule *rule) {
   return pnode;
 }
 
+static bool merge_pnodes (struct pnode *p1, struct pnode *p2) {
+  for (struct pnode *cp1 = p1, *cp2 = p2; cp1 != cp2; cp1 = cp1->pred->to, cp2 = cp2->pred->to) {
+    if (cp1->set != cp2->set) return false;
+  }
+  pnode_GC (p2);
+  return true;
+}
+
+static bool update_frontier (vlo_t *frontier, vlo_t *from_frontier) {
+  bool merged_p = false;
+  VLO_NULLIFY (*frontier);
+  for (int i = 0; i < (int) (VLO_LENGTH (*from_frontier) / sizeof (struct pnode *)); i++) {
+    struct pnode *pnode = ((struct pnode **) VLO_BEGIN (*from_frontier))[i];
+    if (pnode == NULL) continue;
+    bool added_p = false;
+    for (int j = i + 1; j < (int) (VLO_LENGTH (*from_frontier) / sizeof (struct pnode *)); j++) {
+      struct pnode *pnode2 = ((struct pnode **) VLO_BEGIN (*from_frontier))[j];
+      if (pnode2 != NULL && pnode->set == pnode2->set && merge_pnodes (pnode, pnode2)) {
+        merged_p = added_p = true;
+        VLO_ADD_MEMORY (*frontier, &pnode, sizeof (pnode));
+        ((struct pnode **) VLO_BEGIN (*from_frontier))[j] = NULL;
+      }
+    }
+    if (!added_p) VLO_ADD_MEMORY (*frontier, &pnode, sizeof (pnode));
+  }
+  return merged_p;
+}
+
 static int toks_num, n_parse_term_nodes, n_parse_abstract_nodes, n_parse_alt_nodes;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (void) {
   /* frontier represents pnodes representing tops of the stacks embedded in the parsing graph: */
   vlo_t frontier_vlo, new_frontier_vlo;
-  vlo_t *frontier = &frontier_vlo, *new_frontier = &new_frontier_vlo, *temp_vlo;
-  bitmap_t frontier_bm, new_frontier_bm;
-  bitmap_t *frontier_bitmap = &frontier_bm, *new_frontier_bitmap = &new_frontier_bm, *temp_bitmap;
+  vlo_t *frontier = &frontier_vlo, *new_frontier = &new_frontier_vlo;
   VLO_CREATE (symb_sits, grammar->alloc, 16);
   VLO_CREATE (actions_vlo, grammar->alloc, 16);
   pgraph_init ();
@@ -1658,9 +1692,6 @@ static bool parse (void) {
   VLO_CREATE (*frontier, grammar->alloc, 16);
   VLO_CREATE (*new_frontier, grammar->alloc, 16);
   VLO_ADD_MEMORY (*frontier, &pnode, sizeof (struct pnode *));
-  bitmap_create (frontier_bitmap, grammar->alloc);
-  bitmap_create (new_frontier_bitmap, grammar->alloc);
-  bitmap_set_bit_p (frontier_bitmap, start_set->num);
   toks_num = n_parse_term_nodes = n_parse_abstract_nodes = n_parse_alt_nodes = 0;
   void *attr;
   int code = read_token (&attr);
@@ -1674,7 +1705,6 @@ static bool parse (void) {
 #endif
   for (;;) {
     VLO_NULLIFY (*new_frontier);
-    bitmap_clear (new_frontier_bitmap);
     while (VLO_LENGTH (*frontier) != 0) {
       struct pnode *fnode = ((struct pnode **) VLO_BOUND (*frontier))[-1];
       VLO_SHORTEN (*frontier, sizeof (struct pnode *));
@@ -1692,25 +1722,26 @@ static bool parse (void) {
           struct set *shifted_set = action->u.set;
           assert (shifted_set != NULL);
           struct pnode *succ_pnode = pnode_get (shifted_set, fnode);
-          if (1 || bitmap_set_bit_p (new_frontier_bitmap, shifted_set->num))
-            VLO_ADD_MEMORY (*new_frontier, &succ_pnode, sizeof (struct pnode *));
+          VLO_ADD_MEMORY (*new_frontier, &succ_pnode, sizeof (struct pnode *));
         } else {
           struct rule *r = action->u.rule;
           struct pnode *start_pnode = get_start_pnode (fnode, r);
           struct set *goto_set = start_pnode->set->goto_map[r->lhs->u.nonterm.nonterm_num];
           assert (goto_set != NULL);
           struct pnode *succ_pnode = pnode_add (goto_set, start_pnode);
-          if (1 || bitmap_set_bit_p (frontier_bitmap, goto_set->num))
-            VLO_ADD_MEMORY (*frontier, &succ_pnode, sizeof (struct pnode *));
+          VLO_ADD_MEMORY (*frontier, &succ_pnode, sizeof (struct pnode *));
         }
 #ifndef NO_GP_DEBUG_PRINT
-        if (grammar->debug_level > 2) pgraph_print (stderr, action, frontier, new_frontier);
+        if (grammar->debug_level > 2) pgraph_action_print (stderr, action, frontier, new_frontier);
 #endif
       }
     }
     if (VLO_LENGTH (*new_frontier) == 0) break;
-    SWAP (frontier, new_frontier, temp_vlo);
-    SWAP (frontier_bitmap, new_frontier_bitmap, temp_bitmap);
+    if (update_frontier (frontier, new_frontier)) {
+#ifndef NO_GP_DEBUG_PRINT
+      if (grammar->debug_level > 2) pgraph_merge_print (stderr, frontier);
+#endif
+    }
     if (code == END_MARKER_CODE) break;
     code = read_token (&attr);
     term_symb = term_find_by_code (code);
@@ -1735,8 +1766,6 @@ static bool parse (void) {
   VLO_DELETE (*new_frontier);
   VLO_DELETE (symb_sits);
   VLO_DELETE (actions_vlo);
-  bitmap_delete (frontier_bitmap);
-  bitmap_delete (new_frontier_bitmap);
   pgraph_fin ();
   return res;
 }
