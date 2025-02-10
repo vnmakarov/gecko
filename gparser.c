@@ -1528,7 +1528,7 @@ static void stack_shift (struct stack *stack, struct set *set) {
 #endif
 }
 
-static void stack_reduce (struct stack *stack, struct rule *rule) {
+static struct set *stack_reduce (struct stack *stack, struct rule *rule) {
   int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
   assert (rule->rhs_len < len);
   struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rule->rhs_len];
@@ -1539,6 +1539,16 @@ static void stack_reduce (struct stack *stack, struct rule *rule) {
   n_curr_stack_els += (1 - rule->rhs_len);
   if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
 #endif
+  return goto_set;
+}
+
+static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
+  if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
+  struct stack **stack_addr1 = (struct stack **) VLO_BEGIN (stack1->els);
+  struct stack **stack_addr2 = (struct stack **) VLO_BEGIN (stack2->els);
+  for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--)
+    if (stack_addr1[i] != stack_addr2[i]) return false;
+  return true;
 }
 
 static bool merge_stacks (vlo_t *stacks) {
@@ -1550,9 +1560,7 @@ static bool merge_stacks (vlo_t *stacks) {
     ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
     for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
-      if (curr2 == NULL || VLO_LENGTH (curr->els) != VLO_LENGTH (curr2->els)
-          || memcmp (VLO_BEGIN (curr->els), VLO_BEGIN (curr2->els), VLO_LENGTH (curr->els)) != 0)
-        continue;
+      if (curr2 == NULL || !stack_eq_p (curr, curr2)) continue;
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
       merge_p = true;
       stack_free (curr2);
@@ -1596,6 +1604,7 @@ static void stack_merge_print (FILE *f, vlo_t *stacks) {
   } while (false)
 
 static int toks_num, n_parse_term_nodes, n_parse_abstract_nodes, n_parse_alt_nodes;
+static int n_single_stack_actions, n_multi_stack_actions;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (void) {
@@ -1608,6 +1617,9 @@ static bool parse (void) {
   VLO_CREATE (curr_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (new_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   toks_num = n_parse_term_nodes = n_parse_abstract_nodes = n_parse_alt_nodes = 0;
+#ifndef NO_GP_DEBUG_PRINT
+  n_single_stack_actions = n_multi_stack_actions = 0;
+#endif
   void *attr;
   int code = read_token (&attr);
   struct symb *term_symb = term_find_by_code (code);
@@ -1620,8 +1632,8 @@ static bool parse (void) {
 #endif
   for (;;) {
     if (single_stack != NULL) {
+      struct set *set = stack_get_top_set (single_stack);
       for (;;) {
-        struct set *set = stack_get_top_set (single_stack);
         int actions_num;
         struct action *actions = set_get_actions (set, la_term, &actions_num);
         if (actions_num != 1) {
@@ -1629,6 +1641,9 @@ static bool parse (void) {
           single_stack = NULL;
           goto multi_stack;
         }
+#ifndef NO_GP_DEBUG_PRINT
+        n_single_stack_actions++;
+#endif
         if (actions[0].shift_p) { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
@@ -1636,7 +1651,7 @@ static bool parse (void) {
           goto next_token;
         } else {
           struct rule *r = actions[0].u.rule;
-          stack_reduce (single_stack, r);
+          set = stack_reduce (single_stack, r);
         }
       }
     }
@@ -1653,6 +1668,9 @@ static bool parse (void) {
         stack_free (curr_stack);
         continue;
       }
+#ifndef NO_GP_DEBUG_PRINT
+      n_multi_stack_actions++;
+#endif
       for (int i = 0; i < actions_num; i++) {
         struct action *action = &actions[i];
         struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
@@ -1679,14 +1697,14 @@ static bool parse (void) {
 #ifndef NO_GP_DEBUG_PRINT
       if (grammar->debug_level > 2) stack_merge_print (stderr, &curr_stacks);
 #endif
-      if (VLO_LENGTH (curr_stacks) == sizeof (struct stack *)) {
-        single_stack = ((struct stack **) VLO_BEGIN (curr_stacks))[0];
-        VLO_NULLIFY (curr_stacks);
-      }
+    }
+    if (VLO_LENGTH (curr_stacks) == sizeof (struct stack *)) {
+      single_stack = ((struct stack **) VLO_BEGIN (curr_stacks))[0];
+      VLO_NULLIFY (curr_stacks);
     }
   next_token:
     if (code == END_MARKER_CODE) {
-      if (single_stack != NULL) VLO_ADD_MEMORY (curr_stacks, single_stack, sizeof (single_stack));
+      if (single_stack != NULL) VLO_ADD_MEMORY (curr_stacks, &single_stack, sizeof (single_stack));
       break;
     }
     code = read_token (&attr);
@@ -1784,6 +1802,8 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
     fprintf (stderr, "       #actions = %d, #action vectors = %d, their length = %d\n", n_actions,
              n_action_vects, n_action_vect_len);
     fprintf (stderr, "       max #stacks = %d, max #stack els = %d\n", n_stacks, n_stack_els);
+    fprintf (stderr, "       #single stack actions = %d, #multi stack actions = %d\n",
+             n_single_stack_actions, n_multi_stack_actions);
     fprintf (stderr, "       #term nodes = %d, #abstract nodes = %d\n", n_parse_term_nodes,
              n_parse_abstract_nodes);
     fprintf (stderr, "       #alternative nodes = %d, #all nodes = %d\n", n_parse_alt_nodes,
