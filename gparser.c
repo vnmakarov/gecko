@@ -731,6 +731,7 @@ static int n_goto_vects, n_goto_vect_len;     /* goto vects and their length */
 static int n_actions;                         /* actions number*/
 static int n_action_vects, n_action_vect_len; /* action vects and their length */
 static os_t set_sits_os;                      /* container of situations of being formed sets */
+static vlo_t sets_vlo;                        /* map: set num -> set */
 static os_t sets_os;                          /* container of sets */
 
 static hash_table_t set_tab; /* set table: key is only start situations */
@@ -756,6 +757,7 @@ static bool set_eq (hash_table_entry_t s1, hash_table_entry_t s2) { /* equality 
 
 static void set_init (void) { /* initialize work with sets: */
   OS_CREATE (set_sits_os, grammar->alloc, 2048);
+  VLO_CREATE (sets_vlo, grammar->alloc, 0);
   OS_CREATE (sets_os, grammar->alloc, 0);
   set_tab = create_hash_table (grammar->alloc, 8192, set_hash, set_eq);
   n_sets = n_sets_start_sits = 0;
@@ -815,7 +817,9 @@ static bool set_insert (void) {
     return false;
   }
   OS_TOP_FINISH (sets_os);
+  VLO_ADD_MEMORY (sets_vlo, &new_set, sizeof (new_set));
   new_set->num = n_sets++;
+  assert (n_sets == (int) (VLO_LENGTH (sets_vlo) / sizeof (struct set *)));
   new_set->goto_map = NULL;
   new_set->action_map = NULL;
   new_set->actions = NULL;
@@ -874,6 +878,7 @@ static void set_print (FILE *f, struct set *set, bool nonstart_p) {
 static void set_fin (void) { /* finalize work with sets: */
   delete_htab_update_statistics (set_tab);
   OS_DELETE (sets_os);
+  VLO_DELETE (sets_vlo);
   OS_DELETE (set_sits_os);
 }
 
@@ -1452,6 +1457,147 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
   return start_set;
 }
 
+typedef unsigned short stack_el_t;
+
+struct stack {
+  vlo_t els;
+};
+
+static vlo_t free_stacks;
+
+#ifndef NO_GP_DEBUG_PRINT
+static int n_stacks, n_stack_els, n_curr_stack_els;
+#endif
+
+static void stack_init (void) {
+  VLO_CREATE (free_stacks, grammar->alloc, 16);
+#ifndef NO_GP_DEBUG_PRINT
+  n_stacks = n_stack_els = n_curr_stack_els = 0;
+#endif
+}
+
+static void stack_vlo_free (vlo_t *stack_vlo) {
+  VLO_ADD_MEMORY (free_stacks, VLO_BEGIN (*stack_vlo), VLO_LENGTH (*stack_vlo));
+}
+
+static void stack_finish (void) {
+  for (int i = 0; i < (int) (VLO_LENGTH (free_stacks) / sizeof (struct stack *)); i++) {
+    struct stack *stack = ((struct stack **) VLO_BEGIN (free_stacks))[i];
+    VLO_DELETE (stack->els);
+    gp_free (grammar->alloc, stack);
+  }
+  VLO_DELETE (free_stacks);
+}
+
+static struct stack *stack_create (struct stack *base) {
+  struct stack *stack;
+  if (VLO_LENGTH (free_stacks) == 0) {
+#ifndef NO_GP_DEBUG_PRINT
+    n_stacks++;
+#endif
+    stack = gp_malloc (grammar->alloc, sizeof (struct stack));
+    VLO_CREATE (stack->els, grammar->alloc,
+                (base == NULL ? 0 : (int) VLO_LENGTH (base->els)) + 4 * sizeof (stack_el_t));
+  } else {
+    stack = ((struct stack **) VLO_BOUND (free_stacks))[-1];
+    VLO_SHORTEN (free_stacks, sizeof (struct stack *));
+    VLO_NULLIFY (stack->els);
+  }
+#ifndef NO_GP_DEBUG_PRINT
+  if (base != NULL) {
+    n_curr_stack_els += VLO_LENGTH (base->els) / sizeof (stack_el_t);
+    if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
+  }
+#endif
+  if (base != NULL) VLO_ADD_MEMORY (stack->els, VLO_BEGIN (base->els), VLO_LENGTH (base->els));
+  return stack;
+}
+
+static void stack_free (struct stack *stack) {
+  VLO_ADD_MEMORY (free_stacks, &stack, sizeof (stack));
+#ifndef NO_GP_DEBUG_PRINT
+  n_curr_stack_els -= VLO_LENGTH (stack->els) / sizeof (stack_el_t);
+#endif
+}
+
+static struct set *stack_get_top_set (struct stack *stack) {
+  assert (VLO_LENGTH (stack->els) != 0);
+  int num = ((stack_el_t *) VLO_BOUND (stack->els))[-1];
+  return ((struct set **) VLO_BEGIN (sets_vlo))[num];
+}
+
+static void stack_shift (struct stack *stack, struct set *set) {
+  stack_el_t num = set->num;
+  assert (num == set->num);
+  VLO_ADD_MEMORY (stack->els, &num, sizeof (num));
+#ifndef NO_GP_DEBUG_PRINT
+  n_curr_stack_els++;
+  if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
+#endif
+}
+
+static void stack_reduce (struct stack *stack, struct rule *rule) {
+  int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
+  assert (rule->rhs_len < len);
+  int num = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rule->rhs_len];
+  struct set *set = ((struct set **) VLO_BEGIN (sets_vlo))[num];
+  VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rule->rhs_len);
+  struct set *goto_set = set->goto_map[rule->lhs->u.nonterm.nonterm_num];
+  stack_el_t goto_num = goto_set->num;
+  VLO_ADD_MEMORY (stack->els, &goto_num, sizeof (stack_el_t));
+#ifndef NO_GP_DEBUG_PRINT
+  n_curr_stack_els += (1 - rule->rhs_len);
+  if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
+#endif
+}
+
+static bool merge_stacks (vlo_t *stacks) {
+  bool merge_p = false;
+  int last = 0;
+  for (int i = 0; i < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); i++) {
+    struct stack *curr = ((struct stack **) VLO_BEGIN (*stacks))[i];
+    if (curr == NULL) continue;
+    ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
+    for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
+      struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
+      if (curr2 == NULL || VLO_LENGTH (curr->els) != VLO_LENGTH (curr2->els)
+          || memcmp (VLO_BEGIN (curr->els), VLO_BEGIN (curr2->els), VLO_LENGTH (curr->els)) != 0)
+        continue;
+      ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
+      merge_p = true;
+      stack_free (curr2);
+    }
+  }
+  VLO_SHORTEN (*stacks, VLO_LENGTH (*stacks) - last * sizeof (struct stack *));
+  return merge_p;
+}
+
+#ifndef NO_GP_DEBUG_PRINT
+static void print_stack (FILE *f, struct stack *stack) {
+  fprintf (f, "          ");
+  for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++)
+    fprintf (f, " s%d", ((stack_el_t *) VLO_BEGIN (stack->els))[i]);
+  fprintf (f, "\n");
+}
+
+static void print_stacks (FILE *f, vlo_t *stacks) {
+  for (int i = 0; i < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); i++)
+    print_stack (f, ((struct stack **) VLO_BEGIN (*stacks))[i]);
+}
+
+static void stack_action_print (FILE *f, struct action *a, vlo_t *stacks, bool new_p) {
+  fprintf (f, "  Parsing %sstacks after action [", new_p ? "new " : "");
+  print_action (f, a);
+  fprintf (f, "]:\n");
+  print_stacks (f, stacks);
+}
+
+static void stack_merge_print (FILE *f, vlo_t *stacks) {
+  fprintf (f, "  Parsing stacks after pnode merging\n");
+  print_stacks (f, stacks);
+}
+#endif
+
 #define SWAP(a, b, t) \
   do {                \
     t = a;            \
@@ -1459,239 +1605,18 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
     b = t;            \
   } while (false)
 
-/* Parser graph, a compact represention of parsing stacks each one would be used in non-ambigous LR
-   parsing. A graph node can have one predecessor and more one successors. */
-struct pnode;
-
-struct pedge {
-  struct pnode *from, *to;
-  struct pedge *prev, *next; /* forms list for the same to */
-};
-
-struct pnode { /* a node of parsing graph: */
-#ifndef NO_GP_DEBUG_PRINT
-  int num; /* used for debug info */
-#endif
-  struct set *set;    /* corresponding LR set */
-  struct pedge *pred; /* edge from=given pnode */
-  struct pedge *succs;
-};
-
-static int n_pnodes, n_pedges;
-static struct pnode *free_pnodes;
-static struct pedge *free_pedges;
-static os_t pgraph_os; /* container for pnodes and pedges */
-
-static struct pedge *pedge_alloc (void) {
-  struct pedge *e = free_pedges;
-  if (e != NULL) {
-    free_pedges = e->next;
-  } else {
-    OS_TOP_EXPAND (pgraph_os, sizeof (struct pedge));
-    e = (struct pedge *) OS_TOP_BEGIN (pgraph_os);
-    OS_TOP_FINISH (pgraph_os);
-    n_pedges++;
-  }
-  return e;
-}
-
-static void pedge_free (struct pedge *e) {
-  e->next = free_pedges;
-  free_pedges = e;
-}
-
-static void pedge_create (struct pnode *from, struct pnode *to) {
-  struct pedge *e = pedge_alloc ();
-  e->from = from;
-  e->to = to;
-  from->pred = e;
-  e->prev = NULL;
-  e->next = NULL;
-  if (to == NULL) return;
-  e->next = to->succs;
-  to->succs = e;
-  if (e->next != NULL) e->next->prev = e;
-}
-
-static void pedge_remove (struct pedge *e) {
-  if (e->prev == NULL)
-    e->to->succs = e->next;
-  else
-    e->prev->next = e->next;
-  if (e->next != NULL) e->next->prev = e->prev;
-  pedge_free (e);
-}
-
-static struct pnode *pnode_alloc (void) {
-  struct pnode *pn = free_pnodes;
-  if (pn != NULL) {
-    free_pnodes = (struct pnode *) pn->succs;
-  } else {
-    OS_TOP_EXPAND (pgraph_os, sizeof (struct pnode));
-    pn = (struct pnode *) OS_TOP_BEGIN (pgraph_os);
-    OS_TOP_FINISH (pgraph_os);
-    n_pnodes++;
-  }
-  return pn;
-}
-
-static void pnode_free (struct pnode *pn) {
-  pn->succs = (struct pedge *) free_pnodes;
-  free_pnodes = pn;
-}
-
-static struct pnode *pnode_add (struct set *set, struct pnode *pred) {
-  struct pnode *pn = pnode_alloc ();
-  pn->set = set;
-  pn->succs = NULL;
-  pedge_create (pn, pred);
-  return pn;
-}
-
-/* Return node (new if there is no one yet) with SET and predecessor PRED. */
-static struct pnode *pnode_get (struct set *set, struct pnode *pred) {
-  for (struct pedge *pedge = pred->succs; pedge != NULL; pedge = pedge->next) /* ??? speed up */
-    if (pedge->to->set == set) return pedge->to;
-  struct pnode *pnode = pnode_add (set, pred);
-  return pnode;
-}
-
-static vlo_t pnode_vlo;
-
-#ifndef NO_GP_DEBUG_PRINT
-
-static void init_pnode_nums (vlo_t *start_nodes) {
-  for (int i = 0; i < (int) (VLO_LENGTH (*start_nodes) / sizeof (struct pnode *)); i++) {
-    struct pnode *start = ((struct pnode **) VLO_BEGIN (*start_nodes))[i];
-    for (struct pnode *pn = start; pn != NULL; pn = pn->pred->to) pn->num = -1;
-  }
-}
-
-static int curr_pnode_num;
-
-static void print_pnodes (FILE *f, struct pnode *start, bool new_p) {
-  VLO_NULLIFY (pnode_vlo);
-  for (struct pnode *pn = start; pn != NULL; pn = pn->pred->to)
-    VLO_ADD_MEMORY (pnode_vlo, &pn, sizeof (pn));
-  fprintf (f, "          %s", new_p ? " new:" : "");
-  for (int i = (int) (VLO_LENGTH (pnode_vlo) / sizeof (struct pnode *)) - 1; i >= 0; i--) {
-    struct pnode *pnode = ((struct pnode **) VLO_BEGIN (pnode_vlo))[i];
-    if (pnode->num < 0) pnode->num = curr_pnode_num++;
-    fprintf (f, " n%d(S%d)", pnode->num, pnode->set->num);
-  }
-  fprintf (f, "\n");
-}
-
-static void print_pnodes_from_vlo (FILE *f, vlo_t *start_nodes, bool new_p) {
-  for (int i = 0; i < (int) (VLO_LENGTH (*start_nodes) / sizeof (struct pnode *)); i++)
-    print_pnodes (f, ((struct pnode **) VLO_BEGIN (*start_nodes))[i], new_p);
-}
-
-static void pgraph_action_print (FILE *f, struct action *a, vlo_t *start_nodes1,
-                                 vlo_t *start_nodes2) {
-  init_pnode_nums (start_nodes1);
-  init_pnode_nums (start_nodes2);
-  curr_pnode_num = 0;
-  fprintf (f, "  Parsing graph after action [");
-  print_action (f, a);
-  fprintf (f, "]:\n");
-  print_pnodes_from_vlo (f, start_nodes1, false);
-  print_pnodes_from_vlo (f, start_nodes2, true);
-}
-
-static void pgraph_merge_print (FILE *f, vlo_t *start_nodes) {
-  init_pnode_nums (start_nodes);
-  curr_pnode_num = 0;
-  fprintf (f, "  Parsing graph after pnode merging\n");
-  print_pnodes_from_vlo (f, start_nodes, false);
-}
-
-#endif
-
-static void pgraph_init (void) {
-  free_pedges = NULL;
-  free_pnodes = NULL;
-  n_pnodes = n_pedges = 0;
-  OS_CREATE (pgraph_os, grammar->alloc, 0);
-}
-
-static void pgraph_fin (void) { OS_DELETE (pgraph_os); }
-
-/* Free unused node and unused nodes reached from given node. */
-static void pnode_GC (struct pnode *pnode) {
-  VLO_NULLIFY (pnode_vlo);
-  VLO_ADD_MEMORY (pnode_vlo, &pnode, sizeof (struct pnode *));
-  while (VLO_LENGTH (pnode_vlo) != 0) {
-    pnode = ((struct pnode **) VLO_BOUND (pnode_vlo))[-1];
-    VLO_SHORTEN (pnode_vlo, sizeof (struct pnode *));
-    assert (pnode->succs == NULL);
-    struct pedge *pedge = pnode->pred;
-    struct pnode *pred_pnode = pedge->to;
-    pedge_remove (pedge);
-    if (pred_pnode->succs != NULL) continue;
-    VLO_ADD_MEMORY (pnode_vlo, &pred_pnode, sizeof (struct pnode *));
-    pnode_free (pnode);
-  }
-}
-
-/* Return pnode reached by RULE rhs. */
-static struct pnode *get_start_pnode (struct pnode *pnode, struct rule *rule) {
-  for (int i = rule->rhs_len - 1; i >= 0; i--) {
-    assert (pnode != NULL && pnode->set->symb == rule->rhs[i]);
-    struct pnode *pred = pnode->pred->to;
-    if (pnode->succs == NULL) {
-      pedge_remove (pnode->pred);
-      pnode_free (pnode);
-    }
-    pnode = pred;
-  }
-  return pnode;
-}
-
-static bool merge_pnodes (struct pnode *p1, struct pnode *p2) {
-  for (struct pnode *cp1 = p1, *cp2 = p2; cp1 != cp2; cp1 = cp1->pred->to, cp2 = cp2->pred->to) {
-    if (cp1->set != cp2->set) return false;
-  }
-  pnode_GC (p2);
-  return true;
-}
-
-static bool update_frontier (vlo_t *frontier, vlo_t *from_frontier) {
-  bool merged_p = false;
-  VLO_NULLIFY (*frontier);
-  for (int i = 0; i < (int) (VLO_LENGTH (*from_frontier) / sizeof (struct pnode *)); i++) {
-    struct pnode *pnode = ((struct pnode **) VLO_BEGIN (*from_frontier))[i];
-    if (pnode == NULL) continue;
-    bool added_p = false;
-    for (int j = i + 1; j < (int) (VLO_LENGTH (*from_frontier) / sizeof (struct pnode *)); j++) {
-      struct pnode *pnode2 = ((struct pnode **) VLO_BEGIN (*from_frontier))[j];
-      if (pnode2 != NULL && pnode->set == pnode2->set && merge_pnodes (pnode, pnode2)) {
-        merged_p = added_p = true;
-        VLO_ADD_MEMORY (*frontier, &pnode, sizeof (pnode));
-        ((struct pnode **) VLO_BEGIN (*from_frontier))[j] = NULL;
-      }
-    }
-    if (!added_p) VLO_ADD_MEMORY (*frontier, &pnode, sizeof (pnode));
-  }
-  return merged_p;
-}
-
 static int toks_num, n_parse_term_nodes, n_parse_abstract_nodes, n_parse_alt_nodes;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (void) {
-  /* frontier represents pnodes representing tops of the stacks embedded in the parsing graph: */
-  vlo_t frontier_vlo, new_frontier_vlo;
-  vlo_t *frontier = &frontier_vlo, *new_frontier = &new_frontier_vlo;
   VLO_CREATE (symb_sits, grammar->alloc, 16);
   VLO_CREATE (actions_vlo, grammar->alloc, 16);
-  pgraph_init ();
-  struct set *start_set = get_start_set ();
-  struct pnode *pnode = pnode_add (start_set, NULL);
-  VLO_CREATE (pnode_vlo, grammar->alloc, 16);
-  VLO_CREATE (*frontier, grammar->alloc, 16);
-  VLO_CREATE (*new_frontier, grammar->alloc, 16);
-  VLO_ADD_MEMORY (*frontier, &pnode, sizeof (struct pnode *));
+  stack_init ();
+  struct stack *single_stack = stack_create (NULL);
+  stack_shift (single_stack, get_start_set ());
+  vlo_t curr_stacks, new_stacks, temp_vlo;
+  VLO_CREATE (curr_stacks, grammar->alloc, 2 * sizeof (vlo_t));
+  VLO_CREATE (new_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   toks_num = n_parse_term_nodes = n_parse_abstract_nodes = n_parse_alt_nodes = 0;
   void *attr;
   int code = read_token (&attr);
@@ -1704,45 +1629,76 @@ static bool parse (void) {
   }
 #endif
   for (;;) {
-    VLO_NULLIFY (*new_frontier);
-    while (VLO_LENGTH (*frontier) != 0) {
-      struct pnode *fnode = ((struct pnode **) VLO_BOUND (*frontier))[-1];
-      VLO_SHORTEN (*frontier, sizeof (struct pnode *));
-      struct set *fset = fnode->set;
-      if (fset->goto_map == NULL && fset->action_map == NULL) build_goto_map_and_actions (fset);
+    if (single_stack != NULL) {
+      for (;;) {
+        struct set *set = stack_get_top_set (single_stack);
+        int actions_num;
+        struct action *actions = set_get_actions (set, la_term, &actions_num);
+        if (actions_num != 1) {
+          VLO_ADD_MEMORY (curr_stacks, &single_stack, sizeof (single_stack));
+          single_stack = NULL;
+          goto multi_stack;
+        }
+        if (actions[0].shift_p) { /* shift */
+          struct set *shifted_set = actions[0].u.set;
+          assert (shifted_set != NULL);
+          stack_shift (single_stack, shifted_set);
+          goto next_token;
+        } else {
+          struct rule *r = actions[0].u.rule;
+          stack_reduce (single_stack, r);
+        }
+      }
+    }
+  multi_stack:
+    assert (VLO_LENGTH (new_stacks) == 0);
+    while (VLO_LENGTH (curr_stacks) != 0) {
+      struct stack *curr_stack = ((struct stack **) VLO_BOUND (curr_stacks))[-1];
+      VLO_SHORTEN (curr_stacks, sizeof (struct stack *));
+      struct set *set = stack_get_top_set (curr_stack);
+      if (set->goto_map == NULL && set->action_map == NULL) build_goto_map_and_actions (set);
       int actions_num;
-      struct action *actions = set_get_actions (fset, la_term, &actions_num);
+      struct action *actions = set_get_actions (set, la_term, &actions_num);
       if (actions_num == 0) {
-        pnode_GC (fnode);
+        stack_free (curr_stack);
         continue;
       }
       for (int i = 0; i < actions_num; i++) {
         struct action *action = &actions[i];
+        struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
         if (action->shift_p) { /* shift */
           struct set *shifted_set = action->u.set;
           assert (shifted_set != NULL);
-          struct pnode *succ_pnode = pnode_get (shifted_set, fnode);
-          VLO_ADD_MEMORY (*new_frontier, &succ_pnode, sizeof (struct pnode *));
+          stack_shift (stack, shifted_set);
+          VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
         } else {
           struct rule *r = action->u.rule;
-          struct pnode *start_pnode = get_start_pnode (fnode, r);
-          struct set *goto_set = start_pnode->set->goto_map[r->lhs->u.nonterm.nonterm_num];
-          assert (goto_set != NULL);
-          struct pnode *succ_pnode = pnode_add (goto_set, start_pnode);
-          VLO_ADD_MEMORY (*frontier, &succ_pnode, sizeof (struct pnode *));
+          stack_reduce (stack, r);
+          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (curr_stack));
         }
 #ifndef NO_GP_DEBUG_PRINT
-        if (grammar->debug_level > 2) pgraph_action_print (stderr, action, frontier, new_frontier);
+        if (grammar->debug_level > 2)
+          stack_action_print (stderr, action, action->shift_p ? &new_stacks : &curr_stacks,
+                              action->shift_p);
 #endif
       }
     }
-    if (VLO_LENGTH (*new_frontier) == 0) break;
-    if (update_frontier (frontier, new_frontier)) {
+    if (VLO_LENGTH (new_stacks) == 0) break;
+    SWAP (curr_stacks, new_stacks, temp_vlo);
+    if (merge_stacks (&curr_stacks)) {
 #ifndef NO_GP_DEBUG_PRINT
-      if (grammar->debug_level > 2) pgraph_merge_print (stderr, frontier);
+      if (grammar->debug_level > 2) stack_merge_print (stderr, &curr_stacks);
 #endif
+      if (VLO_LENGTH (curr_stacks) == sizeof (struct stack *)) {
+        single_stack = ((struct stack **) VLO_BEGIN (curr_stacks))[0];
+        VLO_NULLIFY (curr_stacks);
+      }
     }
-    if (code == END_MARKER_CODE) break;
+  next_token:
+    if (code == END_MARKER_CODE) {
+      if (single_stack != NULL) VLO_ADD_MEMORY (curr_stacks, single_stack, sizeof (single_stack));
+      break;
+    }
     code = read_token (&attr);
     term_symb = term_find_by_code (code);
     la_term = term_symb->u.term.term_num;
@@ -1754,19 +1710,20 @@ static bool parse (void) {
 #endif
   }
   bool res = false;
-  for (int i = 0; i < (int) (VLO_LENGTH (*frontier) / sizeof (struct pnode *)); i++) {
-    struct symb *symb = ((struct pnode **) VLO_BEGIN (*frontier))[i]->set->symb;
+  if (VLO_LENGTH (curr_stacks) == sizeof (struct stack *)) {
+    struct stack *stack = ((struct stack **) VLO_BEGIN (curr_stacks))[0];
+    struct set *set = stack_get_top_set (stack);
+    struct symb *symb = set->symb;
     if (strcmp (symb->repr, END_MARKER_NAME) == 0) {
       res = true;
-      break;
     }
   }
-  VLO_DELETE (pnode_vlo);
-  VLO_DELETE (*frontier);
-  VLO_DELETE (*new_frontier);
+  stack_vlo_free (&curr_stacks);
+  VLO_DELETE (new_stacks);
+  VLO_DELETE (curr_stacks);
   VLO_DELETE (symb_sits);
   VLO_DELETE (actions_vlo);
-  pgraph_fin ();
+  stack_finish ();
   return res;
 }
 
@@ -1836,8 +1793,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
              n_goto_vect_len);
     fprintf (stderr, "       #actions = %d, #action vectors = %d, their length = %d\n", n_actions,
              n_action_vects, n_action_vect_len);
-    fprintf (stderr, "       max #parsing graph nodes = %d, max #parsing graph edges = %d\n",
-             n_pnodes, n_pedges);
+    fprintf (stderr, "       max #stacks = %d, max #stack els = %d\n", n_stacks, n_stack_els);
     fprintf (stderr, "       #term nodes = %d, #abstract nodes = %d\n", n_parse_term_nodes,
              n_parse_abstract_nodes);
     fprintf (stderr, "       #alternative nodes = %d, #all nodes = %d\n", n_parse_alt_nodes,
