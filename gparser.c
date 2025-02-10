@@ -731,7 +731,6 @@ static int n_goto_vects, n_goto_vect_len;     /* goto vects and their length */
 static int n_actions;                         /* actions number*/
 static int n_action_vects, n_action_vect_len; /* action vects and their length */
 static os_t set_sits_os;                      /* container of situations of being formed sets */
-static vlo_t sets_vlo;                        /* map: set num -> set */
 static os_t sets_os;                          /* container of sets */
 
 static hash_table_t set_tab; /* set table: key is only start situations */
@@ -757,7 +756,6 @@ static bool set_eq (hash_table_entry_t s1, hash_table_entry_t s2) { /* equality 
 
 static void set_init (void) { /* initialize work with sets: */
   OS_CREATE (set_sits_os, grammar->alloc, 2048);
-  VLO_CREATE (sets_vlo, grammar->alloc, 0);
   OS_CREATE (sets_os, grammar->alloc, 0);
   set_tab = create_hash_table (grammar->alloc, 8192, set_hash, set_eq);
   n_sets = n_sets_start_sits = 0;
@@ -817,9 +815,7 @@ static bool set_insert (void) {
     return false;
   }
   OS_TOP_FINISH (sets_os);
-  VLO_ADD_MEMORY (sets_vlo, &new_set, sizeof (new_set));
   new_set->num = n_sets++;
-  assert (n_sets == (int) (VLO_LENGTH (sets_vlo) / sizeof (struct set *)));
   new_set->goto_map = NULL;
   new_set->action_map = NULL;
   new_set->actions = NULL;
@@ -878,7 +874,6 @@ static void set_print (FILE *f, struct set *set, bool nonstart_p) {
 static void set_fin (void) { /* finalize work with sets: */
   delete_htab_update_statistics (set_tab);
   OS_DELETE (sets_os);
-  VLO_DELETE (sets_vlo);
   OS_DELETE (set_sits_os);
 }
 
@@ -1457,7 +1452,7 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
   return start_set;
 }
 
-typedef unsigned short stack_el_t;
+typedef struct set *stack_el_t;
 
 struct stack {
   vlo_t els;
@@ -1522,14 +1517,11 @@ static void stack_free (struct stack *stack) {
 
 static struct set *stack_get_top_set (struct stack *stack) {
   assert (VLO_LENGTH (stack->els) != 0);
-  int num = ((stack_el_t *) VLO_BOUND (stack->els))[-1];
-  return ((struct set **) VLO_BEGIN (sets_vlo))[num];
+  return ((stack_el_t *) VLO_BOUND (stack->els))[-1];
 }
 
 static void stack_shift (struct stack *stack, struct set *set) {
-  stack_el_t num = set->num;
-  assert (num == set->num);
-  VLO_ADD_MEMORY (stack->els, &num, sizeof (num));
+  VLO_ADD_MEMORY (stack->els, &set, sizeof (set));
 #ifndef NO_GP_DEBUG_PRINT
   n_curr_stack_els++;
   if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
@@ -1539,12 +1531,10 @@ static void stack_shift (struct stack *stack, struct set *set) {
 static void stack_reduce (struct stack *stack, struct rule *rule) {
   int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
   assert (rule->rhs_len < len);
-  int num = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rule->rhs_len];
-  struct set *set = ((struct set **) VLO_BEGIN (sets_vlo))[num];
+  struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rule->rhs_len];
   VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rule->rhs_len);
   struct set *goto_set = set->goto_map[rule->lhs->u.nonterm.nonterm_num];
-  stack_el_t goto_num = goto_set->num;
-  VLO_ADD_MEMORY (stack->els, &goto_num, sizeof (stack_el_t));
+  VLO_ADD_MEMORY (stack->els, &goto_set, sizeof (goto_set));
 #ifndef NO_GP_DEBUG_PRINT
   n_curr_stack_els += (1 - rule->rhs_len);
   if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
@@ -1576,7 +1566,7 @@ static bool merge_stacks (vlo_t *stacks) {
 static void print_stack (FILE *f, struct stack *stack) {
   fprintf (f, "          ");
   for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++)
-    fprintf (f, " s%d", ((stack_el_t *) VLO_BEGIN (stack->els))[i]);
+    fprintf (f, " s%d", ((stack_el_t *) VLO_BEGIN (stack->els))[i]->num);
   fprintf (f, "\n");
 }
 
