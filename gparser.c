@@ -10,8 +10,10 @@
 #include "objstack.h"
 #include "gparser.h"
 
-#ifndef CHAR_BIT
-#define CHAR_BIT 8
+#ifdef __GNUC__
+#define FORCE_INLINE inline __attribute__ ((always_inline))
+#else
+#define FORCE_INLINE inline
 #endif
 
 #ifndef GP_MAX_ERROR_MESSAGE_LENGTH
@@ -158,7 +160,7 @@ static struct symb *symb_find_by_repr (const char *repr) {
 }
 
 /* Return symbol (or NULL if it does not exist) which is terminal with CODE. */
-static inline struct symb *term_find_by_code (int code) {
+static FORCE_INLINE struct symb *term_find_by_code (int code) {
   struct symbs *symbs = grammar->symbs;
   if (symbs->term_code_trans_vect != NULL) {
     if (code < symbs->term_code_trans_vect_start || code >= symbs->term_code_trans_vect_end)
@@ -400,6 +402,7 @@ static inline term_set_el_t *term_set_from_table (int num) {
   return ((struct tab_term_set **) VLO_BEGIN (grammar->term_sets->tab_term_set_vlo))[num]->set;
 }
 
+#ifndef NO_GP_DEBUG_PRINT
 static void term_set_print (FILE *f, term_set_el_t *set) { /* print terminal SET into file F */
   for (int i = 0; i < grammar->symbs->n_terms; i++)
     if (term_set_test (set, i)) {
@@ -407,6 +410,7 @@ static void term_set_print (FILE *f, term_set_el_t *set) { /* print terminal SET
       symb_print (f, term_get (i), false);
     }
 }
+#endif
 
 static void term_set_empty (struct term_sets *term_sets) { /* free memory for terminal sets */
   if (term_sets == NULL) return;
@@ -762,7 +766,7 @@ static void set_init (void) { /* initialize work with sets: */
   n_goto_vects = n_goto_vect_len = n_actions = n_action_vects = n_action_vect_len = 0;
 }
 
-static struct action *set_get_actions (struct set *set, int term, int *actions_num) {
+static FORCE_INLINE struct action *set_get_actions (struct set *set, int term, int *actions_num) {
   assert (term >= 0 && term < grammar->symbs->n_terms);
   *actions_num = 0;
   if (set->actions == NULL) return NULL;
@@ -1515,12 +1519,12 @@ static void stack_free (struct stack *stack) {
 #endif
 }
 
-static struct set *stack_get_top_set (struct stack *stack) {
+static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
   assert (VLO_LENGTH (stack->els) != 0);
   return ((stack_el_t *) VLO_BOUND (stack->els))[-1];
 }
 
-static void stack_shift (struct stack *stack, struct set *set) {
+static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set) {
   VLO_ADD_MEMORY (stack->els, &set, sizeof (set));
 #ifndef NO_GP_DEBUG_PRINT
   n_curr_stack_els++;
@@ -1528,7 +1532,7 @@ static void stack_shift (struct stack *stack, struct set *set) {
 #endif
 }
 
-static struct set *stack_reduce (struct stack *stack, struct rule *rule) {
+static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
   int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
   assert (rule->rhs_len < len);
   struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rule->rhs_len];
@@ -1551,7 +1555,7 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
   return true;
 }
 
-static bool merge_stacks (vlo_t *stacks) {
+static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
   bool merge_p = false;
   int last = 0;
   for (int i = 0; i < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); i++) {
@@ -1682,7 +1686,7 @@ static bool parse (void) {
         } else {
           struct rule *r = action->u.rule;
           stack_reduce (stack, r);
-          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (curr_stack));
+          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
         }
 #ifndef NO_GP_DEBUG_PRINT
         if (grammar->debug_level > 2)
@@ -1722,9 +1726,7 @@ static bool parse (void) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (curr_stacks))[0];
     struct set *set = stack_get_top_set (stack);
     struct symb *symb = set->symb;
-    if (strcmp (symb->repr, END_MARKER_NAME) == 0) {
-      res = true;
-    }
+    if (strcmp (symb->repr, END_MARKER_NAME) == 0) res = true;
   }
   stack_vlo_free (&curr_stacks);
   VLO_DELETE (new_stacks);
