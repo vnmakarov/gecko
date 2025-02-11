@@ -706,6 +706,8 @@ struct action_desc {
   unsigned short actions_start; /* index of first term action, defined for actions_num != 0 */
 };
 
+#define MAX_ACTION_RHS_LEN USHORT_MAX
+#define MAX_ACTION_NONTERM_NUM USHORT_MAX
 struct action {
   bool shift_p;
   int term_num; /* action on given term */
@@ -1378,7 +1380,9 @@ static void build_goto_map_and_actions (struct set *set) {
           action.shift_p = false;
           action.term_num = j;
           action.u.reduce.rule_num = sit->rule->num;
+          assert (sit->rule->rhs_len < MAX_ACTION_RHS_LEN);
           action.u.reduce.rhs_len = sit->rule->rhs_len;
+          assert (sit->rule->lhs->u.nonterm.nonterm_num < MAX_ACTION_NONTERM_NUM);
           action.u.reduce.nonterm_num = sit->rule->lhs->u.nonterm.nonterm_num;
           VLO_ADD_MEMORY (actions_vlo, &action, sizeof (action));
         }
