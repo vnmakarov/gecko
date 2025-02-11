@@ -455,6 +455,7 @@ struct rules {             /* container for the abstract data */
   int n_rules, n_rhs_lens; /* number of all rules and their summary rhs length */
   struct rule *first_rule; /* the first rule */
   struct rule *curr_rule;  /* rule being formed */
+  vlo_t rules_vlo;         /* all refereneces to rules are placed in this object: */
   os_t rules_os;           /* all rules are placed in this object: */
 };
 
@@ -465,6 +466,7 @@ static struct rules *rule_init (void) {
 
   mem = gp_malloc (grammar->alloc, sizeof (struct rules));
   result = (struct rules *) mem;
+  VLO_CREATE (result->rules_vlo, grammar->alloc, 0);
   OS_CREATE (result->rules_os, grammar->alloc, 0);
   result->first_rule = result->curr_rule = NULL;
   result->n_rules = result->n_rhs_lens = 0;
@@ -504,6 +506,8 @@ static struct rule *rule_new_start (struct symb *lhs, const char *anode, int ano
   if (grammar->rules->first_rule == NULL) grammar->rules->first_rule = rule;
   rule->rule_start_offset = grammar->rules->n_rhs_lens + grammar->rules->n_rules;
   rule->num = grammar->rules->n_rules++;
+  assert (VLO_LENGTH (grammar->rules->rules_vlo) / sizeof (struct rule *) == rule->num);
+  VLO_ADD_MEMORY (grammar->rules->rules_vlo, &rule, sizeof (rule));
   return rule;
 }
 
@@ -528,6 +532,11 @@ static void rule_new_stop (void) {
   grammar->rules->curr_rule->order = (int *) OS_TOP_BEGIN (grammar->rules->rules_os);
   OS_TOP_FINISH (grammar->rules->rules_os);
   for (i = 0; i < grammar->rules->curr_rule->rhs_len; i++) grammar->rules->curr_rule->order[i] = -1;
+}
+
+static struct rule *rule_get (int num) {
+  assert (VLO_LENGTH (grammar->rules->rules_vlo) > sizeof (struct rule *) * num);
+  return ((struct rule **) VLO_BEGIN (grammar->rules->rules_vlo))[num];
 }
 
 #ifndef NO_GP_DEBUG_PRINT
@@ -576,6 +585,7 @@ static void rule_dot_print (FILE *f, struct rule *rule, int pos) {
 /* Free memory for rules. */
 static void rule_empty (struct rules *rules) {
   if (rules == NULL) return;
+  VLO_NULLIFY (rules->rules_vlo);
   OS_EMPTY (rules->rules_os);
   rules->first_rule = rules->curr_rule = NULL;
   rules->n_rules = rules->n_rhs_lens = 0;
@@ -584,6 +594,7 @@ static void rule_empty (struct rules *rules) {
 /* Finalize work with rules. */
 static void rule_fin (struct rules *rules) {
   if (rules == NULL) return;
+  VLO_DELETE (rules->rules_vlo);
   OS_DELETE (rules->rules_os);
   gp_free (grammar->alloc, rules);
   rules = NULL;
@@ -696,11 +707,14 @@ struct action_desc {
 };
 
 struct action {
-  bool shift_p : 1;
-  int term_num : 31;
+  bool shift_p;
+  int term_num; /* action on given term */
   union {
-    struct set *set;   /* shift set */
-    struct rule *rule; /* reduce */
+    struct set *set; /* shift set */
+    struct {
+      unsigned short rhs_len, nonterm_num;
+      unsigned rule_num; /* reduce */
+    } reduce;
   } u;
 };
 
@@ -1334,7 +1348,7 @@ static int action_cmp (const void *el1, const void *el2) {
   if (diff != 0) return diff;
   if (e1->shift_p) return -1;
   if (e2->shift_p) return 1;
-  return e1->u.rule->num - e2->u.rule->num;
+  return e1->u.reduce.rule_num - e2->u.reduce.rule_num;
 }
 
 #ifndef NO_GP_DEBUG_PRINT
@@ -1344,8 +1358,9 @@ static void print_action (FILE *f, struct action *a) {
   if (a->shift_p) {
     fprintf (f, "shift to S%d", a->u.set->num);
   } else {
+    struct rule *rule = rule_get (a->u.reduce.rule_num);
     fprintf (f, "reduce \"");
-    rule_print (f, a->u.rule, false, false);
+    rule_print (f, rule, false, false);
     fprintf (f, "\"");
   }
 }
@@ -1362,7 +1377,9 @@ static void build_goto_map_and_actions (struct set *set) {
           struct action action;
           action.shift_p = false;
           action.term_num = j;
-          action.u.rule = sit->rule;
+          action.u.reduce.rule_num = sit->rule->num;
+          action.u.reduce.rhs_len = sit->rule->rhs_len;
+          action.u.reduce.nonterm_num = sit->rule->lhs->u.nonterm.nonterm_num;
           VLO_ADD_MEMORY (actions_vlo, &action, sizeof (action));
         }
       continue;
@@ -1532,15 +1549,16 @@ static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set) {
 #endif
 }
 
-static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
+static FORCE_INLINE struct set *stack_reduce (struct stack *stack, unsigned nonterm_num,
+                                              unsigned rhs_len) {
   int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
-  assert (rule->rhs_len < len);
-  struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rule->rhs_len];
-  VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rule->rhs_len);
-  struct set *goto_set = set->goto_map[rule->lhs->u.nonterm.nonterm_num];
+  assert (rhs_len < len);
+  struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rhs_len];
+  VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rhs_len);
+  struct set *goto_set = set->goto_map[nonterm_num];
   VLO_ADD_MEMORY (stack->els, &goto_set, sizeof (goto_set));
 #ifndef NO_GP_DEBUG_PRINT
-  n_curr_stack_els += (1 - rule->rhs_len);
+  n_curr_stack_els += (1 - rhs_len);
   if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
 #endif
   return goto_set;
@@ -1648,14 +1666,14 @@ static bool parse (void) {
 #ifndef NO_GP_DEBUG_PRINT
         n_single_stack_actions++;
 #endif
-        if (actions[0].shift_p) { /* shift */
+        if (!actions[0].shift_p) { /* reduce */
+          set = stack_reduce (single_stack, actions[0].u.reduce.nonterm_num,
+                              actions[0].u.reduce.rhs_len);
+        } else { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
           stack_shift (single_stack, shifted_set);
           goto next_token;
-        } else {
-          struct rule *r = actions[0].u.rule;
-          set = stack_reduce (single_stack, r);
         }
       }
     }
@@ -1678,15 +1696,14 @@ static bool parse (void) {
       for (int i = 0; i < actions_num; i++) {
         struct action *action = &actions[i];
         struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
-        if (action->shift_p) { /* shift */
+        if (!action->shift_p) { /* reduce */
+          stack_reduce (stack, action->u.reduce.nonterm_num, action->u.reduce.rhs_len);
+          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
+        } else { /* shift */
           struct set *shifted_set = action->u.set;
           assert (shifted_set != NULL);
           stack_shift (stack, shifted_set);
           VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
-        } else {
-          struct rule *r = action->u.rule;
-          stack_reduce (stack, r);
-          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
         }
 #ifndef NO_GP_DEBUG_PRINT
         if (grammar->debug_level > 2)
