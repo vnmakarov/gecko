@@ -109,9 +109,6 @@ clean: clean-gparser
 
 test: gparser-test
 
-bench:
-	@echo ==============================Bench is done
-
 # ------------------ LIBGPARSER -----------------------
 $(BUILD_DIR)/libgparser.$(LIBSUFF): $(BUILD_DIR)/gparser.$(OBJSUFF)
 ifeq ($(OS),Windows_NT)
@@ -139,13 +136,17 @@ clean-gparser:
 
 .PHONY: gparser-test
 
-gparser-test: CFLAGS:=$(subst $(COPTFLAGS),$(CDEB2FLAGS),$(CFLAGS))
-gparser-test: $(BUILD_DIR)/sgramm.c
-gparser-test:
+test: CFLAGS:=$(subst $(COPTFLAGS),$(CDEB2FLAGS),$(CFLAGS))
+test: $(BUILD_DIR)/sgramm.c
+test: simple-test more-tests
+simple-test:
 	$(CC) $(CFLAGS) $(SRC_DIR)/gparser.c -DGP_TEST -o $(BUILD_DIR)/gp-test$(EXE)
-	$(BUILD_DIR)/gp-test$(EXE) 1 5
-	@echo Test is OK
+	$(BUILD_DIR)/gp-test$(EXE) 1 1
+	@echo simple test is OK
 
-gparser-bench: $(BUILD_DIR)/libgparser.$(LIBSUFF)
+more-tests:
+	$(SRC_DIR)/test/test.sh
+
+bench: $(BUILD_DIR)/libgparser.$(LIBSUFF)
 	$(SRC_DIR)/test/compare.sh
 
