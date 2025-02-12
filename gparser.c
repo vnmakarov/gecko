@@ -1812,7 +1812,6 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
   bool ok_p GP_UNUSED = parse ();
 #ifndef NO_GP_DEBUG_PRINT
   if (grammar->debug_level > 0) {
-    fprintf (stderr, "%s\n", ok_p ? "SUCCESS!" : "FAIL!");
     fprintf (stderr, "%sGrammar: #terms = %d, #nonterms = %d, ", *ambiguous_p ? "AMBIGUOUS " : "",
              grammar->symbs->n_terms, grammar->symbs->n_nonterms);
     fprintf (stderr, "#rules = %d, rules size = %d\n", grammar->rules->n_rules,
@@ -1843,7 +1842,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
              all_collisions * 100.0 / all_searches, all_collisions, all_searches);
   }
 #endif
-  return 0;
+  return ok_p ? 0 : 1; /* !!! change in the future */
 }
 
 /* Free memory allocated for the grammar. */
