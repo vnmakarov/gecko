@@ -3,6 +3,7 @@
 #include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "allocate.h"
 #include "hashtab.h"
@@ -708,16 +709,16 @@ struct action_desc {
   unsigned short actions_start; /* index of first term action, defined for actions_num != 0 */
 };
 
-#define MAX_ACTION_RHS_LEN USHORT_MAX
-#define MAX_ACTION_NONTERM_NUM USHORT_MAX
+#define MAX_ACTION_RHS_LEN UINT16_MAX
+#define MAX_ACTION_NONTERM_NUM UINT16_MAX
 struct action {
   bool shift_p;
   int term_num; /* action on given term */
   union {
     struct set *set; /* shift set */
     struct {
-      unsigned short rhs_len, nonterm_num;
-      unsigned rule_num; /* reduce */
+      uint16_t rhs_len, nonterm_num;
+      uint32_t rule_num; /* reduce */
     } reduce;
   } u;
 };
