@@ -509,7 +509,7 @@ static struct rule *rule_new_start (struct symb *lhs, const char *anode, int ano
   if (grammar->rules->first_rule == NULL) grammar->rules->first_rule = rule;
   rule->rule_start_offset = grammar->rules->n_rhs_lens + grammar->rules->n_rules;
   rule->num = grammar->rules->n_rules++;
-  assert (VLO_LENGTH (grammar->rules->rules_vlo) / sizeof (struct rule *) == rule->num);
+  assert (VLO_LENGTH (grammar->rules->rules_vlo) / sizeof (struct rule *) == (size_t) rule->num);
   VLO_ADD_MEMORY (grammar->rules->rules_vlo, &rule, sizeof (rule));
   return rule;
 }
@@ -538,7 +538,7 @@ static void rule_new_stop (void) {
 }
 
 static struct rule *rule_get (int num) {
-  assert (VLO_LENGTH (grammar->rules->rules_vlo) > sizeof (struct rule *) * num);
+  assert ((int) VLO_LENGTH (grammar->rules->rules_vlo) > (int) (sizeof (struct rule *) * num));
   return ((struct rule **) VLO_BEGIN (grammar->rules->rules_vlo))[num];
 }
 
@@ -1559,7 +1559,7 @@ static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set) {
 static FORCE_INLINE struct set *stack_reduce (struct stack *stack, unsigned nonterm_num,
                                               unsigned rhs_len) {
   int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
-  assert (rhs_len < len);
+  assert (rhs_len < (unsigned) len);
   struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rhs_len];
   VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rhs_len);
   struct set *goto_set = set->goto_map[nonterm_num];
