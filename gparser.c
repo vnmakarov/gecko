@@ -12,8 +12,10 @@
 
 #ifdef __GNUC__
 #define FORCE_INLINE inline __attribute__ ((always_inline))
+#define LIKELY(c) __builtin_expect (c, 1)
 #else
 #define FORCE_INLINE inline
+#define LIKELY(c) c
 #endif
 
 #ifndef GP_MAX_ERROR_MESSAGE_LENGTH
@@ -1670,7 +1672,7 @@ static bool parse (void) {
 #ifndef NO_GP_DEBUG_PRINT
         n_single_stack_actions++;
 #endif
-        if (!actions[0].shift_p) { /* reduce */
+        if (LIKELY (!actions[0].shift_p)) { /* reduce */
           set = stack_reduce (single_stack, actions[0].u.reduce.nonterm_num,
                               actions[0].u.reduce.rhs_len);
         } else { /* shift */
@@ -1700,7 +1702,7 @@ static bool parse (void) {
       for (int i = 0; i < actions_num; i++) {
         struct action *action = &actions[i];
         struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
-        if (!action->shift_p) { /* reduce */
+        if (LIKELY (!action->shift_p)) { /* reduce */
           stack_reduce (stack, action->u.reduce.nonterm_num, action->u.reduce.rhs_len);
           VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
         } else { /* shift */
