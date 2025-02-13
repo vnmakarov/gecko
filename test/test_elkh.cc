@@ -218,7 +218,7 @@ string Lexer::tokenKindDesc (int kind) const {
 static os_t mem_os;
 
 int main (void) {
-  ticker_t t;
+  ticker_t t = create_ticker ();
   int code;
   struct grammar *g;
 #ifdef linux

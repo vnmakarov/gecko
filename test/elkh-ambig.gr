@@ -1,0 +1,13 @@
+context_class Context : public UserActions {};
+
+terminals {
+0: EOF;
+1: PLUS "+";
+2: A "a";
+}
+
+nonterm E {
+  fun merge(L,R) { return L; }
+  -> E "+" E ;
+  -> "a" ;
+}

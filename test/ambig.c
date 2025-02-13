@@ -9,7 +9,7 @@
 
 #define S10 "+a+a+a+a+a+a+a+a+a+a"
 #define S100 S10 S10 S10 S10 S10 S10 S10 S10 S10 S10
-static const char *input = "a" S100 S100 S100;
+static const char *input = "a" S100 S100;
 
 static const char *description
   = "\n"

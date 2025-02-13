@@ -147,7 +147,7 @@ if test x$YAEPDIR != x; then
 	echo Failure with 'YAEP (Yet Another Earley Parser)'
 	exit 1
     fi
-    echo ++++++++YAEP: ambiguous 'E=E+E|a' and 300 operators
+    echo ++++++++YAEP: ambiguous 'E=E+E|a' and 200 operators
     if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $YAEPLIB -o $outfile && time $outfile 1; then
 	echo
     else
@@ -195,6 +195,16 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
 	echo Failure with 'Elkhound'
 	exit 1
     fi
+
+    echo ELKHOUND '(GLR Parser)': ambiguous 'E=E+E|a' and 200 operators
+    $ELKHOUND_EXE $SRCDIR/elkh-ambig.gr
+    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_ambig_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && time $outfile; then
+	echo
+    else
+	echo Failure with 'Elkhound'
+	exit 1
+    fi
+    rm -f elkh-c.cc elkh-c.h elkh-ambig.cc elkh-ambig.cc
 fi
 
 # GP 
@@ -214,7 +224,7 @@ else
   exit 1
 fi
 
-echo ++++++++GP: ambiguous 'E=E+E|a' and 300 operators
+echo ++++++++GP: ambiguous 'E=E+E|a' and 200 operators
 if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $SRCDIR/../gparser.c -o $outfile && time $outfile 1; then
   echo
 else
