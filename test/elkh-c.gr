@@ -1,0 +1,747 @@
+context_class Context : public UserActions {};
+
+terminals {
+0: EOF;
+1: LPAR "(";
+2: RPAR ")";
+3: LBR "[";
+4: RBR "]";
+5: LFBR "{";
+6: RFBR "}";
+7: DOT ".";
+8: COMMA ",";
+9: AND "&";
+10: MUL "*";
+11: PLUS "+";
+12: MINUS "-";
+13: TILDA "~";
+14: EXCLAM "!";
+15: DIV "/";
+16: MOD "%";
+17: LT "<";
+18: GT ">";
+19: XOR "^";
+20: OR "|";
+21: QUEST "?";
+22: COL ":";
+23: EQ "=";
+24: SEMICOL ";";
+
+25: IDENTIFIER;
+26: SIGNED;
+27: CONST;
+28: INLINE;
+29: AUTO;
+30: BREAK;
+31: CASE;
+32: CHAR;
+33: CONTINUE;
+34: DEFAULT;
+35: DO;
+36: DOUBLE;
+37: ELSE;
+38: ENUM;
+39: EXTERN;
+40: FLOAT;
+41: FOR;
+42: GOTO;
+43: IF;
+44: INT;
+45: LONG;
+46: REGISTER;
+47: RETURN;
+48: SHORT;
+49: SIZEOF;
+50: STATIC;
+51: STRUCT;
+52: SWITCH;
+53: TYPEDEF;
+54: UNION;
+55: UNSIGNED;
+56: VOID;
+57: VOLATILE;
+58: WHILE;
+59: CONSTANT;
+60: STRING_LITERAL;
+61: RIGHT_ASSIGN;
+62: LEFT_ASSIGN;
+63: ADD_ASSIGN;
+64: SUB_ASSIGN;
+65: MUL_ASSIGN;
+66: DIV_ASSIGN;
+67: MOD_ASSIGN;
+68: AND_ASSIGN;
+69: XOR_ASSIGN;
+70: OR_ASSIGN;
+71: RIGHT_OP;
+72: LEFT_OP;
+73: INC_OP;
+74: DEC_OP;
+75: PTR_OP;
+76: AND_OP;
+77: OR_OP;
+78: LE_OP;
+79: GE_OP;
+80: EQ_OP;
+81: NE_OP;
+82: ELIPSIS;
+83: RESTRICT;
+84: _BOOL;
+85: _COMPLEX;
+86: _IMAGINARY;
+}
+/* Additional rules: */
+
+nonterm start {
+  -> translation_unit ;
+}
+
+nonterm identifier {
+  -> IDENTIFIER ;
+}
+
+nonterm constant {
+  -> CONSTANT ;
+}
+
+nonterm string_literal {
+  -> STRING_LITERAL ;
+}
+
+/* A.2  Phrase structure grammar: */
+/* A.2.1  Expressions: */
+/* (6.5.1): */
+nonterm primary_expression {
+  -> identifier ;
+  -> constant ;
+  -> string_literal ;
+  -> "(" expression ")" ;
+}
+/* (6.5.2): */
+/* postfix_expression : primary_expression ;
+  -> postfix_expression "[" expression "]" ;
+  -> postfix_expression "(" [argument_expression_list] ")" ;
+  -> postfix_expression "." identifier ;
+  -> postfix_expression PTR_OP identifier ;
+  -> postfix_expression INC_OP ;
+  -> postfix_expression DEC_OP ;
+  -> "(" type_name ")" "{" initializer_list "}" ;
+  -> "(" type_name ")" "{" initializer_list "," "}" */
+
+nonterm postfix_expression {
+  -> primary_expression ;
+  -> postfix_expression "[" expression "]" ;
+  -> postfix_expression "(" argument_expression_list_opt ")" ;
+  -> postfix_expression "." identifier ;
+  -> postfix_expression PTR_OP identifier ;
+  -> postfix_expression INC_OP ;
+  -> postfix_expression DEC_OP ;
+  -> "(" type_name ")" "{" initializer_list "}" ;
+  -> "(" type_name ")" "{" initializer_list "," "}" ;
+}
+
+nonterm argument_expression_list_opt {
+  -> ;
+  -> argument_expression_list ;
+}
+/* (6.5.2): */
+nonterm argument_expression_list {
+  -> assignment_expression ;
+  -> argument_expression_list "," assignment_expression ;
+}
+
+/* (6.5.3): */
+nonterm unary_expression {
+  fun merge(L,R) { return L; }
+  -> postfix_expression ;
+  -> INC_OP unary_expression ;
+  -> DEC_OP unary_expression ;
+  -> unary_operator  cast_expression ;
+  -> SIZEOF unary_expression ;
+  -> SIZEOF "(" type_name ")" ;
+}
+
+/* (6.5.3): */
+nonterm unary_operator {
+  -> "&" ;
+  -> "*" ;
+  -> "+" ;
+  -> "-" ;
+  -> "~" ;
+  -> "!" ;
+}
+
+/* (6.5.4): */
+nonterm cast_expression {
+  fun merge(L,R) { return L; }
+  -> unary_expression ;
+  -> "(" type_name ")" cast_expression ;
+}
+
+/* (6.5.5): */
+nonterm multiplicative_expression {
+  fun merge(L,R) { return L; }
+  -> cast_expression ;
+  -> multiplicative_expression "*" cast_expression ;
+  -> multiplicative_expression "/" cast_expression ;
+  -> multiplicative_expression "%" cast_expression ;
+}
+
+/* (6.5.6): */
+nonterm additive_expression {
+  fun merge(L,R) { return L; }
+  -> multiplicative_expression ;
+  -> additive_expression "+" multiplicative_expression ;
+  -> additive_expression "-" multiplicative_expression ;
+}
+
+/* (6.5.7): */
+nonterm shift_expression {
+  -> additive_expression ;
+  -> shift_expression LEFT_OP additive_expression ;
+  -> shift_expression RIGHT_OP additive_expression ;
+}
+
+/* (6.5.8): */
+nonterm relational_expression {
+  -> shift_expression ;
+  -> relational_expression "<" shift_expression ;
+  -> relational_expression ">" shift_expression ;
+  -> relational_expression LE_OP shift_expression ;
+  -> relational_expression GE_OP shift_expression ;
+}
+
+/* (6.5.9): */
+nonterm equality_expression {
+  -> relational_expression ;
+  -> equality_expression EQ_OP relational_expression ;
+  -> equality_expression NE_OP relational_expression ;
+}
+
+/* (6.5.10): */
+nonterm AND_expression {
+  fun merge(L,R) { return L; }
+  -> equality_expression ;
+  -> AND_expression "&" equality_expression ;
+}
+
+/* (6.5.11): */
+nonterm exclusive_OR_expression {
+  -> AND_expression ;
+  -> exclusive_OR_expression "^" AND_expression ;
+}
+
+/* (6.5.12): */
+nonterm inclusive_OR_expression {
+  -> exclusive_OR_expression ;
+  -> inclusive_OR_expression "|" exclusive_OR_expression ;
+}
+
+/* (6.5.13): */
+nonterm logical_AND_expression {
+  -> inclusive_OR_expression ;
+  -> logical_AND_expression AND_OP inclusive_OR_expression ;
+}
+
+/* (6.5.14): */
+nonterm logical_OR_expression {
+  -> logical_AND_expression ;
+  -> logical_OR_expression OR_OP logical_AND_expression ;
+}
+
+/* (6.5.15): */
+nonterm conditional_expression {
+  -> logical_OR_expression ;
+  -> logical_OR_expression "?" expression ":" conditional_expression ;
+}
+
+/* (6.5.16): */
+nonterm assignment_expression {
+  -> conditional_expression ;
+  -> unary_expression  assignment_operator  assignment_expression ;
+}
+
+/* (6.5.16): */
+nonterm assignment_operator {
+  ->  "=" ;
+  ->  MUL_ASSIGN ;
+  ->  DIV_ASSIGN ;
+  ->  MOD_ASSIGN ;
+  ->  ADD_ASSIGN ;
+  ->  SUB_ASSIGN ;
+  ->  LEFT_ASSIGN ;
+  ->  RIGHT_ASSIGN ;
+  ->  AND_ASSIGN ;
+  ->  XOR_ASSIGN ;
+  ->  OR_ASSIGN ;
+}
+
+/* (6.5.17): */
+nonterm expression {
+  -> assignment_expression ;
+  -> expression "," assignment_expression ;
+  /* -> error ; */
+}
+
+/* (6.6): */
+nonterm constant_expression {
+  -> conditional_expression ;
+}
+
+/* A.2.2  Declarations: */
+/* (6.7): */
+/* declaration : declaration_specifiers [init_declarator_list] ";" */
+               
+nonterm declaration {
+  fun merge(L,R) { return L; }
+  -> declaration_specifiers init_declarator_list_opt ";" ;
+  /* -> error ; */
+}
+
+nonterm init_declarator_list_opt {
+  -> ;
+  -> init_declarator_list ;
+}
+
+/* (6.7): */
+/* declaration_specifiers : storage_class_specifier  [declaration_specifiers] ;
+  -> type_specifier  [declaration_specifiers] ;
+  -> type_qualifier  [declaration_specifiers] ;
+  -> function_specifier  [declaration_specifiers] */
+
+nonterm declaration_specifiers {
+  -> storage_class_specifier  declaration_specifiers_opt ;
+  -> type_specifier  declaration_specifiers_opt ;
+  -> type_qualifier  declaration_specifiers_opt ;
+  -> function_specifier  declaration_specifiers_opt ;
+}
+
+nonterm declaration_specifiers_opt {
+  -> ;
+  -> declaration_specifiers ;
+}
+
+/* (6.7): */
+nonterm init_declarator_list {
+  -> init_declarator ;
+  -> init_declarator_list "," init_declarator ;
+}
+
+/* (6.7): */
+nonterm init_declarator {
+  -> declarator ;
+  -> declarator "=" initializer ;
+}
+/* (6.7.1): */
+nonterm storage_class_specifier {
+  -> TYPEDEF ;
+  -> EXTERN ;
+  -> STATIC ;
+  -> AUTO ;
+  -> REGISTER ;
+}
+
+/* (6.7.2): */
+nonterm type_specifier {
+  -> VOID ;
+  -> CHAR ;
+  -> SHORT ;
+  -> INT ;
+  -> LONG ;
+  -> FLOAT ;
+  -> DOUBLE ;
+  -> SIGNED ;
+  -> UNSIGNED ;
+  -> _BOOL ;
+  -> _COMPLEX ;
+  -> _IMAGINARY ;
+  -> struct_or_union_specifier ;
+  -> enum_specifier ;
+  -> typedef_name ;
+}
+
+/* (6.7.2.1): */
+/* struct_or_union_specifier : struct_or_union  [identifier] "{" struct_declaration_list "}" ;
+  -> struct_or_union  identifier */
+
+nonterm struct_or_union_specifier {
+  fun merge(L,R) { return L; }
+  -> struct_or_union  identifier_opt "{" struct_declaration_list "}" ;
+  -> struct_or_union  identifier ;
+}
+
+nonterm identifier_opt {
+  -> ;
+  -> identifier ;
+}
+
+/* (6.7.2.1): */
+nonterm struct_or_union {
+  -> STRUCT ;
+  -> UNION ;
+}
+
+/* (6.7.2.1): */
+nonterm struct_declaration_list {
+  -> struct_declaration ;
+  -> struct_declaration_list  struct_declaration ;
+}
+
+/* (6.7.2.1): */
+nonterm struct_declaration {
+  fun merge(L,R) { return L; }
+  -> specifier_qualifier_list  struct_declarator_list ";" ;
+}
+
+/* (6.7.2.1): */
+/* specifier_qualifier_list : type_specifier  [specifier_qualifier_list] ;
+  -> type_qualifier  [specifier_qualifier_list] */
+
+nonterm specifier_qualifier_list {
+  -> type_specifier  specifier_qualifier_list_opt ;
+  -> type_qualifier  specifier_qualifier_list_opt ;
+}
+
+nonterm specifier_qualifier_list_opt {
+  ->  ;
+  -> specifier_qualifier_list ;
+}
+
+/* (6.7.2.1): */
+nonterm struct_declarator_list {
+  -> struct_declarator ;
+  -> struct_declarator_list "," struct_declarator ;
+}
+
+/* (6.7.2.1): */
+/* struct_declarator : declarator ;
+  -> [declarator] ":" constant_expression */
+
+nonterm struct_declarator {
+  -> declarator ;
+  -> declarator_opt ":" constant_expression ;
+}
+
+nonterm declarator_opt {
+  -> ;
+  -> declarator ;
+}
+
+/* (6.7.2.2): */
+nonterm enum_specifier {
+  -> ENUM identifier_opt "{" enumerator_list "}" ;
+  -> ENUM identifier_opt "{" enumerator_list "," "}" ;
+  -> ENUM identifier ;
+}
+
+/* (6.7.2.2): */
+nonterm enumerator_list {
+  -> enumerator ;
+  -> enumerator_list "," enumerator ;
+}
+
+/* (6.7.2.2): */
+nonterm enumerator {
+  -> enumeration_constant ;
+  -> enumeration_constant "=" constant_expression ;
+}
+
+/* (6.7.3): */
+nonterm type_qualifier {
+  -> CONST ;
+  -> RESTRICT ;
+  -> VOLATILE ;
+}
+
+/* (6.7.4): */
+nonterm function_specifier {
+  -> INLINE ;
+}
+
+/* (6.7.5): */
+/* declarator : [pointer] direct_declarator */
+
+nonterm declarator {
+  -> pointer_opt direct_declarator ;
+}
+
+nonterm pointer_opt {
+  -> ;
+  -> pointer ;
+}
+/* (6.7.5): */
+/* direct_declarator : identifier ;
+  -> "(" declarator ")" ;
+  -> direct_declarator "[" [type_qualifier_list] [assignment_expression] "]" ;
+  -> direct_declarator "[" STATIC [type_qualifier_list] assignment_expression "]" ;
+  -> direct_declarator "[" type_qualifier_list STATIC assignment_expression "]" ;
+  -> direct_declarator "[" [type_qualifier_list] "*" "]" ;
+  -> direct_declarator "(" parameter_type_list ")" ;
+  -> direct_declarator "(" [identifier_list] ")" */
+
+nonterm direct_declarator {
+  fun merge(L,R) { return L; }
+  -> identifier ;
+  -> "(" declarator ")" ;
+  -> direct_declarator "[" type_qualifier_list_opt assignment_expression_opt "]" ;
+  -> direct_declarator "[" STATIC type_qualifier_list_opt assignment_expression "]" ;
+  -> direct_declarator "[" type_qualifier_list STATIC assignment_expression "]" ;
+  -> direct_declarator "[" type_qualifier_list_opt "*" "]" ;
+  -> direct_declarator "(" parameter_type_list ")" ;
+  -> direct_declarator "(" identifier_list_opt ")" ;
+}
+
+nonterm type_qualifier_list_opt {
+  -> ;
+  -> type_qualifier_list ;
+}
+
+nonterm identifier_list_opt {
+  -> ;
+  -> identifier_list ;
+}
+
+/* (6.7.5): */
+nonterm pointer {
+  -> "*" type_qualifier_list_opt ;
+  -> "*" type_qualifier_list_opt pointer ;
+}
+
+/* (6.7.5): */
+nonterm type_qualifier_list {
+  -> type_qualifier ;
+  -> type_qualifier_list  type_qualifier ;
+}
+
+/* (6.7.5): */
+nonterm parameter_type_list {
+  -> parameter_list ;
+  -> parameter_list "," ELIPSIS ;
+}
+
+/* (6.7.5): */
+nonterm parameter_list {
+  -> parameter_declaration ;
+  -> parameter_list "," parameter_declaration ;
+}
+
+/* (6.7.5): */
+/* parameter_declaration : declaration_specifiers declarator ;
+  -> declaration_specifiers [abstract_declarator] */
+
+nonterm parameter_declaration {
+  fun merge(L,R) { return L; }
+  -> declaration_specifiers declarator ;
+  -> declaration_specifiers abstract_declarator_opt ;
+}
+
+nonterm abstract_declarator_opt {
+  -> ;
+  -> abstract_declarator ;
+}
+
+/* (6.7.5): */
+nonterm identifier_list {
+  -> identifier ;
+  -> identifier_list "," identifier ;
+}
+
+/* (6.7.6): */
+nonterm type_name {
+  -> specifier_qualifier_list  abstract_declarator_opt ;
+}
+
+/* (6.7.6): */
+nonterm abstract_declarator {
+  -> pointer ;
+  -> pointer_opt direct_abstract_declarator ;
+}
+
+/* (6.7.6): */
+/* direct_abstract_declarator : "(" abstract_declarator ")" ;
+  -> [direct_abstract_declarator] "[" [assignment_expression] "]" ;
+  -> [direct_abstract_declarator] "[" "*" "]" ;
+  -> [direct_abstract_declarator] "(" [parameter_type_list] ")" */
+
+nonterm direct_abstract_declarator {
+  -> "(" abstract_declarator ")" ;
+  -> direct_abstract_declarator_opt "[" assignment_expression_opt "]" ;
+  -> direct_abstract_declarator_opt "[" "*" "]" ;
+  -> direct_abstract_declarator_opt "(" parameter_type_list_opt ")" ;
+}
+
+nonterm direct_abstract_declarator_opt {
+  -> ;
+  -> direct_abstract_declarator ;
+}
+
+nonterm assignment_expression_opt {
+  -> ;
+  -> assignment_expression ;
+}
+
+nonterm parameter_type_list_opt {
+  -> ;
+  -> parameter_type_list ;
+}
+
+/* (6.7.7): */
+nonterm typedef_name {
+  -> identifier ;
+}
+
+/* (6.7.8): */
+nonterm initializer {
+  -> assignment_expression ;
+  -> "{" initializer_list "}" ;
+  -> "{" initializer_list "," "}" ;
+}
+
+/* (6.7.8): */
+/* initializer_list : [designation] initializer ;
+  -> initializer_list "," [designation] initializer */
+
+nonterm initializer_list {
+  -> designation_opt initializer ;
+  -> initializer_list "," designation_opt initializer ;
+}
+
+nonterm designation_opt {
+  -> ;
+  -> designation ;
+}
+
+/* (6.7.8): */
+nonterm designation {
+  -> designator_list "=" ;
+}
+
+/* (6.7.8): */
+nonterm designator_list {
+  -> designator ;
+  -> designator_list  designator ;
+}
+
+/* (6.7.8): */
+nonterm designator {
+  -> "[" constant_expression "]" ;
+  -> "." identifier ;
+}
+
+/* A.2.3  Statements: */
+/* (6.8): */
+nonterm statement {
+  -> labeled_statement ;
+  -> compound_statement ;
+  -> expression_statement ;
+  -> selection_statement ;
+  -> iteration_statement ;
+  -> jump_statement ;
+  /* -> error ; */
+}
+
+/* (6.8.1): */
+nonterm labeled_statement {
+  -> identifier ":" statement ;
+  -> CASE constant_expression ":" statement ;
+  -> DEFAULT ":" statement ;
+}
+
+/* (6.8.2): */
+/* compound_statement : "{" [block_item_list] "}" */
+
+nonterm compound_statement {
+  -> "{" block_item_list_opt "}" ;
+}
+
+nonterm block_item_list_opt {
+  -> ;
+  -> block_item_list ;
+}
+
+/* (6.8.2): */
+nonterm block_item_list {
+  -> block_item ;
+  -> block_item_list  block_item ;
+}
+
+/* (6.8.2): */
+nonterm block_item {
+  fun merge(L,R) { return L; }
+  -> declaration ;
+  -> statement ;
+}
+
+/* (6.8.3): */
+/* expression_statement : [expression] ";" */
+
+nonterm expression_statement {
+  -> expression_opt ";" ;
+}
+nonterm expression_opt {
+  -> ;
+  -> expression ;
+}
+
+/* (6.8.4): */
+nonterm selection_statement {
+  fun merge(L,R) { return L; }
+  -> IF "(" expression ")" statement ;
+  -> IF "(" expression ")" statement ELSE statement ;
+  -> SWITCH "(" expression ")" statement ;
+}
+
+/* (6.8.5): */
+nonterm iteration_statement {
+  -> WHILE "(" expression ")" statement ;
+  -> DO statement WHILE "(" expression ")" ";" ;
+  -> FOR "(" expression_opt ";" expression_opt ";" expression_opt ")" statement ;
+  -> FOR "(" declaration  expression_opt ";" expression_opt ")" statement ;
+}
+
+/* (6.8.6): */
+nonterm jump_statement {
+  -> GOTO identifier ";" ;
+  -> CONTINUE ";" ;
+  -> BREAK ";" ;
+  -> RETURN expression_opt ";" ;
+}
+
+/* A.2.4  External definitions: */
+/* (6.9): */
+nonterm translation_unit {
+  -> external_declaration ;
+  -> translation_unit external_declaration ;
+}
+
+/* (6.9): */
+nonterm external_declaration {
+  -> function_definition ;
+  -> declaration ;
+}
+
+/* (6.9.1): */
+/* function_definition : declaration_specifiers declarator  [declaration_list] compound_statement */
+
+nonterm function_definition {
+  fun merge(L,R) { return L; }
+  -> declaration_specifiers declarator  declaration_list_opt compound_statement ;
+}
+
+nonterm declaration_list_opt {
+  -> ;
+  -> declaration_list ;
+}
+
+/* (6.9.1): */
+nonterm declaration_list {
+  -> declaration ;
+  -> declaration_list  declaration ;
+}
+
+/* A.1.5  Constants: */
+/* (6.4.4.3): */
+nonterm enumeration_constant {
+  -> identifier ;
+}
+
