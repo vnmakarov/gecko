@@ -44,7 +44,7 @@ static void add_typedef (const char *id, int level) { /* Now we ignore level */
   if (*entry_ptr == NULL)
     *entry_ptr = (hash_table_entry_t) id;
   else
-    assert (strcmp (id, *entry_ptr) == 0);
+    assert (strcmp (id, (const char *) *entry_ptr) == 0);
 #ifdef DEBUG
   fprintf (stderr, "add typedef %s\n", id);
 #endif
