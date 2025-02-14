@@ -13,9 +13,11 @@
 
 #ifdef __GNUC__
 #define FORCE_INLINE inline __attribute__ ((always_inline))
+#define NO_INLINE __attribute__ ((noinline))
 #define LIKELY(c) __builtin_expect (c, 1)
 #else
 #define FORCE_INLINE inline
+#define NO_INLINE
 #define LIKELY(c) c
 #endif
 
@@ -435,6 +437,7 @@ static void term_set_fin (struct term_sets *term_sets) { /* finalize work with t
 struct rule {            /* rule of the grammar: */
   int num;               /* order number of rule */
   int rhs_len;           /* length of rhs */
+  int lhs_nonterm_num;   /* = lhs->u.nonterm.nonterm_num */
   struct rule *next;     /* the next grammar rule */
   struct rule *lhs_next; /* the next grammar rule with the same nonterminal in the rule lhs */
   struct symb *lhs;      /* nonterminal in the left hand side of the rule */
@@ -486,6 +489,7 @@ static struct rule *rule_new_start (struct symb *lhs, const char *anode, int ano
   rule = (struct rule *) OS_TOP_BEGIN (grammar->rules->rules_os);
   OS_TOP_FINISH (grammar->rules->rules_os);
   rule->lhs = lhs;
+  rule->lhs_nonterm_num = lhs->u.nonterm.nonterm_num;
   if (anode == NULL) {
     rule->anode = NULL;
     rule->anode_cost = 0;
@@ -709,17 +713,12 @@ struct action_desc {
   unsigned short actions_start; /* index of first term action, defined for actions_num != 0 */
 };
 
-#define MAX_ACTION_RHS_LEN UINT16_MAX
-#define MAX_ACTION_NONTERM_NUM UINT16_MAX
 struct action {
   bool shift_p;
   int term_num; /* action on given term */
   union {
     struct set *set; /* shift set */
-    struct {
-      uint16_t rhs_len, nonterm_num;
-      uint32_t rule_num; /* reduce */
-    } reduce;
+    struct rule *rule;
   } u;
 };
 
@@ -1353,7 +1352,7 @@ static int action_cmp (const void *el1, const void *el2) {
   if (diff != 0) return diff;
   if (e1->shift_p) return -1;
   if (e2->shift_p) return 1;
-  return e1->u.reduce.rule_num - e2->u.reduce.rule_num;
+  return e1->u.rule->num - e2->u.rule->num;
 }
 
 #ifndef NO_GP_DEBUG_PRINT
@@ -1363,7 +1362,7 @@ static void print_action (FILE *f, struct action *a) {
   if (a->shift_p) {
     fprintf (f, "shift to S%d", a->u.set->num);
   } else {
-    struct rule *rule = rule_get (a->u.reduce.rule_num);
+    struct rule *rule = rule_get (a->u.rule->num);
     fprintf (f, "reduce \"");
     rule_print (f, rule, false, false);
     fprintf (f, "\"");
@@ -1382,11 +1381,7 @@ static void build_goto_map_and_actions (struct set *set) {
           struct action action;
           action.shift_p = false;
           action.term_num = j;
-          action.u.reduce.rule_num = sit->rule->num;
-          assert (sit->rule->rhs_len < MAX_ACTION_RHS_LEN);
-          action.u.reduce.rhs_len = sit->rule->rhs_len;
-          assert (sit->rule->lhs->u.nonterm.nonterm_num < MAX_ACTION_NONTERM_NUM);
-          action.u.reduce.nonterm_num = sit->rule->lhs->u.nonterm.nonterm_num;
+          action.u.rule = sit->rule;
           VLO_ADD_MEMORY (actions_vlo, &action, sizeof (action));
         }
       continue;
@@ -1480,7 +1475,19 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
   return start_set;
 }
 
-typedef struct set *stack_el_t;
+static int toks_num, n_parse_term_nodes, n_parse_abstract_nodes, n_parse_alt_nodes;
+static struct gp_tree_node *empty_node, *error_node;
+
+typedef struct stack_el {
+  struct set *set;
+  union {
+    struct gp_tree_node *anode;
+    struct {
+      int code;
+      void *attr;
+    } term;
+  } u;
+} stack_el_t;
 
 struct stack {
   vlo_t els;
@@ -1543,27 +1550,89 @@ static void stack_free (struct stack *stack) {
 #endif
 }
 
-static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
-  assert (VLO_LENGTH (stack->els) != 0);
-  return ((stack_el_t *) VLO_BOUND (stack->els))[-1];
-}
-
-static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set) {
-  VLO_ADD_MEMORY (stack->els, &set, sizeof (set));
+static void push_init_set (struct stack *stack, struct set *set) {
+  VLO_EXPAND (stack->els, sizeof (stack_el_t));
+  stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
+  el->set = set;
+  el->u.anode = NULL;
 #ifndef NO_GP_DEBUG_PRINT
   n_curr_stack_els++;
   if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
 #endif
 }
 
-static FORCE_INLINE struct set *stack_reduce (struct stack *stack, unsigned nonterm_num,
-                                              unsigned rhs_len) {
-  int len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
-  assert (rhs_len < (unsigned) len);
-  struct set *set = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1 - rhs_len];
+static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
+  assert (VLO_LENGTH (stack->els) != 0);
+  return ((stack_el_t *) VLO_BOUND (stack->els))[-1].set;
+}
+
+static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set, int code, void *attr) {
+  VLO_EXPAND (stack->els, sizeof (stack_el_t));
+  stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
+  el->set = set;
+  el->u.term.code = code;
+  el->u.term.attr = attr;
+#ifndef NO_GP_DEBUG_PRINT
+  n_curr_stack_els++;
+  if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
+#endif
+}
+
+static NO_INLINE struct gp_tree_node *get_transl (stack_el_t *stack_addr, int stack_len,
+                                                  struct rule *rule) {
+#if !defined(NO_GP_DEBUG_PRINT)
+  n_parse_abstract_nodes++;
+#endif
+  int rhs_len = rule->rhs_len;
+  struct gp_tree_node *anode;
+  size_t child_len = sizeof (struct gp_tree_node *) * (rule->trans_len + 1);
+  anode = ((struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node) + child_len));
+  anode->type = GP_ANODE;
+  if (rule->caller_anode == NULL) {
+    rule->caller_anode = ((char *) (*parse_alloc) (strlen (rule->anode) + 1));
+    strcpy (rule->caller_anode, rule->anode);
+  }
+  anode->val.anode.name = rule->caller_anode;
+  anode->val.anode.cost = rule->anode_cost;
+  anode->val.anode.children
+    = ((struct gp_tree_node **) ((char *) anode + sizeof (struct gp_tree_node)));
+  for (int i = 0, start = stack_len - 1 - rhs_len; i < rhs_len; i++) {
+    int disp = rule->order[i];
+    if (disp < 0) continue;
+    assert (disp < rule->trans_len);
+    stack_el_t *el = &stack_addr[start + i];
+    if (!el->set->symb->term_p) {
+      anode->val.anode.children[disp] = el->u.anode;
+    } else {
+#if !defined(NO_GP_DEBUG_PRINT)
+      n_parse_term_nodes++;
+#endif
+      struct gp_tree_node *term_node = (*parse_alloc) (sizeof (struct gp_tree_node));
+      term_node->type = GP_TERM;
+      term_node->val.term.code = el->u.term.code;
+      term_node->val.term.attr = el->u.term.attr;
+      anode->val.anode.children[disp] = term_node;
+    }
+  }
+  anode->val.anode.children[rule->trans_len] = NULL;
+  return anode;
+}
+
+static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
+  int rhs_len = rule->rhs_len;
+  int nonterm_num = rule->lhs_nonterm_num;
+  int stack_len = VLO_LENGTH (stack->els) / sizeof (stack_el_t);
+  assert (rhs_len < stack_len);
+  stack_el_t *stack_addr = (stack_el_t *) VLO_BEGIN (stack->els);
+  struct set *set = stack_addr[stack_len - 1 - rhs_len].set;
   VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rhs_len);
+  struct gp_tree_node *anode = empty_node;
+  if (rule->anode != NULL) anode = get_transl (stack_addr, stack_len, rule);
   struct set *goto_set = set->goto_map[nonterm_num];
-  VLO_ADD_MEMORY (stack->els, &goto_set, sizeof (goto_set));
+  VLO_EXPAND (stack->els, sizeof (stack_el_t));
+  stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
+  el->set = goto_set;
+  el->u.anode = anode;
 #ifndef NO_GP_DEBUG_PRINT
   n_curr_stack_els += (1 - rhs_len);
   if (n_stack_els < n_curr_stack_els) n_stack_els = n_curr_stack_els;
@@ -1573,10 +1642,10 @@ static FORCE_INLINE struct set *stack_reduce (struct stack *stack, unsigned nont
 
 static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
-  struct stack **stack_addr1 = (struct stack **) VLO_BEGIN (stack1->els);
-  struct stack **stack_addr2 = (struct stack **) VLO_BEGIN (stack2->els);
+  stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (stack1->els);
+  stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (stack2->els);
   for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--)
-    if (stack_addr1[i] != stack_addr2[i]) return false;
+    if (stack_addr1[i].set != stack_addr2[i].set) return false;
   return true;
 }
 
@@ -1603,7 +1672,7 @@ static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
 static void print_stack (FILE *f, struct stack *stack) {
   fprintf (f, "          ");
   for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++)
-    fprintf (f, " s%d", ((stack_el_t *) VLO_BEGIN (stack->els))[i]->num);
+    fprintf (f, " s%d", ((stack_el_t *) VLO_BEGIN (stack->els))[i].set->num);
   fprintf (f, "\n");
 }
 
@@ -1632,16 +1701,20 @@ static void stack_merge_print (FILE *f, vlo_t *stacks) {
     b = t;            \
   } while (false)
 
-static int toks_num, n_parse_term_nodes, n_parse_abstract_nodes, n_parse_alt_nodes;
 static int n_single_stack_actions, n_multi_stack_actions;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
-static bool parse (void) {
+static bool parse (bool *ambiguous_p) {
+  empty_node = (struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node));
+  empty_node->type = GP_NIL;
+  error_node = (struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node));
+  error_node->type = GP_ERROR;
+
   VLO_CREATE (symb_sits, grammar->alloc, 16);
   VLO_CREATE (actions_vlo, grammar->alloc, 16);
   stack_init ();
   struct stack *single_stack = stack_create (NULL);
-  stack_shift (single_stack, get_start_set ());
+  push_init_set (single_stack, get_start_set ());
   vlo_t curr_stacks, new_stacks, temp_vlo;
   VLO_CREATE (curr_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (new_stacks, grammar->alloc, 2 * sizeof (vlo_t));
@@ -1674,12 +1747,11 @@ static bool parse (void) {
         n_single_stack_actions++;
 #endif
         if (LIKELY (!actions[0].shift_p)) { /* reduce */
-          set = stack_reduce (single_stack, actions[0].u.reduce.nonterm_num,
-                              actions[0].u.reduce.rhs_len);
+          set = stack_reduce (single_stack, actions[0].u.rule);
         } else { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
-          stack_shift (single_stack, shifted_set);
+          stack_shift (single_stack, shifted_set, code, attr);
           goto next_token;
         }
       }
@@ -1704,12 +1776,12 @@ static bool parse (void) {
         struct action *action = &actions[i];
         struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
         if (LIKELY (!action->shift_p)) { /* reduce */
-          stack_reduce (stack, action->u.reduce.nonterm_num, action->u.reduce.rhs_len);
+          stack_reduce (stack, action->u.rule);
           VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
         } else { /* shift */
           struct set *shifted_set = action->u.set;
           assert (shifted_set != NULL);
-          stack_shift (stack, shifted_set);
+          stack_shift (stack, shifted_set, code, attr);
           VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
         }
 #ifndef NO_GP_DEBUG_PRINT
@@ -1810,7 +1882,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
   if (grammar->undefined_p) gp_error (GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
   gp_parse_init ();
   parse_init_p = true;
-  bool ok_p GP_UNUSED = parse ();
+  bool ok_p GP_UNUSED = parse (ambiguous_p);
 #ifndef NO_GP_DEBUG_PRINT
   if (grammar->debug_level > 0) {
     fprintf (stderr, "%sGrammar: #terms = %d, #nonterms = %d, ", *ambiguous_p ? "AMBIGUOUS " : "",
