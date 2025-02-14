@@ -1,4 +1,4 @@
-/* GP (General Parser)
+/* This file is a part of GP (General Parser) project.
    Copyright (c) 2025  Vladimir Makarov <vmakarov@gcc.gnu.org>
 */
 

@@ -80,9 +80,7 @@ int main (void) {
 #endif
 
   gp_allocator_t *alloc = gp_alloc_new (NULL, NULL, NULL, NULL);
-  if (alloc == NULL) {
-    exit (1);
-  }
+  if (alloc == NULL) exit (1);
 #if YYDEBUG
   yydebug = 1;
 #endif
