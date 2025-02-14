@@ -165,7 +165,7 @@ SMBASE_INCL=
 if test x$ELKHOUND_DIR != x; then
     ELKHOUND_LIB=`find $ELKHOUND_DIR -name libelkhound.a`
 fi
-if test $ELKHOUND_LIB != x; then
+if test x$ELKHOUND_LIB != x; then
     ELKHOUND_EXE=`echo $ELKHOUND_LIB | sed s/libelkhound.a/elkhound/`
     ELKHOUND_INCL=`find $ELKHOUND_DIR -name glr.h`
     ELKHOUND_INCL=`echo $ELKHOUND_INCL | sed s/glr.h//`
