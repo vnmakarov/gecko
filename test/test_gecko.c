@@ -1,4 +1,4 @@
-/* GP (General Parser)
+/* Part of Gecko Parser (GLR Parser) project.
    Copyright (c) 2025  Vladimir Makarov <vmakarov@gcc.gnu.org>
 */
 
@@ -14,7 +14,7 @@
 #ifdef YAEP
 #include "yaep.h"
 #else
-#include "gparser.h"
+#include "gecko.h"
 #endif
 
 #define IDENTIFIER 1000

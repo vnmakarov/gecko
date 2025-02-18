@@ -83,7 +83,7 @@ Q=@
 # Entries should be used for building and installation
 .PHONY: all debug install uninstall clean test bench
 
-all: $(BUILD_DIR)/libgparser.$(LIBSUFF)
+all: $(BUILD_DIR)/libgecko.$(LIBSUFF)
 
 debug: CFLAGS:=$(subst $(COPTFLAGS),$(CDEBFLAGS),$(CFLAGS))
 debug: all
@@ -92,33 +92,33 @@ debug2: CFLAGS:=$(subst $(COPTFLAGS),$(CDEB2FLAGS),$(CFLAGS))
 debug2: LDFLAGS:=$(LD2FLAGS)
 debug2: all
 
-install: $(BUILD_DIR)/libgparser.$(LIBSUFF) | $(PREFIX)/include $(PREFIX)/lib
-	install -m a+r $(SRC_DIR)/gparser.h $(PREFIX)/include
-	install -m a+r $(BUILD_DIR)/libgparser.$(LIBSUFF) $(PREFIX)/lib
+install: $(BUILD_DIR)/libgecko.$(LIBSUFF) | $(PREFIX)/include $(PREFIX)/lib
+	install -m a+r $(SRC_DIR)/gecko.h $(PREFIX)/include
+	install -m a+r $(BUILD_DIR)/libgecko.$(LIBSUFF) $(PREFIX)/lib
 
 $(PREFIX)/include $(PREFIX)/lib:
 	   mkdir -p $@
 
-uninstall: $(BUILD_DIR)/libgparser.$(LIBSUFF) $(EXECUTABLES) | $(PREFIX)/include $(PREFIX)/lib
-	$(RM) $(PREFIX)/include/gparser.h
-	$(RM) $(PREFIX)/lib/libgparser.$(LIBSUFF)
+uninstall: $(BUILD_DIR)/libgecko.$(LIBSUFF) $(EXECUTABLES) | $(PREFIX)/include $(PREFIX)/lib
+	$(RM) $(PREFIX)/include/gecko.h
+	$(RM) $(PREFIX)/lib/libgecko.$(LIBSUFF)
 	-rmdir $(PREFIX)/include $(PREFIX)/lib
 	-rmdir $(PREFIX)
 
-clean: clean-gparser
+clean: clean-gecko
 
-test: gparser-test
+test: gecko-test
 
-# ------------------ LIBGPARSER -----------------------
-$(BUILD_DIR)/libgparser.$(LIBSUFF): $(BUILD_DIR)/gparser.$(OBJSUFF)
+# ------------------ LIBGECKO -----------------------
+$(BUILD_DIR)/libgecko.$(LIBSUFF): $(BUILD_DIR)/gecko.$(OBJSUFF)
 ifeq ($(OS),Windows_NT)
 	lib -nologo $^ -OUT:$@
 else
 	$(AR) rcs $@ $^
 endif
 
-# ------------------ GPARSER --------------------------
-GP_SRC:=$(SRC_DIR)/gparser.c
+# ------------------ GECKO --------------------------
+GP_SRC:=$(SRC_DIR)/gecko.c
 GP_BUILD:=$(GP_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.$(OBJSUFF))
 
 $(GP_BUILD): $(BUILD_DIR)/sgramm.c
@@ -126,27 +126,27 @@ $(BUILD_DIR)/sgramm.c: $(SRC_DIR)/sgramm.y
 	$(YACC) $(SRC_DIR)/sgramm.y
 	mv y.tab.c $@
 
-.PHONY: clean-gparser
-clean-gparser:
+.PHONY: clean-gecko
+clean-gecko:
 	$(RM) $(GP_BUILD) $(GP_BUILD:.$(OBJSUFF)=.d)
 
 -include $(GP_BUILD:.$(OBJSUFF)=.d)
 
-# ------------------ gparser tests --------------------------
+# ------------------ gecko tests --------------------------
 
-.PHONY: gparser-test
+.PHONY: gecko-test
 
 test: CFLAGS:=$(subst $(COPTFLAGS),$(CDEB2FLAGS),$(CFLAGS))
 test: $(BUILD_DIR)/sgramm.c
 test: simple-test more-tests
 simple-test:
-	$(CC) $(CFLAGS) $(SRC_DIR)/gparser.c -DGP_TEST -o $(BUILD_DIR)/gp-test$(EXE)
+	$(CC) $(CFLAGS) $(SRC_DIR)/gecko.c -DGP_TEST -o $(BUILD_DIR)/gp-test$(EXE)
 	$(BUILD_DIR)/gp-test$(EXE) 1 1
 	@echo simple test is OK
 
 more-tests:
 	$(SRC_DIR)/test/test.sh
 
-bench: $(BUILD_DIR)/libgparser.$(LIBSUFF)
+bench: $(BUILD_DIR)/libgecko.$(LIBSUFF)
 	$(SRC_DIR)/test/compare.sh
 

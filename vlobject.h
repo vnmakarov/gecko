@@ -1,4 +1,4 @@
-/* This file is a part of GPARSER project.
+/* This file is a part of Gecko (GLR parser) project.
    Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
@@ -41,9 +41,9 @@ typedef struct {
   do {                                                                                           \
     vlo_t *_temp_vlo = &(vlo);                                                                   \
     size_t temp_initial_length = (initial_length);                                               \
-    gp_allocator_t *_temp_alloc = (allocator);                                                 \
+    gp_allocator_t *_temp_alloc = (allocator);                                                   \
     temp_initial_length = (temp_initial_length != 0 ? temp_initial_length : VLO_DEFAULT_LENGTH); \
-    _temp_vlo->vlo_start = (char *) gp_malloc (_temp_alloc, temp_initial_length);              \
+    _temp_vlo->vlo_start = (char *) gp_malloc (_temp_alloc, temp_initial_length);                \
     _temp_vlo->vlo_boundary = _temp_vlo->vlo_start + temp_initial_length;                        \
     _temp_vlo->vlo_free = _temp_vlo->vlo_start;                                                  \
     _temp_vlo->vlo_alloc = _temp_alloc;                                                          \
@@ -52,17 +52,17 @@ typedef struct {
 /* This macro is used for freeing memory allocated for VLO.  Any work (except for creation) with
    given VLO is not possible after evaluation of this macro.  The macro has not side effects. */
 #ifndef NDEBUG
-#define VLO_DELETE(vlo)                                     \
-  do {                                                      \
-    vlo_t *_temp_vlo = &(vlo);                              \
-    assert (_temp_vlo->vlo_start != NULL);                  \
+#define VLO_DELETE(vlo)                                   \
+  do {                                                    \
+    vlo_t *_temp_vlo = &(vlo);                            \
+    assert (_temp_vlo->vlo_start != NULL);                \
     gp_free (_temp_vlo->vlo_alloc, _temp_vlo->vlo_start); \
-    _temp_vlo->vlo_start = NULL;                            \
+    _temp_vlo->vlo_start = NULL;                          \
   } while (0)
 #else
-#define VLO_DELETE(vlo)                                     \
-  do {                                                      \
-    vlo_t *_temp_vlo = &(vlo);                              \
+#define VLO_DELETE(vlo)                                   \
+  do {                                                    \
+    vlo_t *_temp_vlo = &(vlo);                            \
     gp_free (_temp_vlo->vlo_alloc, _temp_vlo->vlo_start); \
   } while (0)
 #endif /* #ifndef NDEBUG */

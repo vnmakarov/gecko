@@ -1,4 +1,4 @@
-/* This file is a part of GPARSER project.
+/* This file is a part of Gecko (GLR parser) project.
    Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
@@ -208,7 +208,7 @@ static inline void _OS_create_function (os_t *os, size_t initial_segment_length)
   if (initial_segment_length == 0) initial_segment_length = OS_DEFAULT_SEGMENT_LENGTH;
   os->os_current_segment
     = (struct _os_segment *) gp_malloc (os->os_alloc,
-                                          initial_segment_length + sizeof (struct _os_segment));
+                                        initial_segment_length + sizeof (struct _os_segment));
   os->os_current_segment->os_previous_segment = NULL;
   os->os_top_object_start = _OS_ALIGNED_ADDRESS (os->os_current_segment->os_segment_contest);
   os->os_top_object_free = os->os_top_object_start;
@@ -265,8 +265,8 @@ static inline void _OS_expand_memory (os_t *os, size_t additional_length) {
   segment_length = os_top_object_length + additional_length;
   segment_length += segment_length / 2 + 1;
   if (segment_length < OS_DEFAULT_SEGMENT_LENGTH) segment_length = OS_DEFAULT_SEGMENT_LENGTH;
-  new_segment = (struct _os_segment *) gp_malloc (os->os_alloc,
-                                                    segment_length + sizeof (struct _os_segment));
+  new_segment
+    = (struct _os_segment *) gp_malloc (os->os_alloc, segment_length + sizeof (struct _os_segment));
   new_os_top_object_start = _OS_ALIGNED_ADDRESS (new_segment->os_segment_contest);
   memcpy (new_os_top_object_start, os->os_top_object_start, os_top_object_length);
   if (os->os_top_object_start == _OS_ALIGNED_ADDRESS (os->os_current_segment->os_segment_contest)) {

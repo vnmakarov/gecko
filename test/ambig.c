@@ -1,4 +1,4 @@
-/* This file is a part of GP (General Parser) project.
+/* This file is a part of Gecko Parser (GLR Parser) project.
    Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 

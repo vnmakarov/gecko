@@ -1,5 +1,5 @@
-/* This file is a part of YAEP (Yet Another Earley Parser) project.
-   Copyright (C) 1997-2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+/* This file is a part of Gecko Parser (GLR Parser) project.
+   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
 #ifndef __TICKER__

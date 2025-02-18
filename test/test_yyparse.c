@@ -1,4 +1,4 @@
-/* GP (General Parser)
+/* A part of Gecko Parser (GLR Parser) project.
    Copyright (c) 2025  Vladimir Makarov <vmakarov@gcc.gnu.org>
 */
 

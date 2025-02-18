@@ -1,4 +1,4 @@
-/* This file is a part of GP (General Parser) project.
+/* This file is a part of Gecko Parser (GLR Parser) project.
    Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
@@ -28,7 +28,7 @@
 #define parse yaep_parse
 #define error_message yaep_error_message
 #else
-#include "gparser.h"
+#include "gecko.h"
 #define ambig_type bool
 #define tree_node gp_tree_node
 #define set_debug_level gp_set_debug_level

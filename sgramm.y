@@ -1,16 +1,16 @@
 /* This is interface file of the code which transforms grammar description given by string into
-   representation which can be used by GPARSER.  So the code implements functions read_terminal and
-   read_rule imported by GPARSER.  */
+   representation which can be used by Gecko (GLR parser).  So the code implements functions read_terminal and
+   read_rule imported by Gecko (GLR parser).  */
 
 /* This is interface file of the code which transforms grammar description given by string into
-   representation which can be used by GPARSER.  So the code implements functions read_terminal and
-   read_rule imported by GPARSER.  */
+   representation which can be used by Gecko (GLR parser).  So the code implements functions read_terminal and
+   read_rule imported by Gecko (GLR parser).  */
 
 %{
 #include <ctype.h>
 #include <assert.h>
 
-/* The following is necessary if we use GPARSER with byacc/bison/msta parser. */
+/* The following is necessary if we use Gecko (GLR parser) with byacc/bison/msta parser. */
 #define yylval gp_yylval
 #define yylex gp_yylex
 #define yyerror gp_yyerror

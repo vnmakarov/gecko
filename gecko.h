@@ -1,4 +1,4 @@
-/* This file is a part of GPARSER project.
+/* This file is a part of Gecko Parser (GLR parser) project.
    Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 

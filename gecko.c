@@ -1,3 +1,7 @@
+/* This file is a major part of Gecko Parser (GLR parser) project.
+   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+*/
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <setjmp.h>
@@ -9,7 +13,7 @@
 #include "hashtab.h"
 #include "vlobject.h"
 #include "objstack.h"
-#include "gparser.h"
+#include "gecko.h"
 
 #ifdef __GNUC__
 #define FORCE_INLINE inline __attribute__ ((always_inline))
