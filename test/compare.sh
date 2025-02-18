@@ -207,8 +207,8 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
     rm -f elkh-c.cc elkh-c.h elkh-ambig.cc elkh-ambig.cc
 fi
 
-# GP 
-echo ++++++++GP: pure parsinga
+# Gecko 
+echo ++++++++Gecko: pure parsing
 if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1 <$TEST; then
   echo
 else
@@ -216,7 +216,7 @@ else
   exit 1
 fi
 
-echo GP -- Big test "(lines: `wc -l $BIG_TEST`)"
+echo Gecko -- Big test "(lines: `wc -l $BIG_TEST`)"
 if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1 <$BIG_TEST; then
   echo
 else
@@ -224,7 +224,7 @@ else
   exit 1
 fi
 
-echo ++++++++GP: ambiguous 'E=E+E|a' and 200 operators
+echo ++++++++Gecko: ambiguous 'E=E+E|a' and 200 operators
 if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1; then
   echo
 else
