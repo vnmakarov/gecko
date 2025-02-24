@@ -141,7 +141,7 @@ test: $(BUILD_DIR)/sgramm.c
 test: simple-test more-tests
 simple-test:
 	$(CC) $(CFLAGS) $(SRC_DIR)/gecko.c -DGP_TEST -o $(BUILD_DIR)/gp-test$(EXE)
-	$(BUILD_DIR)/gp-test$(EXE) 1 1
+	$(BUILD_DIR)/gp-test$(EXE) 1 2
 	@echo simple test is OK
 
 more-tests:
