@@ -78,28 +78,25 @@ struct gp_anode {   /* the abstract node: */
   /* cost of the node plus costs of all children if the cost flag is set up, otherwise,
      the value is cost of the abstract node itself: */
   int cost;
+  int children_num; /* elements in the next array */
   /* References for nodes for which the abstract node refers.  The array end marker is NULL. */
   struct gp_tree_node **children;
 };
 
-struct _gp_anode_name { /* not a part of the interface and for internal use only: */
-  char *name;           /* allocated abstract node name */
-};
-
 /* the alternative in the parse tree which are presents only for ambiguous grammar: */
 struct gp_alt {
-  struct gp_tree_node *node; /* the node (all node types but alternative) for this alternative */
-  struct gp_tree_node *next; /* the next alternative */
+  int alts_num;               /* elements in the next array */
+  struct gp_tree_node **alts; /* ordered list of alts */
 };
 
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
+  unsigned num;                /* node number */
   union {                      /* the node itself */
     struct gp_nil nil;
     struct gp_error error;
     struct gp_term term;
     struct gp_anode anode;
-    struct _gp_anode_name _anode_name; /* for internal use only */
     struct gp_alt alt;
   } val;
 };
