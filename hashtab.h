@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 /* The hash table element is represented by the following type. */
 typedef const void *hash_table_entry_t;
@@ -27,7 +28,7 @@ typedef struct hash_table {
   int collisions;
   /* Pointer to function for evaluation of hash value (any unsigned value).
      This function has one parameter of type hash_table_entry_t. */
-  unsigned (*hash_function) (hash_table_entry_t el_ptr);
+  uint64_t (*hash_function) (hash_table_entry_t el_ptr);
   /* Pointer to function for test on equality of hash table elements (two
      parameter of type hash_table_entry_t. */
   bool (*eq_function) (hash_table_entry_t el1_ptr, hash_table_entry_t el2_ptr);
@@ -62,9 +63,10 @@ static inline unsigned long _higher_prime_number (unsigned long number) {
 /* Create table with length slightly longer than given source length.  Created hash table is
    initiated as empty (all the hash table entries are EMPTY_ENTRY).  The function returns the
    created hash table. */
-static inline hash_table_t create_hash_table (
-  gp_allocator_t *allocator, size_t size, unsigned int (*hash_function) (hash_table_entry_t el_ptr),
-  bool (*eq_function) (hash_table_entry_t el1_ptr, hash_table_entry_t el2_ptr)) {
+static inline hash_table_t create_hash_table (gp_allocator_t *allocator, size_t size,
+                                              uint64_t (*hash_function) (hash_table_entry_t el_ptr),
+                                              bool (*eq_function) (hash_table_entry_t el1_ptr,
+                                                                   hash_table_entry_t el2_ptr)) {
   hash_table_t result;
   hash_table_entry_t *entry_ptr;
 
@@ -116,10 +118,10 @@ static inline hash_table_entry_t *find_hash_table_entry (hash_table_t htab,
                                                          hash_table_entry_t element, int reserve) {
   hash_table_entry_t *entry_ptr;
   hash_table_entry_t *first_deleted_entry_ptr;
-  unsigned hash_value, secondary_hash_value;
+  uint64_t hash_value, secondary_hash_value;
 
   assert (htab != NULL);
-  if (htab->size / 4 <= htab->number_of_elements / 3) _expand_hash_table (htab);
+  if (htab->size / 2 <= htab->number_of_elements) _expand_hash_table (htab);
   hash_value = (*htab->hash_function) (element);
   secondary_hash_value = 1 + hash_value % (htab->size - 2);
   hash_value %= htab->size;
@@ -155,7 +157,7 @@ static inline void _expand_hash_table (hash_table_t htab) {
   hash_table_entry_t *new_entry_ptr;
 
   assert (htab != NULL);
-  new_htab = create_hash_table (htab->alloc, htab->number_of_elements * 2, htab->hash_function,
+  new_htab = create_hash_table (htab->alloc, htab->number_of_elements * 3, htab->hash_function,
                                 htab->eq_function);
   for (entry_ptr = htab->entries; entry_ptr < htab->entries + htab->size; entry_ptr++)
     if (*entry_ptr != EMPTY_ENTRY && *entry_ptr != DELETED_ENTRY) {

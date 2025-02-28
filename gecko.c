@@ -30,10 +30,6 @@
 #define GP_MAX_ERROR_MESSAGE_LENGTH 200
 #endif
 
-/* Prime number (79087987342985798987987) mod 32 used for hash calculations: */
-static const unsigned jauquet_prime_mod32 = 2053222611;
-static const unsigned hash_shift = 611; /* shift used for hash calculations */
-
 struct symbs {             /* information about grammar vocabulary: */
   int n_terms, n_nonterms; /* number of all symbols and terminals */
   os_t symbs_os;           /* all symbols are placed in this object */
@@ -119,11 +115,9 @@ static inline void delete_htab_update_statistics (hash_table_t htab) {
   delete_hash_table (htab);
 }
 
-static unsigned symb_repr_hash (hash_table_entry_t s) { /* return hash of symbol representation */
-  unsigned result = jauquet_prime_mod32;
+static uint64_t symb_repr_hash (hash_table_entry_t s) { /* return hash of symbol representation */
   const char *str = ((struct symb *) s)->repr;
-  for (int i = 0; str[i] != '\0'; i++) result = result * hash_shift + (unsigned) str[i];
-  return result;
+  return hash (str, strlen (str), 42);
 }
 
 /* Equality of symbol representations. */
@@ -132,7 +126,7 @@ static bool symb_repr_eq (hash_table_entry_t s1, hash_table_entry_t s2) {
 }
 
 /* Hash of terminal code. */
-static unsigned symb_code_hash (hash_table_entry_t s) {
+static uint64_t symb_code_hash (hash_table_entry_t s) {
   struct symb *symb = ((struct symb *) s);
   assert (symb->term_p);
   return symb->u.term.code;
@@ -694,16 +688,13 @@ static void sit_print (FILE *f, struct sit *sit) { /* print situation SIT to fil
 #endif /* #ifndef NO_GP_DEBUG_PRINT */
 
 /* Return hash of sequence of N_SITS situations in array SITS. */
-static unsigned sits_hash (int n_sits, struct sit **sits) {
+static uint64_t sits_hash (int n_sits, struct sit **sits) {
   int n, i;
-  unsigned result;
+  uint64_t result;
 
-  result = jauquet_prime_mod32;
-  for (i = 0; i < n_sits; i++) {
-    n = sits[i]->sit_number;
-    result = result * hash_shift + n;
-  }
-  return result;
+  result = hash_init (24);
+  for (i = 0; i < n_sits; i++) result = hash_step (result, sits[i]->sit_number);
+  return hash_finish (result);
 }
 
 /* Finalize work with situations. */
@@ -762,7 +753,7 @@ static os_t sets_os;                          /* container of sets */
 static hash_table_t set_tab; /* set table: key is only start situations */
 
 /* Hash of set. */
-static unsigned set_hash (hash_table_entry_t s) {
+static uint64_t set_hash (hash_table_entry_t s) {
   struct set *set = (struct set *) s;
   return sits_hash (set->n_start_sits, set->sits);
 }
@@ -1481,25 +1472,25 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
 
 static hash_table_t nodes_htab;
 
-static unsigned node_hash (hash_table_entry_t n) {
+static uint64_t node_hash (hash_table_entry_t n) {
   struct gp_tree_node *node = (struct gp_tree_node *) n;
   uint64_t h;
   switch (node->type) {
   case GP_TERM:
     h = hash64 (node->val.term.code, 2);
-    return (unsigned) hash_finish (hash_step (h, (uint64_t) node->val.term.attr));
+    return hash_finish (hash_step (h, (uint64_t) node->val.term.attr));
   case GP_ANODE:
     h = hash (node->val.anode.children,
               sizeof (struct gp_tree_node *) * node->val.anode.children_num, 3);
     /* name exists in one exemplar */
-    return (unsigned) hash_finish (hash_step (h, (uint64_t) node->val.anode.name));
+    return hash_finish (hash_step (h, (uint64_t) node->val.anode.name));
   case GP_ALT:
     h = hash (node->val.alt.alts, sizeof (struct gp_tree_node *) * node->val.alt.alts_num, 4);
-    return (unsigned) hash_finish (h);
+    return hash_finish (h);
   case GP_OPT:
     h = hash64 ((uint64_t) node->val.opt.first, 5);
     h = hash64 ((uint64_t) node->val.opt.second, h);
-    return (unsigned) hash_finish (h);
+    return hash_finish (h);
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
 }
@@ -1545,7 +1536,7 @@ static void tree_nodes_init (void) {
   nodes_htab = create_hash_table (grammar->alloc, 300, node_hash, node_eq_p);
 }
 
-static void tree_nodes_finish (void) { delete_hash_table (nodes_htab); }
+static void tree_nodes_finish (void) { delete_htab_update_statistics (nodes_htab); }
 
 #define SWAP(a, b, t) \
   do {                \
