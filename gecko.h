@@ -51,6 +51,7 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_TERM,
                          GP_ANODE,
                          GP_ALT,
+                         GP_OPT,
                          GP_VISITED = 0x80, /* for internal use only */
 };
 
@@ -84,6 +85,11 @@ struct gp_alt {
   struct gp_tree_node **alts; /* ordered list of alts */
 };
 
+/* options: translation choices should be done correspondingly for all translation: */
+struct gp_opt {
+  struct gp_tree_node *first, *second;
+};
+
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
   unsigned num;                /* node number */
@@ -93,6 +99,7 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
     struct gp_term term;
     struct gp_anode anode;
     struct gp_alt alt;
+    struct gp_opt opt;
   } val;
 };
 
