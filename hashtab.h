@@ -49,28 +49,18 @@ static inline int get_collisions (hash_table_t htab) { return htab->collisions; 
 /* This macro defines reserved value for table entry which contained a deleted element. */
 #define DELETED_ENTRY ((void *) 1)
 
-/* Return the nearest prime number which is greater than given source number. */
-static inline unsigned long _higher_prime_number (unsigned long number) {
-  unsigned long i;
-
-  for (number = (number / 2) * 2 + 3;; number += 2) {
-    for (i = 3; i * i <= number; i += 2)
-      if (number % i == 0) break;
-    if (i * i > number) return number;
-  }
-}
-
-/* Create table with length slightly longer than given source length.  Created hash table is
+/* Create table with at least min_size length.  Created hash table is
    initiated as empty (all the hash table entries are EMPTY_ENTRY).  The function returns the
    created hash table. */
-static inline hash_table_t create_hash_table (gp_allocator_t *allocator, size_t size,
+static inline hash_table_t create_hash_table (gp_allocator_t *allocator, size_t min_size,
                                               uint64_t (*hash_function) (hash_table_entry_t el_ptr),
                                               bool (*eq_function) (hash_table_entry_t el1_ptr,
                                                                    hash_table_entry_t el2_ptr)) {
   hash_table_t result;
   hash_table_entry_t *entry_ptr;
+  size_t size;
 
-  size = _higher_prime_number (size);
+  for (size = 2; min_size > size; size *= 2);
   result = (hash_table_t) gp_malloc (allocator, sizeof (*result));
   result->entries
     = (hash_table_entry_t *) gp_malloc (allocator, size * sizeof (hash_table_entry_t));
@@ -118,17 +108,17 @@ static inline hash_table_entry_t *find_hash_table_entry (hash_table_t htab,
                                                          hash_table_entry_t element, int reserve) {
   hash_table_entry_t *entry_ptr;
   hash_table_entry_t *first_deleted_entry_ptr;
-  uint64_t hash_value, secondary_hash_value;
+  uint64_t hash_value;
 
   assert (htab != NULL);
   if (htab->size / 2 <= htab->number_of_elements) _expand_hash_table (htab);
   hash_value = (*htab->hash_function) (element);
-  secondary_hash_value = 1 + hash_value % (htab->size - 2);
-  hash_value %= htab->size;
+  if (hash_value == 0) hash_value++;
+  uint64_t mask = htab->size - 1, peterb = hash_value, ind = hash_value & mask;
   htab->searches++;
   first_deleted_entry_ptr = NULL;
   for (;; htab->collisions++) {
-    entry_ptr = htab->entries + hash_value;
+    entry_ptr = htab->entries + ind;
     if (*entry_ptr == EMPTY_ENTRY) {
       if (reserve) {
         htab->number_of_elements++;
@@ -142,8 +132,8 @@ static inline hash_table_entry_t *find_hash_table_entry (hash_table_t htab,
       if ((*htab->eq_function) (*entry_ptr, element)) break;
     } else if (first_deleted_entry_ptr == NULL)
       first_deleted_entry_ptr = entry_ptr;
-    hash_value += secondary_hash_value;
-    if (hash_value >= htab->size) hash_value -= htab->size;
+    peterb >>= 11;
+    ind = (5 * ind + peterb + 1) & mask;
   }
   return entry_ptr;
 }
