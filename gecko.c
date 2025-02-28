@@ -34,12 +34,6 @@
 static const unsigned jauquet_prime_mod32 = 2053222611;
 static const unsigned hash_shift = 611; /* shift used for hash calculations */
 
-struct gp_option { /* used for translation: */
-  int n_opts;
-  struct gp_tree_node **anodes;
-  int *repeats;
-};
-
 struct symbs {             /* information about grammar vocabulary: */
   int n_terms, n_nonterms; /* number of all symbols and terminals */
   os_t symbs_os;           /* all symbols are placed in this object */
@@ -1502,11 +1496,6 @@ static unsigned node_hash (hash_table_entry_t n) {
   case GP_ALT:
     h = hash (node->val.alt.alts, sizeof (struct gp_tree_node *) * node->val.alt.alts_num, 4);
     return (unsigned) hash_finish (h);
-  case GP_OPT:
-    h = hash (node->val.option->anodes, sizeof (struct gp_tree_node *) * node->val.option->n_opts,
-              5);
-    h = hash (node->val.option->repeats, sizeof (int) * node->val.option->n_opts, h);
-    return (unsigned) hash_finish (h);
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
 }
@@ -1529,15 +1518,6 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
     return (memcmp (node1->val.alt.alts, node2->val.alt.alts,
                     sizeof (struct gp_tree_node *) * node1->val.alt.alts_num)
             == 0);
-  case GP_OPT:
-    if (node1->val.option->n_opts != node2->val.option->n_opts) return false;
-    if (memcmp (node1->val.option->anodes, node2->val.option->anodes,
-                sizeof (struct gp_tree_node *) * node1->val.option->n_opts)
-        != 0)
-      return false;
-    return memcmp (node1->val.option->repeats, node2->val.option->repeats,
-                   sizeof (int) * node1->val.option->n_opts)
-           == 0;
   default: assert (false); /* nil and error node exist in one exemplar */
   }
 }
@@ -1583,7 +1563,7 @@ struct stack {
 };
 
 static vlo_t free_stacks;
-static vlo_t nodes_vlo, repeats_vlo;
+static vlo_t nodes_vlo;
 
 #ifndef NO_GP_DEBUG_PRINT
 static int n_stacks, n_stack_els, n_curr_stack_els;
@@ -1692,26 +1672,6 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (stack_el_t *el) {
   return get_term_node (el->set->symb->u.term.code, el->anode_attr);
 }
 
-static struct gp_tree_node *get_alt_node (struct gp_tree_node **alts, int alts_num) {
-  struct gp_tree_node node, *alt;
-  node.type = GP_ALT;
-  node.val.alt.alts_num = alts_num;
-  node.val.alt.alts = alts;
-  if ((alt = tree_node_find (&node)) != NULL) return alt;
-#ifndef NO_GP_DEBUG_PRINT
-  n_parse_alt_nodes++;
-#endif
-  size_t nl = sizeof (struct gp_tree_node);
-  alt = (struct gp_tree_node *) parse_alloc (nl + alts_num * sizeof (struct gp_tree_node *));
-  alt->type = GP_ALT;
-  alt->num = n_parse_nodes++;
-  alt->val.alt.alts_num = alts_num;
-  alt->val.alt.alts = (struct gp_tree_node **) ((char *) alt + nl);
-  memcpy (alt->val.alt.alts, alts, alts_num * sizeof (struct gp_tree_node *));
-  tree_node_insert (alt);
-  return alt;
-}
-
 static struct gp_tree_node *get_anode (struct gp_tree_node *an) {
   struct gp_tree_node *anode;
   if ((anode = tree_node_find (an)) != NULL) return anode;
@@ -1734,28 +1694,6 @@ static struct gp_tree_node *get_anode (struct gp_tree_node *an) {
   return anode;
 }
 
-static int node_cmp (const void *node1, const void *node2) {
-  const struct gp_tree_node *n1 = *(const struct gp_tree_node **) node1;
-  const struct gp_tree_node *n2 = *(const struct gp_tree_node **) node2;
-  return n1->num - n2->num;
-}
-
-static struct gp_tree_node *opt2anode (struct gp_option *opt) {
-  struct gp_tree_node **anodes = (struct gp_tree_node **) VLO_BEGIN (nodes_vlo);
-  if (opt->n_opts == 1) return anodes[0];
-  VLO_NULLIFY (nodes_vlo);
-  for (int i = 0; i < opt->n_opts; i++)
-    VLO_ADD_MEMORY (nodes_vlo, &opt->anodes[i], sizeof (struct gp_tree_node *));
-  qsort (anodes, opt->n_opts, sizeof (struct gp_tree_node *), node_cmp);
-  int n = 0;
-  for (int i = 0; i < opt->n_opts; i++)
-    if (n == 0 || anodes[n - 1] != anodes[i]) anodes[n++] = anodes[i];
-  if (n == 1) return anodes[0];
-  return get_alt_node (anodes, n);
-}
-
-static vlo_t alts_vlo, transl_diffs;
-
 static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct rule *rule) {
   int rhs_len = rule->rhs_len;
   if (rule->anode == NULL) {
@@ -1773,40 +1711,6 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
     rule->caller_anode = ((char *) (*parse_alloc) (strlen (rule->anode) + 1));
     strcpy (rule->caller_anode, rule->anode);
   }
-  struct iter {
-    int repeat_ind;
-    int repeat_num;        /* how many times to repeat until the next repetition */
-    struct gp_option *opt; /* NULL for no-option */
-  };
-  VLO_NULLIFY (repeats_vlo);
-  VLO_EXPAND (repeats_vlo, sizeof (struct iter) * rule->trans_len);
-  struct iter *iters = VLO_BEGIN (repeats_vlo);
-  int max_n_alts = 1, single_ind_opt = -2; /* -2 undef, -1 more than one */
-  for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
-    int disp = rule->order[i];
-    if (disp < 0) continue;
-    iters[disp].opt = NULL;
-    assert (disp < rule->trans_len);
-    stack_el_t *el = &stack_addr[start + i];
-    if (el->attr_p) {
-      assert (el->set->symb->term_p);
-      el->anode_attr = get_term_node (el->set->symb->u.term.code, el->anode_attr);
-      el->attr_p = false;
-      continue;
-    }
-    struct gp_tree_node *anode = el->anode_attr;
-    if (anode->type != GP_OPT) continue;
-    if (single_ind_opt >= 0) single_ind_opt = -1;
-    if (single_ind_opt == -2) single_ind_opt = i;
-    struct gp_option *opt = anode->val.option;
-    assert (opt->n_opts > 0);
-    iters[disp].opt = opt;
-    iters[disp].repeat_ind = 0;
-    iters[disp].repeat_num = opt->repeats[0];
-    int n_alts = 0;
-    for (int j = 0; j < opt->n_opts; j++) n_alts += opt->repeats[j];
-    if (max_n_alts < n_alts) max_n_alts = n_alts;
-  }
   struct gp_tree_node node;
   node.type = GP_ANODE;
   node.val.anode.name = rule->caller_anode;
@@ -1815,58 +1719,15 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
   VLO_EXPAND (nodes_vlo, sizeof (struct gp_tree_node *) * rule->trans_len);
   node.val.anode.children = VLO_BEGIN (nodes_vlo);
   node.val.anode.children_num = rule->trans_len;
-  if (single_ind_opt >= 0) {
-    stack_el_t *el = &stack_addr[stack_len - rhs_len + single_ind_opt];
-    struct gp_tree_node *anode = el->anode_attr;
-    el->anode_attr = opt2anode (anode->val.option);
-    max_n_alts = 1;
+  for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
+    int disp = rule->order[i];
+    if (disp < 0) continue;
+    stack_el_t *el = &stack_addr[start + i];
+    struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
+    if (el->attr_p) return get_stack_term_node (el);
+    node.val.anode.children[disp] = anode;
   }
-  if (max_n_alts == 1) {
-    for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
-      int disp = rule->order[i];
-      if (disp < 0) continue;
-      stack_el_t *el = &stack_addr[start + i];
-      assert (!el->attr_p);
-      node.val.anode.children[disp] = (struct gp_tree_node *) el->anode_attr;
-    }
-    return get_anode (&node);
-  }
-  VLO_NULLIFY (alts_vlo);
-  for (int alt_num = 0; alt_num < max_n_alts;) {
-    VLO_EXPAND (nodes_vlo, sizeof (struct gp_tree_node *) * rule->trans_len);
-    node.val.anode.children = VLO_BEGIN (nodes_vlo);
-    int min_iter = 0;
-    for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
-      int disp = rule->order[i];
-      if (disp < 0) continue;
-      assert (disp < rule->trans_len);
-      if (iters[disp].opt != NULL && (min_iter == 0 || min_iter > iters[disp].repeat_num))
-        min_iter = iters[disp].repeat_num;
-      stack_el_t *el = &stack_addr[start + i];
-      assert (!el->attr_p);
-      struct gp_tree_node *child = (struct gp_tree_node *) el->anode_attr;
-      if (child->type == GP_OPT) {
-        assert (iters[disp].opt != NULL);
-        child = child->val.option->anodes[iters[disp].repeat_ind];
-      }
-      node.val.anode.children[disp] = child;
-    }
-    struct gp_tree_node *anode = get_anode (&node);
-    VLO_ADD_MEMORY (alts_vlo, &anode, sizeof (anode));
-    assert (min_iter > 0);
-    for (int i = 0; i < rule->trans_len; i++) {
-      if (iters[i].opt == NULL) continue;
-      iters[i].repeat_num -= min_iter;
-      if (iters[i].repeat_num != 0) continue;
-      iters[i].repeat_num = iters[i].opt->repeats[++iters[i].repeat_ind];
-    }
-    alt_num += min_iter;
-  }
-  int alts_num = VLO_LENGTH (alts_vlo) / sizeof (struct gp_tree_node *);
-  if (alts_num == 1) return ((struct gp_tree_node **) VLO_BEGIN (alts_vlo))[0];
-  qsort ((struct gp_tree_node **) VLO_BEGIN (alts_vlo), alts_num, sizeof (struct gp_tree_node *),
-         node_cmp);
-  return get_alt_node ((struct gp_tree_node **) VLO_BEGIN (alts_vlo), alts_num);
+  return get_anode (&node);
 }
 
 static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
@@ -1893,99 +1754,26 @@ static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *
   return goto_set;
 }
 
-static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
+static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *diff) {
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
   stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (stack1->els);
   stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (stack2->els);
-  VLO_NULLIFY (transl_diffs);
+  *diff = -1;
   for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
     stack_el_t *el1 = &stack_addr1[i], *el2 = &stack_addr2[i];
     if (el1->set != el2->set) return false;
-    if (el1->anode_attr != el2->anode_attr) VLO_ADD_MEMORY (transl_diffs, &i, sizeof (i));
+    assert (el1->attr_p == el2->attr_p);
+    if (el1->anode_attr == el2->anode_attr) continue;
+    if (*diff >= 0) return false;
+    assert (*diff < 0 && !el1->attr_p);
+    *diff = i;
   }
   return true;
 }
 
-static struct gp_tree_node *combine_options (int n_opts, int *repeats, struct gp_tree_node **anodes,
-                                             int n_opts2, int *repeats2,
-                                             struct gp_tree_node **anodes2) {
-  assert (n_opts >= 1 && n_opts2 >= 1);
-  bool comb_p = anodes[n_opts - 1] == anodes2[0];
-  VLO_NULLIFY (nodes_vlo);
-  VLO_NULLIFY (repeats_vlo);
-  for (int i = 0; i < n_opts; i++) {
-    VLO_ADD_MEMORY (nodes_vlo, &anodes[i], sizeof (struct gp_tree_node *));
-    int repeat = repeats[i];
-    if (comb_p && i + 1 == n_opts) repeat += repeats2[0];
-    VLO_ADD_MEMORY (repeats_vlo, &repeat, sizeof (repeat));
-  }
-  for (int i = comb_p ? 1 : 0; i < n_opts2; i++) {
-    VLO_ADD_MEMORY (nodes_vlo, &anodes2[i], sizeof (struct gp_tree_node *));
-    VLO_ADD_MEMORY (repeats_vlo, &repeats2[i], sizeof (int));
-  }
-  struct gp_option option;
-  struct gp_tree_node node, *opt_node;
-  option.n_opts = n_opts + n_opts2;
-  if (comb_p) option.n_opts--;
-  option.anodes = VLO_BEGIN (nodes_vlo);
-  option.repeats = VLO_BEGIN (repeats_vlo);
-  node.type = GP_OPT;
-  node.val.option = &option;
-  if ((opt_node = tree_node_find (&node)) != NULL) return opt_node;
-#if !defined(NO_GP_DEBUG_PRINT)
-  n_options++;
-#endif
-  opt_node = (*parse_alloc) (sizeof (struct gp_tree_node) + sizeof (struct gp_option)
-                             + VLO_LENGTH (nodes_vlo) + VLO_LENGTH (repeats_vlo));
-  opt_node->type = GP_OPT;
-  opt_node->num = n_parse_nodes++;
-  opt_node->val.option = (struct gp_option *) ((char *) opt_node + sizeof (struct gp_tree_node));
-  opt_node->val.option->n_opts = option.n_opts;
-  opt_node->val.option->anodes
-    = (struct gp_tree_node **) ((char *) opt_node->val.option + sizeof (struct gp_option));
-  memcpy (opt_node->val.option->anodes, VLO_BEGIN (nodes_vlo), VLO_LENGTH (nodes_vlo));
-  opt_node->val.option->repeats
-    = (int *) ((char *) opt_node->val.option->anodes + VLO_LENGTH (nodes_vlo));
-  memcpy (opt_node->val.option->repeats, VLO_BEGIN (repeats_vlo), VLO_LENGTH (repeats_vlo));
-  tree_node_insert (opt_node);
-  return opt_node;
+static struct gp_tree_node *choose_transl (struct gp_tree_node *a1, struct gp_tree_node *a2) {
+  return a1;
 }
-
-static void combine_nodes (struct stack *s, struct stack *s2) {
-  for (int i = 0; i < (int) (VLO_LENGTH (transl_diffs) / sizeof (int)); i++) {
-    int ind = ((int *) VLO_BEGIN (transl_diffs))[i];
-    assert (ind >= 0 && (size_t) ind < VLO_LENGTH (s->els) / sizeof (stack_el_t));
-    stack_el_t *el = &((stack_el_t *) VLO_BEGIN (s->els))[ind];
-    stack_el_t *el2 = &((stack_el_t *) VLO_BEGIN (s2->els))[ind];
-    assert (el->set == el2->set);
-    int n = 1, n2 = 1;
-    int *repeats = &n, *repeats2 = &n2;
-    struct gp_tree_node **alts = (struct gp_tree_node **) &el->anode_attr;
-    struct gp_tree_node **alts2 = (struct gp_tree_node **) &el2->anode_attr;
-    if (el->attr_p) {
-      el->anode_attr = (void *) get_stack_term_node (el);
-      el->attr_p = false;
-    }
-    if (el2->attr_p) {
-      el2->anode_attr = (void *) get_stack_term_node (el2);
-      el2->attr_p = false;
-    }
-    struct gp_tree_node *anode = el->anode_attr, *anode2 = el2->anode_attr;
-    if (anode->type == GP_OPT) {
-      n = anode->val.option->n_opts;
-      alts = anode->val.option->anodes;
-      repeats = anode->val.option->repeats;
-    }
-    if (anode2->type == GP_OPT) {
-      n2 = anode2->val.option->n_opts;
-      alts2 = anode2->val.option->anodes;
-      repeats2 = anode2->val.option->repeats;
-    }
-    el->attr_p = false;
-    el->anode_attr = combine_options (n, repeats, alts, n2, repeats2, alts2);
-  }
-}
-
 static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
   bool merge_p = false;
   int last = 0;
@@ -1995,25 +1783,20 @@ static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
     ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
     for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
-      if (curr2 == NULL || !stack_eq_p (curr, curr2)) continue;
+      int diff;
+      if (curr2 == NULL || !stack_eq_p (curr, curr2, &diff)) continue;
+      if (diff >= 0) {
+        stack_el_t *el = &((stack_el_t *) VLO_BEGIN (curr->els))[diff];
+        stack_el_t *el2 = &((stack_el_t *) VLO_BEGIN (curr2->els))[diff];
+        el->anode_attr = choose_transl (el->anode_attr, el2->anode_attr);
+      }
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
       merge_p = true;
-      if (VLO_LENGTH (transl_diffs) > 0) combine_nodes (curr, curr2);
       stack_free (curr2);
     }
   }
   VLO_SHORTEN (*stacks, VLO_LENGTH (*stacks) - last * sizeof (struct stack *));
   return merge_p;
-}
-
-static void transl_init (void) {
-  VLO_CREATE (alts_vlo, grammar->alloc, 16);
-  VLO_CREATE (transl_diffs, grammar->alloc, 16);
-}
-
-static void transl_finish (void) {
-  VLO_DELETE (alts_vlo);
-  VLO_DELETE (transl_diffs);
 }
 
 #ifndef NO_GP_DEBUG_PRINT
@@ -2027,18 +1810,9 @@ static void print_stack (FILE *f, struct stack *stack) {
     if (el->attr_p) {
       assert (symb->term_p);
       fprintf (f, ":a%llx", (long long) el->anode_attr);
-      continue;
-    }
-    struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
-    if (anode->type != GP_OPT) {
+    } else {
+      struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
       fprintf (f, ":n%d", anode->num);
-      continue;
-    }
-    for (int n = 0; n < anode->val.option->n_opts; n++) {
-      struct gp_tree_node *alt = anode->val.option->anodes[n];
-      fprintf (f, "%c", n == 0 ? ':' : ',');
-      fprintf (f, "n%d", alt->num);
-      if (anode->val.option->repeats[n] > 1) fprintf (f, "(%d)", anode->val.option->repeats[n]);
     }
   }
   fprintf (f, "\n");
@@ -2077,9 +1851,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   VLO_CREATE (symb_sits, grammar->alloc, 16);
   VLO_CREATE (actions_vlo, grammar->alloc, 16);
   VLO_CREATE (nodes_vlo, grammar->alloc, 16);
-  VLO_CREATE (repeats_vlo, grammar->alloc, 16);
   stack_init ();
-  transl_init ();
   tree_nodes_init ();
   struct stack *single_stack = stack_create (NULL);
   push_init_set (single_stack, get_start_set ());
@@ -2194,8 +1966,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       assert (VLO_LENGTH (stack->els) == 3 * sizeof (stack_el_t));
       stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[1];
       assert (!el->attr_p);
-      struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
-      *transl = anode->type == GP_OPT ? opt2anode (anode->val.option) : anode;
+      *transl = (struct gp_tree_node *) el->anode_attr;
       res = true;
     }
   }
@@ -2205,9 +1976,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   VLO_DELETE (symb_sits);
   VLO_DELETE (actions_vlo);
   VLO_DELETE (nodes_vlo);
-  VLO_DELETE (repeats_vlo);
   stack_finish ();
-  transl_finish ();
   tree_nodes_finish ();
   return res;
 }

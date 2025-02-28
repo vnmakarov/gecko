@@ -51,8 +51,7 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_TERM,
                          GP_ANODE,
                          GP_ALT,
-                         GP_OPT,            /* for internal use only */
-                         GP_VISITED = 0x80, /* mask for internal use only */
+                         GP_VISITED = 0x80, /* for internal use only */
 };
 
 struct gp_nil { /* The node exists in one examplar. See comment to read_rule. */
@@ -85,8 +84,6 @@ struct gp_alt {
   struct gp_tree_node **alts; /* ordered list of alts */
 };
 
-struct gp_option;
-
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
   unsigned num;                /* node number */
@@ -96,7 +93,6 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
     struct gp_term term;
     struct gp_anode anode;
     struct gp_alt alt;
-    struct gp_option *option; /* for internal use only */
   } val;
 };
 
