@@ -689,11 +689,8 @@ static void sit_print (FILE *f, struct sit *sit) { /* print situation SIT to fil
 
 /* Return hash of sequence of N_SITS situations in array SITS. */
 static uint64_t sits_hash (int n_sits, struct sit **sits) {
-  int n, i;
-  uint64_t result;
-
-  result = hash_init (24);
-  for (i = 0; i < n_sits; i++) result = hash_step (result, sits[i]->sit_number);
+  uint64_t result = hash_init (24);
+  for (int i = 0; i < n_sits; i++) result = hash_step (result, sits[i]->sit_number);
   return hash_finish (result);
 }
 
@@ -1471,6 +1468,7 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
 }
 
 static hash_table_t nodes_htab;
+static struct gp_tree_node *free_node; /* used for insertion of node into the table */
 
 static uint64_t node_hash (hash_table_entry_t n) {
   struct gp_tree_node *node = (struct gp_tree_node *) n;
@@ -1520,23 +1518,23 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
   }
 }
 
-static struct gp_tree_node *tree_node_find (struct gp_tree_node *node) {
-  hash_table_entry_t *entry = find_hash_table_entry (nodes_htab, node, false);
-  if (*entry == NULL) return NULL;
-  return (struct gp_tree_node *) *entry;
-}
-
-static void tree_node_insert (struct gp_tree_node *node) {
+/* Return node in the table  */
+static struct gp_tree_node *tree_node_insert (struct gp_tree_node *node) {
   hash_table_entry_t *entry = find_hash_table_entry (nodes_htab, node, true);
-  assert (*entry == NULL);
+  if (*entry != NULL) return *(struct gp_tree_node **) entry;
   *entry = node;
+  return node;
 }
 
 static void tree_nodes_init (void) {
+  free_node = (struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node));
   nodes_htab = create_hash_table (grammar->alloc, 300, node_hash, node_eq_p);
 }
 
-static void tree_nodes_finish (void) { delete_htab_update_statistics (nodes_htab); }
+static void tree_nodes_finish (void) {
+  if (parse_free != NULL) parse_free (free_node);
+  delete_htab_update_statistics (nodes_htab);
+}
 
 #define SWAP(a, b, t) \
   do {                \
@@ -1649,19 +1647,17 @@ static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set, void
 }
 
 static FORCE_INLINE struct gp_tree_node *get_term_node (int code, void *attr) {
-  struct gp_tree_node node, *term_node;
-  node.type = GP_TERM;
-  node.val.term.code = code;
-  node.val.term.attr = attr;
-  if ((term_node = tree_node_find (&node)) != NULL) return term_node;
+  struct gp_tree_node *term_node;
+  free_node->type = GP_TERM;
+  free_node->val.term.code = code;
+  free_node->val.term.attr = attr;
+  if ((term_node = tree_node_insert (free_node)) != free_node) return term_node;
 #if !defined(NO_GP_DEBUG_PRINT)
   n_parse_term_nodes++;
 #endif
-  term_node = (*parse_alloc) (sizeof (struct gp_tree_node));
-  term_node->type = GP_TERM;
+  term_node = free_node;
+  free_node = (*parse_alloc) (sizeof (struct gp_tree_node));
   term_node->num = n_parse_nodes++;
-  term_node->val.term = node.val.term;
-  tree_node_insert (term_node);
   return term_node;
 }
 
@@ -1670,63 +1666,56 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (stack_el_t *el) {
   return get_term_node (el->set->symb->u.term.code, el->anode_attr);
 }
 
-static struct gp_tree_node *get_anode (struct gp_tree_node *an) {
+static struct gp_tree_node *get_anode (const char *name, int children_num,
+                                       struct gp_tree_node **children, int cost) {
   struct gp_tree_node *anode;
-  if ((anode = tree_node_find (an)) != NULL) return anode;
+  free_node->type = GP_ANODE;
+  free_node->val.anode.name = name;
+  free_node->val.anode.children_num = children_num;
+  free_node->val.anode.children = children;
+  if ((anode = tree_node_insert (free_node)) != free_node) return anode;
 #if !defined(NO_GP_DEBUG_PRINT)
   n_parse_abstract_nodes++;
 #endif
-  int children_num = an->val.anode.children_num;
-  size_t children_len = children_num * sizeof (struct gp_tree_node *);
-  anode = ((struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node) + children_len));
-  anode->type = GP_ANODE;
+  anode = free_node;
+  free_node = (*parse_alloc) (sizeof (struct gp_tree_node));
   anode->num = n_parse_nodes++;
-  anode->val.anode.name = an->val.anode.name;
-  anode->val.anode.cost = an->val.anode.cost;
-  anode->val.anode.children_num = children_num;
-  anode->val.anode.children
-    = ((struct gp_tree_node **) ((char *) anode + sizeof (struct gp_tree_node)));
-  memcpy (anode->val.anode.children, an->val.anode.children,
-          children_num * sizeof (struct gp_tree_node *));
-  tree_node_insert (anode);
+  anode->val.anode.cost = cost;
+  anode->val.anode.children = parse_alloc (children_num * sizeof (struct gp_tree_node *));
+  memcpy (anode->val.anode.children, children, children_num * sizeof (struct gp_tree_node *));
   return anode;
 }
 
 static struct gp_tree_node *get_alt_node (struct gp_tree_node **alts, int alts_num) {
-  struct gp_tree_node node, *alt;
-  node.type = GP_ALT;
-  node.val.alt.alts_num = alts_num;
-  node.val.alt.alts = alts;
-  if ((alt = tree_node_find (&node)) != NULL) return alt;
+  struct gp_tree_node *alt;
+  free_node->type = GP_ALT;
+  free_node->val.alt.alts_num = alts_num;
+  free_node->val.alt.alts = alts;
+  if ((alt = tree_node_insert (free_node)) != free_node) return alt;
 #ifndef NO_GP_DEBUG_PRINT
   n_parse_alt_nodes++;
 #endif
-  size_t nl = sizeof (struct gp_tree_node);
-  alt = (struct gp_tree_node *) parse_alloc (nl + alts_num * sizeof (struct gp_tree_node *));
-  alt->type = GP_ALT;
+  alt = free_node;
+  free_node = (*parse_alloc) (sizeof (struct gp_tree_node));
   alt->num = n_parse_nodes++;
-  alt->val.alt.alts_num = alts_num;
-  alt->val.alt.alts = (struct gp_tree_node **) ((char *) alt + nl);
+  alt->val.alt.alts
+    = (struct gp_tree_node **) parse_alloc (alts_num * sizeof (struct gp_tree_node *));
   memcpy (alt->val.alt.alts, alts, alts_num * sizeof (struct gp_tree_node *));
-  tree_node_insert (alt);
   return alt;
 }
 
 static struct gp_tree_node *get_opt_node (struct gp_tree_node *first, struct gp_tree_node *second) {
-  struct gp_tree_node node, *opt;
-  node.type = GP_OPT;
-  node.val.opt.first = first;
-  node.val.opt.second = second;
-  if ((opt = tree_node_find (&node)) != NULL) return opt;
+  struct gp_tree_node *opt;
+  free_node->type = GP_OPT;
+  free_node->val.opt.first = first;
+  free_node->val.opt.second = second;
+  if ((opt = tree_node_insert (free_node)) != free_node) return opt;
 #ifndef NO_GP_DEBUG_PRINT
   n_parse_opt_nodes++;
 #endif
-  opt = (struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node));
-  opt->type = GP_OPT;
+  opt = free_node;
+  free_node = (*parse_alloc) (sizeof (struct gp_tree_node));
   opt->num = n_parse_nodes++;
-  opt->val.opt.first = first;
-  opt->val.opt.second = second;
-  tree_node_insert (opt);
   return opt;
 }
 
@@ -1747,23 +1736,18 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
     rule->caller_anode = ((char *) (*parse_alloc) (strlen (rule->anode) + 1));
     strcpy (rule->caller_anode, rule->anode);
   }
-  struct gp_tree_node node;
-  node.type = GP_ANODE;
-  node.val.anode.name = rule->caller_anode;
-  node.val.anode.cost = rule->anode_cost;
   VLO_NULLIFY (nodes_vlo);
   VLO_EXPAND (nodes_vlo, sizeof (struct gp_tree_node *) * rule->trans_len);
-  node.val.anode.children = VLO_BEGIN (nodes_vlo);
-  node.val.anode.children_num = rule->trans_len;
+  struct gp_tree_node **children = VLO_BEGIN (nodes_vlo);
   for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
     int disp = rule->order[i];
     if (disp < 0) continue;
     stack_el_t *el = &stack_addr[start + i];
     struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
     if (el->attr_p) return get_stack_term_node (el);
-    node.val.anode.children[disp] = anode;
+    children[disp] = anode;
   }
-  return get_anode (&node);
+  return get_anode (rule->caller_anode, rule->trans_len, children, rule->anode_cost);
 }
 
 static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
