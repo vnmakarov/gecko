@@ -79,14 +79,9 @@ struct gp_anode {   /* the abstract node: */
   struct gp_tree_node **children;
 };
 
-/* the alternative in the parse tree which are presents only for ambiguous grammar: */
+/* alternative translations or options (translation choices should be done correspondingly for all
+   translation): */
 struct gp_alt {
-  int alts_num;               /* elements in the next array */
-  struct gp_tree_node **alts; /* ordered list of alts */
-};
-
-/* options: translation choices should be done correspondingly for all translation: */
-struct gp_opt {
   struct gp_tree_node *first, *second;
 };
 
@@ -98,8 +93,7 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
     struct gp_error error;
     struct gp_term term;
     struct gp_anode anode;
-    struct gp_alt alt;
-    struct gp_opt opt;
+    struct gp_alt alt_opt; /* alternative or option */
   } val;
 };
 

@@ -1472,7 +1472,7 @@ static struct gp_tree_node *free_node; /* used for insertion of node into the ta
 
 static uint64_t node_hash (hash_table_entry_t n) {
   struct gp_tree_node *node = (struct gp_tree_node *) n;
-  uint64_t h;
+  uint64_t h, seed;
   switch (node->type) {
   case GP_TERM:
     h = hash64 (node->val.term.code, 2);
@@ -1482,12 +1482,12 @@ static uint64_t node_hash (hash_table_entry_t n) {
               sizeof (struct gp_tree_node *) * node->val.anode.children_num, 3);
     /* name exists in one exemplar */
     return hash_finish (hash_step (h, (uint64_t) node->val.anode.name));
-  case GP_ALT:
-    h = hash (node->val.alt.alts, sizeof (struct gp_tree_node *) * node->val.alt.alts_num, 4);
-    return hash_finish (h);
+  case GP_ALT: seed = 4; goto alt_opt;
   case GP_OPT:
-    h = hash64 ((uint64_t) node->val.opt.first, 5);
-    h = hash64 ((uint64_t) node->val.opt.second, h);
+    seed = 5;
+  alt_opt:
+    h = hash64 ((uint64_t) node->val.alt_opt.first, seed);
+    h = hash64 ((uint64_t) node->val.alt_opt.second, h);
     return hash_finish (h);
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
@@ -1507,13 +1507,9 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
                     sizeof (struct gp_tree_node *) * node1->val.anode.children_num)
             == 0);
   case GP_ALT:
-    if (node1->val.alt.alts_num != node2->val.alt.alts_num) return false;
-    return (memcmp (node1->val.alt.alts, node2->val.alt.alts,
-                    sizeof (struct gp_tree_node *) * node1->val.alt.alts_num)
-            == 0);
   case GP_OPT:
-    return (node1->val.opt.first == node2->val.opt.first
-            && node1->val.opt.second == node2->val.opt.second);
+    return (node1->val.alt_opt.first == node2->val.alt_opt.first
+            && node1->val.alt_opt.second == node2->val.alt_opt.second);
   default: assert (false); /* nil and error node exist in one exemplar */
   }
 }
@@ -1686,37 +1682,35 @@ static struct gp_tree_node *get_anode (const char *name, int children_num,
   return anode;
 }
 
-static struct gp_tree_node *get_alt_node (struct gp_tree_node **alts, int alts_num) {
-  struct gp_tree_node *alt;
-  free_node->type = GP_ALT;
-  free_node->val.alt.alts_num = alts_num;
-  free_node->val.alt.alts = alts;
-  if ((alt = tree_node_insert (free_node)) != free_node) return alt;
+static bool ambiguous_parse_p;
+
+static struct gp_tree_node *get_alt_opt_node (enum gp_tree_node_type type,
+                                              struct gp_tree_node *first,
+                                              struct gp_tree_node *second) {
+  ambiguous_parse_p = true;
+  free_node->type = type;
+  free_node->val.alt_opt.first = first;
+  free_node->val.alt_opt.second = second;
+  struct gp_tree_node *res = tree_node_insert (free_node);
+  if (res != free_node) return res;
 #ifndef NO_GP_DEBUG_PRINT
-  n_parse_alt_nodes++;
+  if (type == GP_ALT)
+    n_parse_alt_nodes++;
+  else
+    n_parse_opt_nodes++;
 #endif
-  alt = free_node;
+  res = free_node;
   free_node = (*parse_alloc) (sizeof (struct gp_tree_node));
-  alt->num = n_parse_nodes++;
-  alt->val.alt.alts
-    = (struct gp_tree_node **) parse_alloc (alts_num * sizeof (struct gp_tree_node *));
-  memcpy (alt->val.alt.alts, alts, alts_num * sizeof (struct gp_tree_node *));
-  return alt;
+  res->num = n_parse_nodes++;
+  return res;
+}
+
+static struct gp_tree_node *get_alt_node (struct gp_tree_node *first, struct gp_tree_node *second) {
+  return get_alt_opt_node (GP_ALT, first, second);
 }
 
 static struct gp_tree_node *get_opt_node (struct gp_tree_node *first, struct gp_tree_node *second) {
-  struct gp_tree_node *opt;
-  free_node->type = GP_OPT;
-  free_node->val.opt.first = first;
-  free_node->val.opt.second = second;
-  if ((opt = tree_node_insert (free_node)) != free_node) return opt;
-#ifndef NO_GP_DEBUG_PRINT
-  n_parse_opt_nodes++;
-#endif
-  opt = free_node;
-  free_node = (*parse_alloc) (sizeof (struct gp_tree_node));
-  opt->num = n_parse_nodes++;
-  return opt;
+  return get_alt_opt_node (GP_OPT, first, second);
 }
 
 static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct rule *rule) {
@@ -1790,7 +1784,7 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
 }
 
 static void combine_nodes (struct stack *s, struct stack *s2) {
-  for (int i = 0; i < (int) (VLO_LENGTH (transl_diffs) / sizeof (int)); i++) {
+  for (int i = 0, n = (int) (VLO_LENGTH (transl_diffs) / sizeof (int)); i < n; i++) {
     int ind = ((int *) VLO_BEGIN (transl_diffs))[i];
     assert (ind >= 0 && (size_t) ind < VLO_LENGTH (s->els) / sizeof (stack_el_t));
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (s->els))[ind];
@@ -1805,7 +1799,8 @@ static void combine_nodes (struct stack *s, struct stack *s2) {
       el2->attr_p = false;
     }
     el->attr_p = false;
-    el->anode_attr = get_opt_node (el->anode_attr, el2->anode_attr);
+    el->anode_attr = n == 1 ? get_alt_node (el->anode_attr, el2->anode_attr)
+                            : get_opt_node (el->anode_attr, el2->anode_attr);
   }
 }
 
@@ -1870,6 +1865,7 @@ static int n_single_stack_actions, n_multi_stack_actions;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
+  ambiguous_parse_p = false;
   n_parse_nodes = 0;
   empty_node = (struct gp_tree_node *) parse_alloc (sizeof (struct gp_tree_node));
   empty_node->type = GP_NIL;
@@ -2011,6 +2007,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   VLO_DELETE (transl_diffs);
   stack_finish ();
   tree_nodes_finish ();
+  *ambiguous_p = ambiguous_parse_p;
   return res;
 }
 
@@ -2040,17 +2037,13 @@ static void print_node (FILE *f, struct gp_tree_node *node) {
     fprintf (f, " )\n");
     for (i = 0; i < node->val.anode.children_num; i++) print_node (f, node->val.anode.children[i]);
     break;
-  case GP_ALT:
-    fprintf (f, "ALTERNATIVE:");
-    for (i = 0; i < node->val.alt.alts_num; i++) fprintf (f, " %d", node->val.alt.alts[i]->num);
-    fprintf (f, "\n");
-    for (i = 0; i < node->val.alt.alts_num; i++) print_node (f, node->val.alt.alts[i]);
-    break;
+  case GP_ALT: fprintf (f, "ALTERNATIVE:"); goto alt_node;
   case GP_OPT:
     fprintf (f, "OPTION:");
-    fprintf (f, "%d %d\n", node->val.opt.first->num, node->val.opt.second->num);
-    print_node (f, node->val.opt.first);
-    print_node (f, node->val.opt.second);
+  alt_node:
+    fprintf (f, "%d %d\n", node->val.alt_opt.first->num, node->val.alt_opt.second->num);
+    print_node (f, node->val.alt_opt.first);
+    print_node (f, node->val.alt_opt.second);
     break;
   default: assert (false);
   }
@@ -2191,23 +2184,15 @@ static void free_tree_reduce (struct gp_tree_node *node) {
       }
     break;
   case GP_ALT:
-    for (int i = 0; i < node->val.alt.alts_num; i++) {
-      if (node->val.alt.alts[i]->type & GP_VISITED) {
-        node->val.alt.alts[i] = NULL;
-      } else {
-        free_tree_reduce (node->val.alt.alts[i]);
-      }
-    }
-    break;
   case GP_OPT:
-    if (node->val.opt.first->type & GP_VISITED)
-      node->val.opt.first = NULL;
+    if (node->val.alt_opt.first->type & GP_VISITED)
+      node->val.alt_opt.first = NULL;
     else
-      free_tree_reduce (node->val.opt.first);
-    if (node->val.opt.second->type & GP_VISITED)
-      node->val.opt.second = NULL;
+      free_tree_reduce (node->val.alt_opt.first);
+    if (node->val.alt_opt.second->type & GP_VISITED)
+      node->val.alt_opt.second = NULL;
     else
-      free_tree_reduce (node->val.opt.second);
+      free_tree_reduce (node->val.alt_opt.second);
     break;
   default: assert ("This should not happen" == NULL);
   }
@@ -2230,13 +2215,9 @@ static void free_tree_sweep (struct gp_tree_node *node, void (*parse_free_fn) (v
         free_tree_sweep (node->val.anode.children[i], parse_free_fn, termcb);
     break;
   case GP_ALT:
-    for (int i = 0; i < node->val.alt.alts_num; i++)
-      if (node->val.alt.alts[i] != NULL)
-        free_tree_sweep (node->val.alt.alts[i], parse_free_fn, termcb);
-    break;
   case GP_OPT:
-    free_tree_sweep (node->val.opt.first, parse_free_fn, termcb);
-    free_tree_sweep (node->val.opt.second, parse_free_fn, termcb);
+    free_tree_sweep (node->val.alt_opt.first, parse_free_fn, termcb);
+    free_tree_sweep (node->val.alt_opt.second, parse_free_fn, termcb);
     break;
   default: assert ("This should not happen" == NULL);
   }
