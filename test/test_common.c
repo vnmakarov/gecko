@@ -21,9 +21,9 @@ static int line = 1;
 
 static hash_table_t table;
 
-static unsigned hash (hash_table_entry_t el) {
+static uint64_t hash (hash_table_entry_t el) {
   const char *id = (char *) el;
-  unsigned result, i;
+  uint64_t result, i;
 
   for (result = i = 0; *id++ != '\0'; i++) result += ((unsigned char) *id << (i % CHAR_BIT));
   return result;
