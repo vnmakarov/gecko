@@ -1486,8 +1486,8 @@ static uint64_t node_hash (hash_table_entry_t n) {
   case GP_OPT:
     seed = 5;
   alt_opt:
-    h = hash64 ((uint64_t) node->val.alt_opt.first, seed);
-    h = hash64 ((uint64_t) node->val.alt_opt.second, h);
+    h = hash64 ((uint64_t) node->val.alt.first, seed);
+    h = hash64 ((uint64_t) node->val.alt.second, h);
     return hash_finish (h);
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
@@ -1508,8 +1508,8 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
             == 0);
   case GP_ALT:
   case GP_OPT:
-    return (node1->val.alt_opt.first == node2->val.alt_opt.first
-            && node1->val.alt_opt.second == node2->val.alt_opt.second);
+    return (node1->val.alt.first == node2->val.alt.first
+            && node1->val.alt.second == node2->val.alt.second);
   default: assert (false); /* nil and error node exist in one exemplar */
   }
 }
@@ -1689,8 +1689,8 @@ static struct gp_tree_node *get_alt_opt_node (enum gp_tree_node_type type,
                                               struct gp_tree_node *second) {
   ambiguous_parse_p = true;
   free_node->type = type;
-  free_node->val.alt_opt.first = first;
-  free_node->val.alt_opt.second = second;
+  free_node->val.alt.first = first;
+  free_node->val.alt.second = second;
   struct gp_tree_node *res = tree_node_insert (free_node);
   if (res != free_node) return res;
 #ifndef NO_GP_DEBUG_PRINT
@@ -1908,7 +1908,15 @@ static void process_child (struct gp_tree_node *father, struct gp_tree_node **ch
     *child = subst;
 }
 
+static void print_parse (FILE *f, struct gp_tree_node *root);
+
 static void reshape (struct gp_tree_node *root) {
+#ifndef NO_GP_DEBUG_PRINT
+  if (grammar->debug_level > 3) {
+    fprintf (stderr, "==Before reshaping:\n");
+    print_parse (stderr, root);
+  }
+#endif
   assert (root->type != GP_OPT);
   VLO_CREATE (reshape_stack, grammar->alloc, 0);
   VLO_CREATE (subst_vlo, grammar->alloc, 0);
@@ -1918,8 +1926,8 @@ static void reshape (struct gp_tree_node *root) {
     struct gp_tree_node *node = top->node;
     if (top->reshape_children_p) {
       if (node->type == GP_ALT || node->type == GP_OPT) {
-        process_child (node, &node->val.alt_opt.first, 0);
-        process_child (node, &node->val.alt_opt.second, 1);
+        process_child (node, &node->val.alt.first, 0);
+        process_child (node, &node->val.alt.second, 1);
       } else if (node->type == GP_ANODE) {
         for (int i = 0; i < node->val.anode.children_num; i++)
           process_child (node, &node->val.anode.children[i], i);
@@ -1929,9 +1937,9 @@ static void reshape (struct gp_tree_node *root) {
     }
     bool opt_p = false;
     if (node->type == GP_ALT) {
-      if (node->val.alt_opt.first->type == GP_OPT)
+      if (node->val.alt.first->type == GP_OPT)
         opt_p = true;
-      else if (node->val.alt_opt.second->type == GP_OPT)
+      else if (node->val.alt.second->type == GP_OPT)
         opt_p = true;
     } else if (node->type == GP_ANODE) {
       for (int i = 0; i < node->val.anode.children_num; i++)
@@ -1948,19 +1956,21 @@ static void reshape (struct gp_tree_node *root) {
     struct gp_tree_node *child, *anodes[2];
     for (int i = 0; i < 2; i++) {
       if (node->type == GP_ALT) {
-        struct gp_tree_node *first = node->val.alt_opt.first, *second = node->val.alt_opt.second;
-        if (first->type == GP_OPT)
-          first = i == 0 ? first->val.alt_opt.first : first->val.alt_opt.second;
-        if (second->type == GP_OPT)
-          second = i == 0 ? second->val.alt_opt.first : second->val.alt_opt.second;
-        VLO_ADD_MEMORY (nodes_vlo, &child, sizeof (child));
-        anodes[i] = get_alt_node (first, second);
+        struct gp_tree_node *first = node->val.alt.first, *second = node->val.alt.second;
+        if (first->type != GP_OPT) { /* (alt 1 (opt 2 3)) -> (opt 1 (alt 2 3)): */
+          anodes[i] = i == 0 ? first : get_alt_node (second->val.alt.first, second->val.alt.second);
+        } else if (second->type != GP_OPT) { /* (alt (opt 1 2) 3) -> (opt (alt 1 2) 3): */
+          anodes[i] = i == 1 ? second : get_alt_node (first->val.alt.first, first->val.alt.second);
+        } else { /* (alt (opt 1 2) (opt 3 4)) -> (opt (alt 1 3) (alt 2 4)): */
+          first = i == 0 ? first->val.alt.first : first->val.alt.second;
+          second = i == 0 ? second->val.alt.first : second->val.alt.second;
+          anodes[i] = get_alt_node (first, second);
+        }
       } else if (node->type == GP_ANODE) {
         VLO_NULLIFY (nodes_vlo);
         for (int j = 0; j < node->val.anode.children_num; j++) {
           child = node->val.anode.children[j];
-          if (child->type == GP_OPT)
-            child = i == 0 ? child->val.alt_opt.first : child->val.alt_opt.second;
+          if (child->type == GP_OPT) child = i == 0 ? child->val.alt.first : child->val.alt.second;
           VLO_ADD_MEMORY (nodes_vlo, &child, sizeof (child));
         }
         anodes[i] = get_anode (node->val.anode.name, node->val.anode.children_num,
@@ -1970,17 +1980,26 @@ static void reshape (struct gp_tree_node *root) {
     VLO_SHORTEN (reshape_stack, sizeof (struct reshape_stack_el));
     struct gp_tree_node *father = top->father;
     if (top->father == NULL) continue;
+#ifndef NO_GP_DEBUG_PRINT
+    int node_num = node->num;
+#endif
     struct gp_tree_node *subst = get_opt_node (anodes[0], anodes[1]);
     subst_set (node, subst);
     node = subst;
     if (father->type == GP_ALT) {
       if (top->node_ind == 0)
-        father->val.alt_opt.first = node;
+        father->val.alt.first = node;
       else
-        father->val.alt_opt.second = node;
+        father->val.alt.second = node;
     } else if (father->type == GP_ANODE) {
       father->val.anode.children[top->node_ind] = node;
     }
+#ifndef NO_GP_DEBUG_PRINT
+    if (grammar->debug_level > 3) {
+      fprintf (stderr, "==Result after moving opts of n%d:\n", node_num);
+      print_parse (stderr, root);
+    }
+#endif
   }
   VLO_DELETE (reshape_stack);
   VLO_DELETE (subst_vlo);
@@ -2167,9 +2186,9 @@ static void print_node (FILE *f, struct gp_tree_node *node) {
   case GP_OPT:
     fprintf (f, "OPTION:");
   alt_node:
-    fprintf (f, "%d %d\n", node->val.alt_opt.first->num, node->val.alt_opt.second->num);
-    print_node (f, node->val.alt_opt.first);
-    print_node (f, node->val.alt_opt.second);
+    fprintf (f, "%d %d\n", node->val.alt.first->num, node->val.alt.second->num);
+    print_node (f, node->val.alt.first);
+    print_node (f, node->val.alt.second);
     break;
   default: assert (false);
   }
@@ -2311,14 +2330,14 @@ static void free_tree_reduce (struct gp_tree_node *node) {
     break;
   case GP_ALT:
   case GP_OPT:
-    if (node->val.alt_opt.first->type & GP_VISITED)
-      node->val.alt_opt.first = NULL;
+    if (node->val.alt.first->type & GP_VISITED)
+      node->val.alt.first = NULL;
     else
-      free_tree_reduce (node->val.alt_opt.first);
-    if (node->val.alt_opt.second->type & GP_VISITED)
-      node->val.alt_opt.second = NULL;
+      free_tree_reduce (node->val.alt.first);
+    if (node->val.alt.second->type & GP_VISITED)
+      node->val.alt.second = NULL;
     else
-      free_tree_reduce (node->val.alt_opt.second);
+      free_tree_reduce (node->val.alt.second);
     break;
   default: assert ("This should not happen" == NULL);
   }
@@ -2342,8 +2361,8 @@ static void free_tree_sweep (struct gp_tree_node *node, void (*parse_free_fn) (v
     break;
   case GP_ALT:
   case GP_OPT:
-    free_tree_sweep (node->val.alt_opt.first, parse_free_fn, termcb);
-    free_tree_sweep (node->val.alt_opt.second, parse_free_fn, termcb);
+    free_tree_sweep (node->val.alt.first, parse_free_fn, termcb);
+    free_tree_sweep (node->val.alt.second, parse_free_fn, termcb);
     break;
   default: assert ("This should not happen" == NULL);
   }

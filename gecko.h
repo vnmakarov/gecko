@@ -93,7 +93,7 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
     struct gp_error error;
     struct gp_term term;
     struct gp_anode anode;
-    struct gp_alt alt_opt; /* alternative or option */
+    struct gp_alt alt; /* alternative */
   } val;
 };
 
