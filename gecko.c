@@ -2001,8 +2001,30 @@ static void reshape (struct gp_tree_node *root) {
     }
 #endif
   }
-  VLO_DELETE (reshape_stack);
   VLO_DELETE (subst_vlo);
+  /* Rename opts to alts which now are at the top: */
+  VLO_NULLIFY (reshape_stack);
+  if (root->type == GP_ALT) {
+    VLO_ADD_MEMORY (reshape_stack, &root->val.alt.first, sizeof (struct gp_tree_node *));
+    VLO_ADD_MEMORY (reshape_stack, &root->val.alt.second, sizeof (struct gp_tree_node *));
+  } else {
+    assert (root->type == GP_ANODE);
+    for (int i = 0; i < root->val.anode.children_num; i++)
+      VLO_ADD_MEMORY (reshape_stack, &root->val.anode.children[i], sizeof (struct gp_tree_node *));
+  }
+  do {
+    struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BOUND (reshape_stack))[-1];
+    VLO_SHORTEN (reshape_stack, sizeof (struct gp_tree_node *));
+    if (node->type != GP_OPT) continue;
+    node->type = GP_ALT;
+#ifndef NO_GP_DEBUG_PRINT
+    n_parse_opt_nodes--;
+    n_parse_alt_nodes++;
+#endif
+    VLO_ADD_MEMORY (reshape_stack, &node->val.alt.first, sizeof (struct gp_tree_node *));
+    VLO_ADD_MEMORY (reshape_stack, &node->val.alt.second, sizeof (struct gp_tree_node *));
+  } while (VLO_LENGTH (reshape_stack) != 0);
+  VLO_DELETE (reshape_stack);
 }
 
 static int n_single_stack_actions, n_multi_stack_actions;
