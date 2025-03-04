@@ -1861,6 +1861,131 @@ static void stack_merge_print (FILE *f, vlo_t *stacks) {
 }
 #endif
 
+struct reshape_stack_el {
+  struct gp_tree_node *node, *father;
+  int node_ind;
+  bool reshape_children_p;
+};
+
+static vlo_t subst_vlo;
+static vlo_t reshape_stack;
+
+static void subst_set (struct gp_tree_node *node, struct gp_tree_node *subst) {
+  size_t len = VLO_LENGTH (subst_vlo);
+  if (len <= node->num * sizeof (struct gp_tree_node *)) {
+    size_t add = (node->num + 1) * sizeof (struct gp_tree_node *) - len;
+    VLO_EXPAND (subst_vlo, add);
+    memset ((char *) VLO_BEGIN (subst_vlo) + len, 0, add);
+  }
+  ((struct gp_tree_node **) VLO_BEGIN (subst_vlo))[node->num] = subst;
+}
+
+static struct gp_tree_node *subst_get (struct gp_tree_node *node) {
+  if ((size_t) VLO_LENGTH (subst_vlo) <= node->num * sizeof (struct gp_tree_node *)) return NULL;
+  return ((struct gp_tree_node **) VLO_BEGIN (subst_vlo))[node->num];
+}
+
+static struct reshape_stack_el *reshape_stack_top (void) {
+  return &((struct reshape_stack_el *) VLO_BOUND (reshape_stack))[-1];
+}
+
+static void reshape_stack_push (struct gp_tree_node *node, struct gp_tree_node *father,
+                                int node_ind, bool reshape_children_p) {
+  VLO_EXPAND (reshape_stack, sizeof (struct reshape_stack_el));
+  struct reshape_stack_el *top = reshape_stack_top ();
+  top->node = node;
+  top->father = father;
+  top->node_ind = node_ind;
+  top->reshape_children_p = reshape_children_p;
+}
+
+static void process_child (struct gp_tree_node *father, struct gp_tree_node **child,
+                           int child_ind) {
+  struct gp_tree_node *subst = subst_get (*child);
+  if (subst == NULL)
+    reshape_stack_push (*child, father, child_ind, true);
+  else
+    *child = subst;
+}
+
+static void reshape (struct gp_tree_node *root) {
+  assert (root->type != GP_OPT);
+  VLO_CREATE (reshape_stack, grammar->alloc, 0);
+  VLO_CREATE (subst_vlo, grammar->alloc, 0);
+  reshape_stack_push (root, NULL, 0, true);
+  while (VLO_LENGTH (reshape_stack) != 0) {
+    struct reshape_stack_el *top = reshape_stack_top ();
+    struct gp_tree_node *node = top->node;
+    if (top->reshape_children_p) {
+      if (node->type == GP_ALT || node->type == GP_OPT) {
+        process_child (node, &node->val.alt_opt.first, 0);
+        process_child (node, &node->val.alt_opt.second, 1);
+      } else if (node->type == GP_ANODE) {
+        for (int i = 0; i < node->val.anode.children_num; i++)
+          process_child (node, &node->val.anode.children[i], i);
+      }
+      top->reshape_children_p = false;
+      if (node->type != GP_TERM && node->type != GP_OPT) continue;
+    }
+    bool opt_p = false;
+    if (node->type == GP_ALT) {
+      if (node->val.alt_opt.first->type == GP_OPT)
+        opt_p = true;
+      else if (node->val.alt_opt.second->type == GP_OPT)
+        opt_p = true;
+    } else if (node->type == GP_ANODE) {
+      for (int i = 0; i < node->val.anode.children_num; i++)
+        if (node->val.anode.children[i]->type == GP_OPT) {
+          opt_p = true;
+          break;
+        }
+    }
+    if (!opt_p) { /* always case for term and opt */
+      VLO_SHORTEN (reshape_stack, sizeof (struct reshape_stack_el));
+      subst_set (node, node);
+      continue;
+    }
+    struct gp_tree_node *child, *anodes[2];
+    for (int i = 0; i < 2; i++) {
+      if (node->type == GP_ALT) {
+        struct gp_tree_node *first = node->val.alt_opt.first, *second = node->val.alt_opt.second;
+        if (first->type == GP_OPT)
+          first = i == 0 ? first->val.alt_opt.first : first->val.alt_opt.second;
+        if (second->type == GP_OPT)
+          second = i == 0 ? second->val.alt_opt.first : second->val.alt_opt.second;
+        VLO_ADD_MEMORY (nodes_vlo, &child, sizeof (child));
+        anodes[i] = get_alt_node (first, second);
+      } else if (node->type == GP_ANODE) {
+        VLO_NULLIFY (nodes_vlo);
+        for (int j = 0; j < node->val.anode.children_num; j++) {
+          child = node->val.anode.children[j];
+          if (child->type == GP_OPT)
+            child = i == 0 ? child->val.alt_opt.first : child->val.alt_opt.second;
+          VLO_ADD_MEMORY (nodes_vlo, &child, sizeof (child));
+        }
+        anodes[i] = get_anode (node->val.anode.name, node->val.anode.children_num,
+                               VLO_BEGIN (nodes_vlo), node->val.anode.cost);
+      }
+    }
+    VLO_SHORTEN (reshape_stack, sizeof (struct reshape_stack_el));
+    struct gp_tree_node *father = top->father;
+    if (top->father == NULL) continue;
+    struct gp_tree_node *subst = get_opt_node (anodes[0], anodes[1]);
+    subst_set (node, subst);
+    node = subst;
+    if (father->type == GP_ALT) {
+      if (top->node_ind == 0)
+        father->val.alt_opt.first = node;
+      else
+        father->val.alt_opt.second = node;
+    } else if (father->type == GP_ANODE) {
+      father->val.anode.children[top->node_ind] = node;
+    }
+  }
+  VLO_DELETE (reshape_stack);
+  VLO_DELETE (subst_vlo);
+}
+
 static int n_single_stack_actions, n_multi_stack_actions;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
@@ -1995,6 +2120,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[1];
       assert (!el->attr_p);
       *transl = (struct gp_tree_node *) el->anode_attr;
+      if (ambiguous_parse_p) reshape (*transl);  // ??? only opt
       res = true;
     }
   }
