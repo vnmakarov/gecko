@@ -51,7 +51,7 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_TERM,
                          GP_ANODE,
                          GP_ALT,
-                         GP_OPT,
+                         GP_OPT,            /* for internal use only */
                          GP_VISITED = 0x80, /* for internal use only */
 };
 
