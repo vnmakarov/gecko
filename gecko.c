@@ -2184,7 +2184,53 @@ static void reshape (struct gp_tree_node *root) {
   VLO_DELETE (reshape_stack);
 }
 
-static vlo_t curr_stacks, new_stacks;
+static vlo_t curr_stacks, new_stacks, failed_stacks;
+static int n_single_stack_actions, n_multi_stack_actions;
+
+static bool process_term_for_stack (struct stack *start_stack, int term, void *attr, bool free_p) {
+  bool shift_p = false;
+  int len = VLO_LENGTH (curr_stacks);
+  VLO_ADD_MEMORY (curr_stacks, &start_stack, sizeof (start_stack));
+  while (VLO_LENGTH (curr_stacks) > len) {
+    struct stack *curr_stack = ((struct stack **) VLO_BOUND (curr_stacks))[-1];
+    VLO_SHORTEN (curr_stacks, sizeof (struct stack *));
+    struct set *set = stack_get_top_set (curr_stack);
+    if (set->goto_map == NULL && set->action_map == NULL) build_goto_map_and_actions (set);
+    int actions_num;
+    struct action *actions = set_get_actions (set, term, &actions_num);
+    if (actions_num == 0) {
+      if (free_p)
+        stack_free (curr_stack); /* it can happen after a few reductions as we use SLR(1) */
+      else
+        VLO_ADD_MEMORY (failed_stacks, &curr_stack, sizeof (curr_stack));
+      continue;
+    }
+#ifndef NO_GP_DEBUG_PRINT
+    n_multi_stack_actions++;
+#endif
+    for (int i = 0; i < actions_num; i++) {
+      struct action *action = &actions[i];
+      struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
+      if (LIKELY (!action->shift_p)) { /* reduce */
+        set = stack_reduce (stack, action->u.rule);
+        VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
+      } else { /* shift */
+        struct set *shifted_set = action->u.set;
+        assert (shifted_set != NULL);
+        stack_shift (stack, shifted_set, attr, attr != (void *) error_node);
+        VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
+        shift_p = true;
+        if (recovery_p) stack->recovery->u.token_info.n_matched_toks++;
+      }
+#ifndef NO_GP_DEBUG_PRINT
+      if (grammar->debug_level > 2)
+        stack_action_print (stderr, action, action->shift_p ? &new_stacks : &curr_stacks,
+                            action->shift_p);
+#endif
+    }
+  }
+  return shift_p;
+}
 
 /* Add stacks to new_stacks created from base_stack by skipping curr token and by processing token
    insertion or replacement. */
@@ -2196,34 +2242,8 @@ static void stack_recovery (struct stack *base_stack) {
     int term = base_set->actions[n].term_num;
     struct stack *curr_stack = stack_create (base_stack);
     VLO_NULLIFY (curr_stacks);
-    VLO_ADD_MEMORY (curr_stacks, &curr_stack, sizeof (curr_stack));
     int start = VLO_LENGTH (new_stacks) / sizeof (struct stack);
-    while (VLO_LENGTH (curr_stacks) != 0) {
-      curr_stack = ((struct stack **) VLO_BOUND (curr_stacks))[-1];
-      VLO_SHORTEN (curr_stacks, sizeof (struct stack *));
-      struct set *set = stack_get_top_set (curr_stack);
-      if (set->goto_map == NULL && set->action_map == NULL) build_goto_map_and_actions (set);
-      int actions_num;
-      struct action *actions = set_get_actions (set, term, &actions_num);
-      if (actions_num == 0) { /* it can happen after a few reductions as we use SLR(1) */
-        stack_free (curr_stack);
-        continue;
-      }
-      for (int i = 0; i < actions_num; i++) {
-        struct action *action = &actions[i];
-        struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
-        if (LIKELY (!action->shift_p)) { /* reduce */
-          set = stack_reduce (stack, action->u.rule);
-          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
-        } else { /* shift */
-          struct set *shifted_set = action->u.set;
-          assert (shifted_set != NULL);
-          void *attr = error_node;
-          stack_shift (stack, shifted_set, attr, false);
-          VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
-        }
-      }
-    }
+    process_term_for_stack (curr_stack, term, error_node, true);
     /* now new stacks from start correspond to token inserts: add stacks with token replacements: */
     for (int i = start, len = VLO_LENGTH (new_stacks) / sizeof (struct stack); i < len; i++) {
       curr_stack = ((struct stack **) VLO_BEGIN (curr_stacks))[-1];
@@ -2236,8 +2256,6 @@ static void stack_recovery (struct stack *base_stack) {
   VLO_ADD_MEMORY (new_stacks, &base_stack, sizeof (base_stack));
   VLO_NULLIFY (curr_stacks);
 }
-
-static int n_single_stack_actions, n_multi_stack_actions;
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
@@ -2277,7 +2295,6 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   }
 #endif
   bool one_stack_p;
-  vlo_t failed_stacks;
   VLO_CREATE (failed_stacks, grammar->alloc, 0);
   for (;;) {
     if (single_stack != NULL) {
@@ -2320,36 +2337,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         term_symb = term_find_by_code (code);
         term = term_symb->u.term.term_num;
       }
-      struct set *set = stack_get_top_set (curr_stack);
-      if (set->action_map == NULL && set->goto_map == NULL) build_goto_map_and_actions (set);
-      struct action *actions = set_get_actions (set, term, &actions_num);
-      if (actions_num == 0) {
-        VLO_ADD_MEMORY (failed_stacks, &curr_stack, sizeof (curr_stack));
-        continue;
-      }
-#ifndef NO_GP_DEBUG_PRINT
-      n_multi_stack_actions++;
-#endif
-      for (int i = 0; i < actions_num; i++) {
-        struct action *action = &actions[i];
-        struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
-        if (LIKELY (!action->shift_p)) { /* reduce */
-          stack_reduce (stack, action->u.rule);
-          VLO_ADD_MEMORY (curr_stacks, &stack, sizeof (stack));
-        } else { /* shift */
-          struct set *shifted_set = action->u.set;
-          assert (shifted_set != NULL);
-          stack_shift (stack, shifted_set, attr, true);
-          VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
-          shift_p = true;
-          if (recovery_p) stack->recovery->u.token_info.n_matched_toks++;
-        }
-#ifndef NO_GP_DEBUG_PRINT
-        if (grammar->debug_level > 2)
-          stack_action_print (stderr, action, action->shift_p ? &new_stacks : &curr_stacks,
-                              action->shift_p);
-#endif
-      }
+      if (process_term_for_stack (curr_stack, term, attr, false)) shift_p = true;
     }
     bool one_stack_before_recovery_p;
     if (!shift_p && !recovery_p) { /* start recovery: */
