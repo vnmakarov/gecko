@@ -145,14 +145,15 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      defined macro NO_GP_DEBUG_PRINT). The default value is 0.
 
    * one_parse_flag means building only one parse tree.  For unambiguous grammar the flag does not
-     affect the result.  The default value is 1.
+     affect the result.  The default value is true.
 
    * cost_flag means usage costs to build tree (trees if one_parse_flag is not set up) with minimal
-     cost.  For unambiguous grammar the flag does not affect the result.  The default value is 0.
+     cost.  For unambiguous grammar the flag does not affect the result.  The default value is
+     false.
 
    * error_recovery_flag means making error recovery if syntax error occurred.  Otherwise, syntax
      error results in finishing parsing (although syntax_error is called once).  The default value
-     is 1.
+     is true.
 
    * recovery_match means how much subsequent tokens should be successfully shifted to finish error
      recovery.  The default value is 3. */
