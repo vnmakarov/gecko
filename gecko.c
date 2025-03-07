@@ -719,11 +719,12 @@ struct action {
 typedef unsigned short trans_el_t;
 struct set {                      /* the grammar state: */
   int num;                        /* unique number of the state */
-  struct symb *symb;              /* symb shifting which resulted into this state */
   int n_start_sits, n_sits;       /* numbers of (start) situations in the following array */
+  int n_actions;                  /* len of array actions */
+  struct symb *symb;              /* symb shifting which resulted into this state */
   struct sit **sits;              /* array of situation */
   struct set **goto_map;          /* map nonterm -> goto set */
-  struct action_desc *action_map; /* map term -> actiotn desc */
+  struct action_desc *action_map; /* map term -> action desc */
   struct action *actions;         /* action number -> action */
 };
 
@@ -833,6 +834,7 @@ static bool set_insert (void) {
   new_set->goto_map = NULL;
   new_set->action_map = NULL;
   new_set->actions = NULL;
+  new_set->n_actions = 0;
   new_set->n_sits = new_n_start_sits;
   *entry = (hash_table_entry_t) new_set;
   n_sets_start_sits += new_n_start_sits;
@@ -1423,6 +1425,7 @@ static void build_goto_map_and_actions (struct set *set) {
   n_action_vects++;
   n_action_vect_len += grammar->symbs->n_terms;
   set->actions = set_calloc (sizeof (struct action) * nta);
+  set->n_actions = nta;
   n_actions += nta;
   qsort (action_addr, nta, sizeof (struct action), action_cmp);
   int actions_num = 0;
@@ -1629,12 +1632,13 @@ static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
   return ((stack_el_t *) VLO_BOUND (stack->els))[-1].set;
 }
 
-static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set, void *attr) {
+static FORCE_INLINE void stack_shift (struct stack *stack, struct set *set, void *attr,
+                                      bool attr_p) {
   assert (set->symb->term_p);
   VLO_EXPAND (stack->els, sizeof (stack_el_t));
   stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
   el->set = set;
-  el->attr_p = true;
+  el->attr_p = attr_p;
   el->anode_attr = attr;
 #ifndef NO_GP_DEBUG_PRINT
   n_curr_stack_els++;
@@ -2085,7 +2089,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         } else { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
-          stack_shift (single_stack, shifted_set, attr);
+          stack_shift (single_stack, shifted_set, attr, true);
           goto next_token;
         }
       }
@@ -2115,7 +2119,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         } else { /* shift */
           struct set *shifted_set = action->u.set;
           assert (shifted_set != NULL);
-          stack_shift (stack, shifted_set, attr);
+          stack_shift (stack, shifted_set, attr, true);
           VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
         }
 #ifndef NO_GP_DEBUG_PRINT
