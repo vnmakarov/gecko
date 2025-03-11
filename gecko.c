@@ -2026,11 +2026,8 @@ static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
 }
 
 #ifndef NO_GP_DEBUG_PRINT
-static void print_stack (FILE *f, struct stack *stack) {
-  fprintf (f, "      ");
-  if (stack->recovery != NULL)
-    fprintf (f, "token #%d (matched=%d, cost=%d):", stack->recovery->u.token_info.buff_token_ind,
-             stack->recovery->u.token_info.n_matched_toks, stack->recovery->u.token_info.cost);
+
+static void print_stack_els (FILE *f, struct stack *stack) {
   for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     struct symb *symb = el->set->symb;
@@ -2045,6 +2042,22 @@ static void print_stack (FILE *f, struct stack *stack) {
     }
   }
   fprintf (f, "\n");
+}
+
+static void print_stack (FILE *f, struct stack *stack) {
+  fprintf (f, "      ");
+  if (stack->recovery != NULL)
+    fprintf (f, "token #%d (matched=%d, cost=%d):", stack->recovery->u.token_info.buff_token_ind,
+             stack->recovery->u.token_info.n_matched_toks, stack->recovery->u.token_info.cost);
+  print_stack_els (stderr, stack);
+}
+
+static void print_single_stack (FILE *f, struct stack *stack, struct action *action) {
+  assert (stack->recovery == NULL);
+  fprintf (f, "  Single stack after [");
+  print_action (f, action);
+  fprintf (f, "]:");
+  print_stack_els (f, stack);
 }
 
 static void print_stacks (FILE *f, const char *title, vlo_t *stacks, int start) {
@@ -2400,10 +2413,14 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
 #endif
         if (LIKELY (!actions[0].shift_p)) { /* reduce */
           set = stack_reduce (single_stack, actions[0].u.rule);
+#ifndef NO_GP_DEBUG_PRINT
+          if (grammar->debug_level > 2) print_single_stack (stderr, single_stack, &actions[0]);
+#endif
         } else { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
           stack_shift (single_stack, shifted_set, attr, true);
+          if (grammar->debug_level > 2) print_single_stack (stderr, single_stack, &actions[0]);
           goto next_token;
         }
       }
@@ -2520,6 +2537,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     }
   next_token:
     if (code == END_MARKER_CODE) {
+      assert (single_stack == NULL || !recovery_p);
       if (single_stack != NULL) VLO_ADD_MEMORY (curr_stacks, &single_stack, sizeof (single_stack));
       break;
     }
@@ -2621,13 +2639,11 @@ static void *parse_alloc_default (int nmemb) {
 static void parse_free_default (void *mem) { free (mem); }
 
 /* Parse input according read grammar. ONE_PARSE_FLAG means build only one parse tree. For
-   unambiguous grammar the flag does not affect the result. LA_LEVEL means usage of static (if 1)
-   or dynamic (2) lookahead to decrease size of sets. Static lookaheads gives the best results
-   with the point of space and speed, dynamic ones does sligthly worse, and no usage of lookaheds
-   does the worst. D_LEVEL says what debugging information to output (it works only if we compiled
-   without defined macro NO_GP_DEBUG_PRINT). The function returns the error code (which will be
-   also in error_code). The function sets up *AMBIGUOUS_P if we found that the grammer is ambigous
-   (it works even we asked only one parse tree without alternatives). */
+   unambiguous grammar the flag does not affect the result. D_LEVEL says what debugging information
+   to output (it works only if we compiled without defined macro NO_GP_DEBUG_PRINT). The function
+   returns the error code (which will be also in error_code). The function sets up *AMBIGUOUS_P if
+   we found that the grammer is ambigous (it works even we asked only one parse tree without
+   alternatives). */
 int gp_parse (struct grammar *g, int (*read) (void **attr),
               void (*error) (int err_tok_num, void *err_tok_attr, int start_ignored_tok_num,
                              void *start_ignored_tok_attr, int start_recovered_tok_num,
@@ -2878,7 +2894,9 @@ static int ntok; /* the current number of next input token */
 
 /* The function imported by GPARSER (see comments in the interface file). */
 static int test_read_token (void **attr) {
-  const char input[] = "a+a*(a*a+a)";
+  //  const char input[] = "a+a*(a*a+a)";
+  const char input[] = "a+a**(a*a+a)";
+  // const char input[] = "a+a*";
   ntok++;
   *attr = NULL;
   if ((size_t) ntok < sizeof (input)) return input[ntok - 1];
