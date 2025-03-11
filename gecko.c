@@ -2311,9 +2311,11 @@ static void stack_recovery (struct stack *base_stack) {
   }
 #endif
   int new_els_num = VLO_LENGTH (new_stacks) / sizeof (struct stack *);
-  assert (base_stack->recovery != NULL);
+  struct recovery_info *recovery = base_stack->recovery;
+  assert (recovery != NULL);
   struct set *base_set = stack_get_top_set (base_stack);
-  bool eof_p = false;
+  void *attr;
+  bool eof_p = token_buff_get (recovery->u.token_info.buff_token_ind, &attr) == END_MARKER_CODE;
   for (int n = 0; n < base_set->n_actions; n++) {
     if (n != 0 && base_set->actions[n - 1].term_num == base_set->actions[n].term_num) continue;
     int term = base_set->actions[n].term_num;
@@ -2334,8 +2336,8 @@ static void stack_recovery (struct stack *base_stack) {
   if (eof_p) {
     stack_free (base_stack);
   } else {
-    base_stack->recovery->u.token_info.buff_token_ind++; /* last one stack for skipping token */
-    base_stack->recovery->u.token_info.cost++;
+    recovery->u.token_info.buff_token_ind++; /* last one stack for skipping token */
+    recovery->u.token_info.cost++;
     VLO_ADD_MEMORY (new_stacks, &base_stack, sizeof (base_stack));
   }
   VLO_NULLIFY (curr_stacks);
@@ -2468,7 +2470,10 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         stack_free (((struct stack **) VLO_BEGIN (failed_stacks))[i]);
       for (int i = 0; i < (int) (VLO_LENGTH (new_stacks) / sizeof (struct stack *)); i++) {
         struct stack *stack = ((struct stack **) VLO_BEGIN (new_stacks))[i];
-        if (stack->recovery->u.token_info.n_matched_toks >= grammar->recovery_token_matches) {
+        struct set *set = stack_get_top_set (stack);
+        struct symb *symb = set->symb;
+        if (strcmp (symb->repr, END_MARKER_NAME) == 0
+            || stack->recovery->u.token_info.n_matched_toks >= grammar->recovery_token_matches) {
           recovery_p = false;
           break;
         }
@@ -2476,8 +2481,16 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       if (!recovery_p) { /* stopping recovery: */
         assert (single_stack == NULL);
         int min_cost = -1, buff_token_ind = -1;
+        struct stack *eof_stack = NULL;
         for (int i = 0; i < (int) (VLO_LENGTH (new_stacks) / sizeof (struct stack *)); i++) {
           struct stack *stack = ((struct stack **) VLO_BEGIN (new_stacks))[i];
+          struct set *set = stack_get_top_set (stack);
+          struct symb *symb = set->symb;
+          if (strcmp (symb->repr, END_MARKER_NAME) == 0) {
+            eof_stack = stack;
+            buff_token_ind = stack->recovery->u.token_info.buff_token_ind;
+            break;
+          }
           if (stack->recovery->u.token_info.n_matched_toks >= grammar->recovery_token_matches
               && (min_cost < 0 || stack->recovery->u.token_info.cost < min_cost)) {
             min_cost = stack->recovery->u.token_info.cost;
@@ -2491,13 +2504,18 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         int n = 0;
         for (int i = 0; i < (int) (VLO_LENGTH (new_stacks) / sizeof (struct stack *)); i++) {
           struct stack *stack = ((struct stack **) VLO_BEGIN (new_stacks))[i];
-          if (stack->recovery->u.token_info.n_matched_toks < grammar->recovery_token_matches
-              || stack->recovery->u.token_info.buff_token_ind != buff_token_ind
-              || stack->recovery->u.token_info.cost > min_cost) {
+          if (stack == eof_stack) {
+            stack_free_recovery (stack);
+            ((struct stack **) VLO_BEGIN (new_stacks))[n++] = stack;
+          } else if (eof_stack != NULL
+                     || stack->recovery->u.token_info.n_matched_toks
+                          < grammar->recovery_token_matches
+                     || stack->recovery->u.token_info.buff_token_ind != buff_token_ind
+                     || stack->recovery->u.token_info.cost > min_cost) {
             stack_free (stack);
           } else if (one_stack_before_recovery_p && single_stack == NULL) {
-            stack_free_recovery (stack);
             single_stack = stack;
+            stack_free_recovery (stack);
             ((struct stack **) VLO_BEGIN (new_stacks))[n++] = stack;
           } else if (!one_stack_before_recovery_p) {
             stack_free_recovery (stack);
@@ -2538,8 +2556,11 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   next_token:
     if (code == END_MARKER_CODE) {
       assert (single_stack == NULL || !recovery_p);
-      if (single_stack != NULL) VLO_ADD_MEMORY (curr_stacks, &single_stack, sizeof (single_stack));
-      break;
+      if (single_stack != NULL) {
+        VLO_ADD_MEMORY (curr_stacks, &single_stack, sizeof (single_stack));
+        break;
+      }
+      if (recovery_p) continue;
     }
     if (!recovery_p) {
       code = token_read (&attr);
