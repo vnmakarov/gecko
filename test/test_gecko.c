@@ -17,68 +17,68 @@
 #include "gecko.h"
 #endif
 
-#define IDENTIFIER 1000
-#define SIGNED 2000
-#define CONST 3000
-#define INLINE 4000
-#define AUTO 5000
-#define BREAK 6000
-#define CASE 7000
-#define CHAR 8000
-#define CONTINUE 9000
-#define DEFAULT 1001
-#define DO 2001
-#define DOUBLE 3001
-#define ELSE 4001
-#define ENUM 5001
-#define EXTERN 6001
-#define FLOAT 7001
-#define FOR 8001
-#define GOTO 9001
-#define IF 1002
-#define INT 2002
-#define LONG 3002
-#define REGISTER 4002
-#define RETURN 5002
-#define SHORT 6002
-#define SIZEOF 7002
-#define STATIC 8002
-#define STRUCT 9002
-#define SWITCH 1003
-#define TYPEDEF 2003
-#define UNION 3003
-#define UNSIGNED 4003
-#define VOID 5003
-#define VOLATILE 6003
-#define WHILE 7003
-#define CONSTANT 8003
-#define STRING_LITERAL 9003
-#define RIGHT_ASSIGN 1004
-#define LEFT_ASSIGN 2004
-#define ADD_ASSIGN 3004
-#define SUB_ASSIGN 4004
-#define MUL_ASSIGN 5004
-#define DIV_ASSIGN 6004
-#define MOD_ASSIGN 7004
-#define AND_ASSIGN 8004
-#define XOR_ASSIGN 9004
-#define OR_ASSIGN 1005
-#define RIGHT_OP 2007
-#define LEFT_OP 3005
-#define INC_OP 4005
-#define DEC_OP 5005
-#define PTR_OP 6005
-#define AND_OP 7005
-#define OR_OP 8005
-#define LE_OP 9005
-#define GE_OP 1006
-#define EQ_OP 2006
-#define NE_OP 3006
-#define ELIPSIS 4006
-#define RESTRICT 5006
-#define _BOOL 6006
-#define _COMPLEX 7006
-#define _IMAGINARY 8006
+#define IDENTIFIER 300
+#define SIGNED 301
+#define CONST 302
+#define INLINE 303
+#define AUTO 304
+#define BREAK 305
+#define CASE 306
+#define CHAR 307
+#define CONTINUE 308
+#define DEFAULT 310
+#define DO 311
+#define DOUBLE 312
+#define ELSE 313
+#define ENUM 314
+#define EXTERN 315
+#define FLOAT 316
+#define FOR 317
+#define GOTO 318
+#define IF 320
+#define INT 321
+#define LONG 322
+#define REGISTER 323
+#define RETURN 324
+#define SHORT 325
+#define SIZEOF 326
+#define STATIC 328
+#define STRUCT 330
+#define SWITCH 331
+#define TYPEDEF 332
+#define UNION 333
+#define UNSIGNED 334
+#define VOID 335
+#define VOLATILE 336
+#define WHILE 337
+#define CONSTANT 338
+#define STRING_LITERAL 340
+#define RIGHT_ASSIGN 341
+#define LEFT_ASSIGN 342
+#define ADD_ASSIGN 343
+#define SUB_ASSIGN 344
+#define MUL_ASSIGN 345
+#define DIV_ASSIGN 346
+#define MOD_ASSIGN 347
+#define AND_ASSIGN 348
+#define XOR_ASSIGN 350
+#define OR_ASSIGN 351
+#define RIGHT_OP 352
+#define LEFT_OP 353
+#define INC_OP 354
+#define DEC_OP 355
+#define PTR_OP 356
+#define AND_OP 357
+#define OR_OP 358
+#define LE_OP 360
+#define GE_OP 361
+#define EQ_OP 362
+#define NE_OP 363
+#define ELIPSIS 364
+#define RESTRICT 365
+#define _BOOL 366
+#define _COMPLEX 367
+#define _IMAGINARY 368
 
 #include "test_common.c"
 
@@ -174,68 +174,68 @@ static int test_read_token (void **attr) {
 
 static const char *description
   = "TERM\n"
-    "IDENTIFIER = 1000\n"
-    "SIGNED = 2000\n"
-    "CONST = 3000\n"
-    "INLINE = 4000\n"
-    "AUTO = 5000\n"
-    "BREAK = 6000\n"
-    "CASE = 7000\n"
-    "CHAR = 8000\n"
-    "CONTINUE = 9000\n"
-    "DEFAULT = 1001\n"
-    "DO	 = 2001\n"
-    "DOUBLE	 = 3001\n"
-    "ELSE	 = 4001\n"
-    "ENUM	 = 5001\n"
-    "EXTERN	 = 6001\n"
-    "FLOAT	 = 7001\n"
-    "FOR	 = 8001\n"
-    "GOTO	 = 9001\n"
-    "IF = 1002\n"
-    "INT	 = 2002\n"
-    "LONG	 = 3002\n"
-    "REGISTER = 4002\n"
-    "RETURN	 = 5002\n"
-    "SHORT	 = 6002\n"
-    "SIZEOF	 = 7002\n"
-    "STATIC	 = 8002\n"
-    "STRUCT	 = 9002\n"
-    "SWITCH = 1003\n"
-    "TYPEDEF	 = 2003\n"
-    "UNION	 = 3003\n"
-    "UNSIGNED = 4003\n"
-    "VOID	 = 5003\n"
-    "VOLATILE = 6003\n"
-    "WHILE	 = 7003\n"
-    "CONSTANT = 8003\n"
-    "STRING_LITERAL = 9003\n"
-    "RIGHT_ASSIGN = 1004\n"
-    "LEFT_ASSIGN = 2004\n"
-    "ADD_ASSIGN = 3004\n"
-    "SUB_ASSIGN = 4004\n"
-    "MUL_ASSIGN = 5004\n"
-    "DIV_ASSIGN = 6004\n"
-    "MOD_ASSIGN = 7004\n"
-    "AND_ASSIGN = 8004\n"
-    "XOR_ASSIGN = 9004\n"
-    "OR_ASSIGN = 1005\n"
-    "RIGHT_OP = 2007\n"
-    "LEFT_OP	 = 3005\n"
-    "INC_OP	 = 4005\n"
-    "DEC_OP	 = 5005\n"
-    "PTR_OP	 = 6005\n"
-    "AND_OP	 = 7005\n"
-    "OR_OP	 = 8005\n"
-    "LE_OP	 = 9005\n"
-    "GE_OP = 1006\n"
-    "EQ_OP	 = 2006\n"
-    "NE_OP	 = 3006\n"
-    "ELIPSIS	 = 4006\n"
-    "RESTRICT = 5006\n"
-    "_BOOL = 6006\n"
-    "_COMPLEX = 7006\n"
-    "_IMAGINARY = 8006;\n"
+    "IDENTIFIER = 300\n"
+    "SIGNED = 301\n"
+    "CONST = 302\n"
+    "INLINE = 303\n"
+    "AUTO = 304\n"
+    "BREAK = 305\n"
+    "CASE = 306\n"
+    "CHAR = 307\n"
+    "CONTINUE = 308\n"
+    "DEFAULT = 310\n"
+    "DO	 = 311\n"
+    "DOUBLE	 = 312\n"
+    "ELSE	 = 313\n"
+    "ENUM	 = 314\n"
+    "EXTERN	 = 315\n"
+    "FLOAT	 = 316\n"
+    "FOR	 = 317\n"
+    "GOTO	 = 318\n"
+    "IF = 320\n"
+    "INT	 = 321\n"
+    "LONG	 = 322\n"
+    "REGISTER = 323\n"
+    "RETURN	 = 324\n"
+    "SHORT	 = 325\n"
+    "SIZEOF	 = 326\n"
+    "STATIC	 = 328\n"
+    "STRUCT	 = 330\n"
+    "SWITCH = 331\n"
+    "TYPEDEF	 = 332\n"
+    "UNION	 = 333\n"
+    "UNSIGNED = 334\n"
+    "VOID	 = 335\n"
+    "VOLATILE = 336\n"
+    "WHILE	 = 337\n"
+    "CONSTANT = 338\n"
+    "STRING_LITERAL = 340\n"
+    "RIGHT_ASSIGN = 341\n"
+    "LEFT_ASSIGN = 342\n"
+    "ADD_ASSIGN = 343\n"
+    "SUB_ASSIGN = 344\n"
+    "MUL_ASSIGN = 345\n"
+    "DIV_ASSIGN = 346\n"
+    "MOD_ASSIGN = 347\n"
+    "AND_ASSIGN = 348\n"
+    "XOR_ASSIGN = 350\n"
+    "OR_ASSIGN = 351\n"
+    "RIGHT_OP = 352\n"
+    "LEFT_OP	 = 353\n"
+    "INC_OP	 = 354\n"
+    "DEC_OP	 = 355\n"
+    "PTR_OP	 = 356\n"
+    "AND_OP	 = 357\n"
+    "OR_OP	 = 358\n"
+    "LE_OP	 = 360\n"
+    "GE_OP = 361\n"
+    "EQ_OP	 = 362\n"
+    "NE_OP	 = 363\n"
+    "ELIPSIS	 = 364\n"
+    "RESTRICT = 365\n"
+    "_BOOL = 366\n"
+    "_COMPLEX = 367\n"
+    "_IMAGINARY = 368;\n"
     "\n"
     "/* Additional rules: */\n"
     "\n"
