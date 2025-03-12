@@ -19,7 +19,7 @@ const char *read_terminal (int *code) {
   case 3: *code = '*'; return "*";
   case 4: *code = '('; return "(";
   case 5: *code = ')'; return ")";
-  case 6: *code = 'e'; return "$eof";
+  case 6: *code = 'a'; return "a";
   default: return NULL;
   }
 }

@@ -397,7 +397,9 @@ static const char *description
     "/* (6.5.17): */\n"
     "expression : assignment_expression\n"
     "           | expression ',' assignment_expression\n"
+#ifdef YAEP
     "           | error\n"
+#endif
     "           ;\n"
     "\n"
     "/* (6.6): */\n"
@@ -409,7 +411,9 @@ static const char *description
     "/* declaration : declaration_specifiers [init_declarator_list] ';' */\n"
     "               \n"
     "declaration : declaration_specifiers init_declarator_list_opt ';'\n"
+#ifdef YAEP
     "            | error\n"
+#endif
     "            ;\n"
     "\n"
     "init_declarator_list_opt :\n"
@@ -707,7 +711,9 @@ static const char *description
     "          | selection_statement\n"
     "          | iteration_statement\n"
     "          | jump_statement\n"
+#ifdef YAEP
     "          | error\n"
+#endif
     "          ;\n"
     "\n"
     "/* (6.8.1): */\n"

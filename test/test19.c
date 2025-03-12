@@ -14,7 +14,7 @@ static int nterm;
 const char *read_terminal (int *code) {
   nterm++;
   switch (nterm) {
-  case 1: *code = -2; return "a";
+  case 1: *code = 'a'; return "a";
   case 2: *code = '+'; return "+";
   case 3: *code = '*'; return "*";
   case 4: *code = '('; return "(";
@@ -30,7 +30,7 @@ static int nrule;
 /* The following function imported by YAEP (see comments in the interface file). */
 const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, int **transl) {
   static const char *rhs_1[] = {"T", NULL};
-  static int tr_1[] = {0, -1};
+  static int tr_1[] = {0, 0, -1};
   static const char *rhs_2[] = {"E", "+", "T", NULL};
   static int tr_2[] = {0, 2, -1};
   static const char *rhs_3[] = {"F", NULL};

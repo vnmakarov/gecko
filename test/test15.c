@@ -19,7 +19,6 @@ const char *read_terminal (int *code) {
   case 3: *code = '*'; return "*";
   case 4: *code = '('; return "(";
   case 5: *code = ')'; return ")";
-  case 6: *code = 'e'; return "error";
   default: return NULL;
   }
 }
@@ -50,7 +49,7 @@ const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, i
     *anode = NULL;
     *anode_cost = 0;
     *transl = tr_1;
-    return "E";
+    return "$S";
   case 2:
     *rhs = rhs_2;
     *anode = "plus";

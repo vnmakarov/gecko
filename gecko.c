@@ -49,8 +49,6 @@ struct grammar {    /* major structure which stores information about grammar: *
   char error_message[GP_MAX_ERROR_MESSAGE_LENGTH + 1]; /* the last error message */
   struct symb *axiom;         /* grammar axiom (there is only one rule with axiom in lhs) */
   struct symb *end_marker;    /* auxiliary symbol denoting EOF */
-  struct symb *term_error;    /* auxiliary symbol used for describing error recovery */
-  int term_error_num;         /* and its internal number */
   int recovery_token_matches; /* number of subsequent tokens should be successfuly shifted to finish
                                  error recovery */
   int debug_level;            /* ??? */
@@ -1130,11 +1128,9 @@ static void check_grammar (int strict_p) {
 /* Names of additional symbols. Don't use them in grammars. */
 #define AXIOM_NAME "$S"
 #define END_MARKER_NAME "$eof"
-#define TERM_ERROR_NAME "error"
 
-/* They should be negative. */
+/* Should be negative. */
 #define END_MARKER_CODE -1
-#define TERM_ERROR_CODE -2
 
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p, const char *(*read_terminal) (int *code),
@@ -1155,12 +1151,6 @@ int gp_read_grammar (struct grammar *g, bool strict_p, const char *(*read_termin
       gp_error (GP_REPEATED_TERM_CODE, "repeated code %d in term `%s'", code, name);
     symb_add_term (name, code);
   }
-  /* Adding error symbol. */
-  if (symb_find_by_repr (TERM_ERROR_NAME) != NULL)
-    gp_error (GP_FIXED_NAME_USAGE, "do not use fixed name `%s'", TERM_ERROR_NAME);
-  if (term_tab_find_by_code (TERM_ERROR_CODE) != NULL) abort ();
-  grammar->term_error = symb_add_term (TERM_ERROR_NAME, TERM_ERROR_CODE);
-  grammar->term_error_num = grammar->term_error->u.term.term_num;
   grammar->axiom = grammar->end_marker = NULL;
   const char *lhs, **rhs, *anode;
   int anode_cost, *transl;
@@ -1226,16 +1216,6 @@ int gp_read_grammar (struct grammar *g, bool strict_p, const char *(*read_termin
   }
   if (grammar->axiom == NULL) gp_error (GP_NO_RULES, "grammar does not contains rules");
   assert (start != NULL);
-  /* Adding axiom : error $eof if it is neccessary. */
-  for (rule = start->u.nonterm.rules; rule != NULL; rule = rule->lhs_next)
-    if (rule->rhs[0] == grammar->term_error) break;
-  if (rule == NULL) {
-    rule = rule_new_start (grammar->axiom, NULL, 0);
-    rule_new_symb_add (grammar->term_error);
-    rule_new_symb_add (grammar->end_marker);
-    rule_new_stop ();
-    rule->trans_len = 0;
-  }
   check_grammar (strict_p);
   symb_finish_adding_terms ();
 #ifndef NO_GP_DEBUG_PRINT

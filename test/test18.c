@@ -14,12 +14,11 @@ static int nterm;
 const char *read_terminal (int *code) {
   nterm++;
   switch (nterm) {
-  case 1: *code = 'a'; return "a";
+  case 1: *code = -2; return "a";
   case 2: *code = '+'; return "+";
   case 3: *code = '*'; return "*";
   case 4: *code = '('; return "(";
   case 5: *code = ')'; return ")";
-  case 6: *code = 'a'; return "a";
   default: return NULL;
   }
 }
