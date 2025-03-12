@@ -8,7 +8,7 @@
 
 static const char *input = "a+a*(a*a+a)";
 
-static const char *description = "TERM;\n";
+static const char *description = "TERM ident; ident : ;\n";
 
 int main (void) {
   test_standard_parse ();

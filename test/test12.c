@@ -8,7 +8,21 @@
 
 static const char *input = "a+a*(a*a+a)";
 
-static const char *description = "TERM;\n";
+static const char *description
+  = "E : A O O\n"
+    "  | E 'a'\n"
+    "  | 'b'\n"
+    "  |\n"
+    "  ;\n"
+    "\n"
+    "A : O O N\n"
+    "  ;\n"
+    "\n"
+    "N : O E E O\n"
+    "  ;\n"
+    "\n"
+    "O :\n"
+    "  ;\n";
 
 int main (void) {
   test_standard_parse ();
