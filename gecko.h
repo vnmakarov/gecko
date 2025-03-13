@@ -6,8 +6,8 @@
    and syntax directed translation. The algorithm is described in doc directory.  The
    algorithm is sufficiently fast to be used in serious language processors. */
 
-#ifndef __GPARSER__
-#define __GPARSER__
+#ifndef __GECKO__
+#define __GECKO__
 
 #include <stdbool.h>
 #include <limits.h>
@@ -25,7 +25,7 @@ struct grammar;
    positive number which is not intersected with symbol numbers. */
 #define GP_NIL_TRANSLATION_NUMBER INT_MAX
 
-/* The following values are GPARSER error codes: */
+/* The following values are Gecko Parser error codes: */
 #define GP_NO_MEMORY 1
 #define GP_UNDEFINED_OR_BAD_GRAMMAR 2
 #define GP_DESCRIPTION_SYNTAX_ERROR_CODE 3
@@ -108,8 +108,7 @@ extern struct grammar *gp_create_grammar (void);
 /* Return the last occurred error code for given grammar. */
 extern int gp_error_code (struct grammar *g);
 
-/* Return message are always contains error message corresponding to the last occurred error code.
- */
+/* Return message containing error message corresponding to the last occurred error code. */
 extern const char *gp_error_message (struct grammar *g);
 
 /* Read terminals/rules into grammar G and checks it depending on STRICT_P.
@@ -184,10 +183,10 @@ extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
    comments for function `gp_set_error_recovery_flag'), the third and fifth parameters will be
    negative and forth and sixth parameters will be NULL.
 
-   Function PARSE_ALLOC is used by GPARSER to allocate memory for parse tree representation.  After
+   Function PARSE_ALLOC is used by GECKO to allocate memory for parse tree representation.  After
    calling gp_fin we free all memory allocated by gparser.  At this point it is convenient to
    free all memory but parse tree.  Therefore we require the following function. If PARSE_ALLOC is a
-   null pointer, then PARSE_FREE must also be a null pointer. In this case, GPARSER will handle the
+   null pointer, then PARSE_FREE must also be a null pointer. In this case, GECKO will handle the
    memory management. Otherwise, the caller will be responsible to allocate and free memory for
    parse tree representation.  But the caller should not free the memory until gp_fin is called.
    The function may be called even during reading the grammar not only during the parsing.  Function
@@ -216,4 +215,4 @@ extern void gp_free_grammar (struct grammar *grammar);
 extern void gp_free_tree (struct gp_tree_node *root, void (*parse_free) (void *),
                           void (*termcb) (struct gp_term *term));
 
-#endif /* #ifndef __GPARSER__ */
+#endif /* #ifndef __GECKO__ */

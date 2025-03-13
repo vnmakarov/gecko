@@ -34,8 +34,7 @@ struct symbs {             /* information about grammar vocabulary: */
   int n_terms, n_nonterms; /* number of all symbols and terminals */
   os_t symbs_os;           /* all symbols are placed in this object */
   /* References to the symbols, terminals, nonterminals are stored in the following vlos. The
-     indexes in the arrays are the same as corresponding symbol, terminal, and nonterminal numbers.
-   */
+     indexes in the arrays are the same as corresponding symbol, terminal, and nonterm numbers. */
   vlo_t symbs_vlo, terms_vlo, nonterms_vlo;
   hash_table_t repr_to_symb_tab;      /* table to find symbol by its representation */
   hash_table_t code_to_term_tab;      /* table to find term symbol by its code */
@@ -125,8 +124,7 @@ static bool symb_repr_eq (hash_table_entry_t s1, hash_table_entry_t s2) {
   return strcmp (((struct symb *) s1)->repr, ((struct symb *) s2)->repr) == 0;
 }
 
-/* Hash of terminal code. */
-static uint64_t symb_code_hash (hash_table_entry_t s) {
+static uint64_t symb_code_hash (hash_table_entry_t s) { /* Hash of terminal code. */
   struct symb *symb = ((struct symb *) s);
   assert (symb->term_p);
   return symb->u.term.code;
@@ -310,8 +308,7 @@ static void symb_empty (struct symbs *symbs) { /* free memory for symbols */
   symbs->n_nonterms = symbs->n_terms = 0;
 }
 
-/* Finalize work with symbols. */
-static void symb_fin (struct symbs *symbs) {
+static void symb_fin (struct symbs *symbs) { /* Finalize work with symbols. */
   if (symbs == NULL) return;
   if (grammar->symbs->term_code_trans_vect != NULL)
     gp_free (grammar->alloc, grammar->symbs->term_code_trans_vect);
@@ -370,8 +367,8 @@ static inline void term_set_clear (term_set_el_t *set) { /* make terminal SET em
   while (set < bound) *set++ = 0;
 }
 
-static inline void term_set_copy (term_set_el_t *dest,
-                                  term_set_el_t *src) { /* copy SRC into DEST */
+/* Copy SRC into DEST */
+static inline void term_set_copy (term_set_el_t *dest, term_set_el_t *src) {
   int size = (grammar->symbs->n_terms + TERM_SET_EL_BITS - 1) / (TERM_SET_EL_BITS);
   term_set_el_t *bound = dest + size;
   while (dest < bound) *dest++ = *src++;
@@ -600,8 +597,7 @@ static void rule_dot_print (FILE *f, struct rule *rule, int pos) {
 
 #endif /* #ifndef NO_GP_DEBUG_PRINT */
 
-/* Free memory for rules. */
-static void rule_empty (struct rules *rules) {
+static void rule_empty (struct rules *rules) { /* Free memory for rules. */
   if (rules == NULL) return;
   VLO_NULLIFY (rules->rules_vlo);
   OS_EMPTY (rules->rules_os);
@@ -609,8 +605,7 @@ static void rule_empty (struct rules *rules) {
   rules->n_rules = rules->n_rhs_lens = 0;
 }
 
-/* Finalize work with rules. */
-static void rule_fin (struct rules *rules) {
+static void rule_fin (struct rules *rules) { /* Finalize work with rules. */
   if (rules == NULL) return;
   VLO_DELETE (rules->rules_vlo);
   OS_DELETE (rules->rules_os);
@@ -663,15 +658,13 @@ static bool sit_set_lookahead (struct sit *sit) {
   return true;
 }
 
-/* Return situations with given characteristics. Remember that situations are stored in one
- * exemplar. */
+/* Return situations with given characteristics. Remember that sits are stored in one exemplar. */
 static inline struct sit *sit_create (struct rule *rule, int pos) {
   struct sit *sit;
-  int diff;
+  int diff
+    = (char *) (sit_table + rule->rule_start_offset + pos) - (char *) VLO_BOUND (sit_table_vlo);
 
-  if ((diff
-       = (char *) (sit_table + rule->rule_start_offset + pos) - (char *) VLO_BOUND (sit_table_vlo))
-      >= 0) {
+  if (diff >= 0) {
     diff += sizeof (struct sit *);
     VLO_EXPAND (sit_table_vlo, diff);
     sit_table = (struct sit **) VLO_BEGIN (sit_table_vlo);
@@ -707,8 +700,7 @@ static uint64_t sits_hash (int n_sits, struct sit **sits) {
   return hash_finish (result);
 }
 
-/* Finalize work with situations. */
-static void sit_fin (void) {
+static void sit_fin (void) { /* Finalize work with situations. */
   VLO_DELETE (sit_table_vlo);
   OS_DELETE (sits_os);
 }
@@ -906,8 +898,7 @@ static void set_fin (void) { /* finalize work with sets: */
   OS_DELETE (set_sits_os);
 }
 
-/* Jump buffer for processing errors. */
-static jmp_buf error_longjump_buff;
+static jmp_buf error_longjump_buff; /* Jump buffer for processing errors. */
 
 /* Store error CODE and message. The function makes long jump after that. */
 static void gp_error (int code, const char *format, ...) {
@@ -921,14 +912,12 @@ static void gp_error (int code, const char *format, ...) {
   longjmp (error_longjump_buff, code);
 }
 
-/* Process allocation errors. */
-static void error_func_for_allocate (void *ignored) {
+static void error_func_for_allocate (void *ignored) { /* Process allocation errors. */
   (void) ignored;
   gp_error (GP_NO_MEMORY, "no memory");
 }
 
-/* Allocate memory for new grammar. */
-struct grammar *gp_create_grammar (void) {
+struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
   gp_allocator_t *allocator;
 
   allocator = gp_alloc_new (NULL, NULL, NULL, NULL);
@@ -964,8 +953,7 @@ struct grammar *gp_create_grammar (void) {
   return grammar;
 }
 
-/* Make grammar empty. */
-static void gp_empty_grammar (void) {
+static void gp_empty_grammar (void) { /* Make grammar empty. */
   if (grammar != NULL) {
     rule_empty (grammar->rules);
     term_set_empty (grammar->term_sets);
@@ -973,14 +961,12 @@ static void gp_empty_grammar (void) {
   }
 }
 
-/* Return the last occurred error code for given grammar. */
-int gp_error_code (struct grammar *g) {
+int gp_error_code (struct grammar *g) { /* Return the last occurred error code for given grammar. */
   assert (g != NULL);
   return g->error_code;
 }
 
-/* Return message are always contains error message corresponding to the last occurred error code.
- */
+/* Return message containing error message corresponding to the last occurred error code.  */
 const char *gp_error_message (struct grammar *g) {
   assert (g != NULL);
   return g->error_message;
@@ -1136,8 +1122,7 @@ static void check_grammar (int strict_p) {
 #define AXIOM_NAME "$S"
 #define END_MARKER_NAME "$eof"
 
-/* Should be negative. */
-#define END_MARKER_CODE -1
+#define END_MARKER_CODE (-1) /* Should be negative. */
 
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p,
@@ -2778,8 +2763,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
   return ok_p ? 0 : 1; /* !!! change in the future */
 }
 
-/* Free memory allocated for the grammar. */
-void gp_free_grammar (struct grammar *g) {
+void gp_free_grammar (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
     gp_allocator_t *allocator = g->alloc;
     rule_fin (g->rules);
@@ -2862,13 +2846,11 @@ void gp_free_tree (struct gp_tree_node *root, void (*parse_free_fn) (void *),
   free_tree_sweep (root, parse_free_fn, termcb);
 }
 
-/* This page contains a test code for GPARSER. To use it, define macro GP_TEST during compilation.
- */
+/* This page contains a test code for Gecko. To use it, define macro GP_TEST during compilation. */
 
 #ifdef GP_TEST
 
-/* All parse_alloc memory is contained here. */
-static os_t mem_os;
+static os_t mem_os; /* All parse_alloc memory is contained here. */
 
 static void *test_parse_alloc (int size) {
   OS_TOP_EXPAND (mem_os, size);
@@ -2879,7 +2861,7 @@ static void *test_parse_alloc (int size) {
 
 static int nterm; /* the current number of next input grammar terminal */
 
-/* The function imported by GPARSER (see comments in the interface file). */
+/* The function imported by Gecko (see comments in the interface file). */
 const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
   nterm++;
   *priority = -1;
@@ -2896,7 +2878,7 @@ const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
 
 static int nrule; /* the current number of next rule grammar terminal */
 
-/* The function imported by GPARSER (see comments in the interface file). */
+/* The function imported by Gecko (see comments in the interface file). */
 const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, int **transl) {
   static const char *rhs_1[] = {"T", NULL};
   static int tr_1[] = {0, -1};
@@ -2953,11 +2935,11 @@ const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, i
 
 static int ntok; /* the current number of next input token */
 
-/* The function imported by GPARSER (see comments in the interface file). */
+/* The function imported by Gecko (see comments in the interface file). */
 static int test_read_token (void **attr) {
-  //  const char input[] = "a+a*(a*a+a)";
-  const char input[] = "a+a**(a*a+a)";
-  // const char input[] = "a+a*";
+  const char input[] = "a+a*(a*a+a)";
+  // const char input[] = "a+a**(a*a+a)";
+  //  const char input[] = "a+a*";
   ntok++;
   *attr = NULL;
   if ((size_t) ntok < sizeof (input)) return input[ntok - 1];
@@ -2976,7 +2958,7 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr GP_UNUSED,
              err_tok_num, start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
 }
 
-/* The following two functions calls gparser with two different ways of forming grammars. */
+/* The following two functions calls Gecko with two different ways of forming grammars. */
 static void use_functions (int argc, char **argv) {
   struct grammar *g;
   struct gp_tree_node *root;
