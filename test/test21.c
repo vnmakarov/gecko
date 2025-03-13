@@ -15,6 +15,6 @@ static const char *description
     "S : 'b';\n";
 
 int main (int argc, char **argv) {
-  test_complex_parse (false, false, false, false, argc, argv);
+  test_complex_parse (false, false, false, 3, false, argc, argv);
   exit (0);
 }

@@ -2137,13 +2137,13 @@ static void process_child (struct gp_tree_node *father, struct gp_tree_node **ch
     *child = subst;
 }
 
-static void print_parse (FILE *f, struct gp_tree_node *root);
+static void print_parse (FILE *f, struct grammar *grammar, struct gp_tree_node *root);
 
 static void reshape (struct gp_tree_node *root) {
 #ifndef NO_GP_DEBUG_PRINT
   if (grammar->debug_level > 3) {
     fprintf (stderr, "==Before reshaping:\n");
-    print_parse (stderr, root);
+    print_parse (stderr, grammar, root);
   }
 #endif
   assert (root->type != GP_OPT);
@@ -2226,7 +2226,7 @@ static void reshape (struct gp_tree_node *root) {
 #ifndef NO_GP_DEBUG_PRINT
     if (grammar->debug_level > 3) {
       fprintf (stderr, "==Result after moving opts of n%d:\n", node_num);
-      print_parse (stderr, root);
+      print_parse (stderr, grammar, root);
     }
 #endif
   }
@@ -2664,11 +2664,16 @@ static void print_node (FILE *f, struct gp_tree_node *node) {
 }
 
 /* Print parse tree with ROOT. */
-static void print_parse (FILE *f, struct gp_tree_node *root) {
-  visits_p = (bool *) gp_malloc (grammar->alloc, n_parse_nodes * sizeof (bool));
+static void print_parse (FILE *f, struct grammar *g, struct gp_tree_node *root) {
+  visits_p = (bool *) gp_malloc (g->alloc, n_parse_nodes * sizeof (bool));
   memset (visits_p, 0, n_parse_nodes * sizeof (bool));
   print_node (f, root);
-  gp_free (grammar->alloc, visits_p);
+  gp_free (g->alloc, visits_p);
+  fprintf (f, "\n");
+}
+
+void gp_print_translation (FILE *f, struct grammar *g, struct gp_tree_node *root) {
+  print_parse (f, g, root);
 }
 
 #endif
@@ -2721,13 +2726,13 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
   gp_parse_init ();
   parse_init_p = true;
   struct gp_tree_node *result;
-  bool ok_p GP_UNUSED = parse (ambiguous_p, &result);
+  bool ok_p = parse (ambiguous_p, &result);
+  if (ok_p) *root = result;
 #ifndef NO_GP_DEBUG_PRINT
   if (grammar->debug_level > 0) {
     if (ok_p && grammar->debug_level > 1) {
       fprintf (stderr, "Translation:\n");
-      print_parse (stderr, result);
-      fprintf (stderr, "\n");
+      print_parse (stderr, grammar, result);
     }
     fprintf (stderr, "%sGrammar: #terms = %d, #nonterms = %d, ", *ambiguous_p ? "AMBIGUOUS " : "",
              grammar->symbs->n_terms, grammar->symbs->n_nonterms);

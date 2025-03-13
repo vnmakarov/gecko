@@ -131,8 +131,8 @@ static void test_standard_read (
   free_grammar (g);
 }
 
-static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost,
-                                bool recovery_match, int argc, char **argv) {
+static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost, int recovery_match,
+                                bool print_transl, int argc, char **argv) {
   struct grammar *g;
   struct tree_node *root;
   ambig_type ambiguous_p;
@@ -151,9 +151,7 @@ static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost,
     set_debug_level (g, 3);
   if (argc > 2) set_error_recovery_flag (g, atoi (argv[2]));
   if (argc > 3) set_one_parse_flag (g, atoi (argv[3]));
-  if (recovery_match) {
-    set_recovery_match (g, recovery_match);
-  }
+  if (recovery_match) set_recovery_match (g, recovery_match);
   if (parse_grammar (g, 1, description) != 0) {
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
@@ -167,9 +165,8 @@ static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost,
     fprintf (stderr, "Grammar should be %sambiguous\n", ambiguous ? "" : "un");
     exit (1);
   }
-  if (print_cost) {
-    fprintf (stderr, "cost = %d\n", root->val.anode.cost);
-  }
+  if (print_cost) fprintf (stderr, "cost = %d\n", root->val.anode.cost);
+  if (print_transl) gp_print_translation (stderr, g, root);
   free_grammar (g);
 }
 

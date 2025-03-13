@@ -10,12 +10,16 @@ static const char *input = "a+a*(a*a+a)";
 
 static const char *description
   = "\n"
-    "TERM\n"
-    "LEFT 'a'\n"
-    "LEFT 'a'\n"
-    "S : 'a';\n";
+    "TERM;\n"
+    "LEFT '+';\n"
+    "LEFT '*';\n"
+    "E : 'a'         # 0\n"
+    "  | '(' E ')'   # 1\n"
+    "  | E '+' E     # plus (0 2)\n"
+    "  | E '*' E     # mult (0 2)\n"
+    "  ;\n";
 
 int main (int argc, char **argv) {
-  test_complex_parse (false, false, false, 3, false, argc, argv);
+  test_complex_parse (false, false, false, 3, true, argc, argv);
   exit (0);
 }
