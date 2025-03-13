@@ -74,7 +74,7 @@ fi
 if test x$YACC != x; then
   # YACC
   echo YACC -- Big test "(lines: `wc -l $BIG_TEST`)"
-   
+
   if $YACC -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$BIG_TEST; then
     echo
   else
@@ -139,7 +139,7 @@ if test x$YAEPDIR != x; then
 	echo Failure with 'YAEP (Yet Another Earley Parser)'
 	exit 1
     fi
-    
+
     echo Static Lookahead -- Big test "(lines: `wc -l $BIG_TEST`)"
     if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $YAEPLIB -o $outfile && time $outfile 1 1 <$BIG_TEST; then
 	echo
@@ -187,7 +187,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
 	echo Failure with 'Elkhound'
 	exit 1
     fi
-    
+
     echo ELKHOUND '(GLR Parser)': Big test "(lines: `wc -l $BIG_TEST`)"
     if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && time $outfile <$BIG_TEST; then
 	echo
@@ -207,7 +207,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
     rm -f elkh-c.cc elkh-c.h elkh-ambig.cc elkh-ambig.cc
 fi
 
-# Gecko 
+# Gecko
 echo ++++++++Gecko: pure parsing
 if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1 <$TEST; then
   echo
