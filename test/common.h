@@ -104,9 +104,13 @@ static void test_standard_parse (void) {
   free_grammar (g);
 }
 
-static void test_standard_read (const char *(*read_terminal) (int *),
-                                const char *(*read_rule) (const char ***, const char **, int *,
-                                                          int **) ) {
+static void test_standard_read (
+#ifdef YAEP
+  const char *(*read_terminal) (int *),
+#else
+  const char *(*read_terminal) (int *, int *, enum gp_assoc *),
+#endif
+  const char *(*read_rule) (const char ***, const char **, int *, int **) ) {
   struct grammar *g;
   struct tree_node *root;
   ambig_type ambiguous_p;

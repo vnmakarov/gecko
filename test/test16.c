@@ -10,9 +10,11 @@
    terminal. */
 static int nterm;
 
-/* The following function imported by YAEP (see comments in the interface file). */
-const char *read_terminal (int *code) {
+/* The following function imported by Gecko (see comments in the interface file). */
+const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
   nterm++;
+  *priority = -1;
+  *assoc = GP_NON_ASSOC;
   switch (nterm) {
   case 1: *code = 'a'; return "a";
   case 2: *code = '+'; return "+";
@@ -28,7 +30,7 @@ const char *read_terminal (int *code) {
    terminal. */
 static int nrule;
 
-/* The following function imported by YAEP (see comments in the interface file). */
+/* The following function imported by Gecko (see comments in the interface file). */
 const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, int **transl) {
   static const char *rhs_1[] = {"T", NULL};
   static int tr_1[] = {0, -1};

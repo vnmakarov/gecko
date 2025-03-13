@@ -39,6 +39,16 @@
     char *repr; /* terminal representation. */
     int code;   /* terminal code. */
     int num;    /* order number. */
+    int priority;
+    enum gp_assoc assoc; /* undefined for prioirty < 0 */
+  };
+
+  /* The following structure describes syntax grammar terminal. */
+  struct sassoc {
+    char *repr; /* terminal representation. */
+    enum gp_assoc assoc;
+    int priority;
+    bool used_p;
   };
 
   /* The following structure describes syntax grammar rule. */
@@ -56,9 +66,13 @@
     int *trans;
   };
 
-  /* The following vlos contain all syntax terminal and syntax rule structures. */
-  static vlo_t sterms, srules;
-
+  /* Current priority for terminal associativity */
+  static int curr_priority;
+  
+  /* The following vlos contain all syntax terminal, assoc, and rule structures. */
+  static vlo_t sterms, assocs, srules;
+  static os_t assocs_os; /* container for sassocs */
+  
   /* The following contain all right hand sides and translations arrays.
      See members rhs, trans in structure `rule'. */
   static os_t srhs, strans;
@@ -79,17 +93,19 @@
 %union {
   void *ref;
   int num;
+  enum gp_assoc assoc;
 }
 
 %token<ref> IDENT SEM_IDENT CHAR
 %token<num> NUMBER
-%token TERM
+%token TERM LEFT RIGHT NONASSOC
+%type<assoc> assocs
 %type<ref> trans
 %type<num> number
 
 %%
 
-file : file terms opt_sem | file rule | terms opt_sem | rule;
+file : file terms opt_sem | file assocs opt_sem | file rule | terms opt_sem | assocs opt_sem | rule;
 
 opt_sem :
         | ';';
@@ -98,11 +114,26 @@ terms : terms IDENT number {
           struct sterm term;
           term.repr = (char *) $2;
           term.code = $3;
+	  term.priority = -1;
+	  term.assoc = GP_NON_ASSOC;
           term.num = VLO_LENGTH (sterms) / sizeof (term);
 	  VLO_ADD_MEMORY (sterms, &term, sizeof (term));
         }
      | TERM
      ;
+
+assocs : assocs IDENT {
+           $$ = $1;
+	   add_assoc ((char *) $2, curr_priority, $1);
+         }
+       | assocs CHAR {
+           $$ = $1;
+	   add_assoc ((char *) $2, curr_priority, $1);
+         }
+       | LEFT {$$ = GP_LEFT_ASSOC; curr_priority++;}
+       | RIGHT  {$$ = GP_RIGHT_ASSOC; curr_priority++;}
+       | NONASSOC {$$ = GP_NON_ASSOC; curr_priority++;}
+       ;
 
 number : { $$ = -1; }
        | '=' NUMBER { $$ = $2; }
@@ -140,6 +171,8 @@ seq : seq IDENT {
         term.repr = (char *) $2;
         term.code = term.repr[1];
         term.num = VLO_LENGTH (sterms) / sizeof (term);
+	term.priority = -1;
+	term.assoc = GP_NON_ASSOC;
         VLO_ADD_MEMORY (sterms, &term, sizeof (term));
         OS_TOP_ADD_MEMORY (srhs, &term.repr, sizeof (term.repr));
       }
@@ -248,6 +281,18 @@ int yylex (void) {
           OS_TOP_NULLIFY (stoks);
           return TERM;
         }
+        if (strcmp ((char *) yylval.ref, "LEFT") == 0) {
+          OS_TOP_NULLIFY (stoks);
+          return LEFT;
+        }
+        if (strcmp ((char *) yylval.ref, "RIGHT") == 0) {
+          OS_TOP_NULLIFY (stoks);
+          return RIGHT;
+        }
+        if (strcmp ((char *) yylval.ref, "NONASSOC") == 0) {
+          OS_TOP_NULLIFY (stoks);
+          return NONASSOC;
+        }
         OS_TOP_FINISH (stoks);
         while ((c = *curr_ch++) != '\0')
           if (c == '\n')
@@ -293,6 +338,40 @@ static int sterm_num_cmp (const void *t1, const void *t2) {
   return ((struct sterm *) t1)->num - ((struct sterm *) t2)->num;
 }
 
+static void add_assoc (const char *repr, int priority, enum gp_assoc assoc) {
+  OS_TOP_EXPAND (assocs_os, sizeof (struct sassoc));
+  struct sassoc *sassoc = OS_TOP_BEGIN (assocs_os);
+  OS_TOP_FINISH (assocs_os);
+  sassoc->repr = (char *) repr;
+  sassoc->priority = priority;
+  sassoc->assoc = assoc;
+  VLO_ADD_MEMORY (assocs, &sassoc, sizeof (sassoc));
+}
+
+static hash_table_t assoc_htab;
+
+static uint64_t assoc_hash (hash_table_entry_t s) { /* return hash of assoc */
+  const char *str = ((struct sassoc *) s)->repr;
+  return hash (str, strlen (str), 42);
+}
+
+static bool assoc_eq (hash_table_entry_t s1, hash_table_entry_t s2) { /* Equality of assocs. */
+  return strcmp (((struct sassoc *) s1)->repr, ((struct sassoc *) s2)->repr) == 0;
+}
+
+static struct sassoc *find_assoc (char *repr) {
+  struct sassoc assoc;
+  assoc.repr = repr;
+  hash_table_entry_t *res = find_hash_table_entry (assoc_htab, &assoc, false);
+  return (struct sassoc *) *res;
+}
+
+static void insert_assoc (struct sassoc *assoc) {
+  hash_table_entry_t *entry = find_hash_table_entry (assoc_htab, assoc, true);
+  assert (*entry == NULL);
+  *entry = (hash_table_entry_t) assoc;
+}
+
 static void free_sgrammar (void);
 
 /* The following is major function which parses the description and transforms it into IR. */
@@ -306,11 +385,15 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
     free_sgrammar ();
     return code;
   }
+  curr_priority = 0;
   OS_CREATE (stoks, g->alloc, 0);
   VLO_CREATE (sterms, g->alloc, 0);
+  VLO_CREATE (assocs, g->alloc, 0);
+  OS_CREATE (assocs_os, g->alloc, 0);
   VLO_CREATE (srules, g->alloc, 0);
   OS_CREATE (srhs, g->alloc, 0);
   OS_CREATE (strans, g->alloc, 0);
+  assoc_htab = create_hash_table (grammar->alloc, 80, assoc_hash, assoc_eq);
   curr_ch = grammar_name;
   yyparse ();
   /* sort array of syntax terminals by names. */
@@ -336,10 +419,29 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   num = j;
   /* sort array of syntax terminals by order number. */
   qsort (arr, num, sizeof (struct sterm), sterm_num_cmp);
-  /* Assign codes. */
+  for (i = 0; i < (int) (VLO_LENGTH (assocs) / sizeof (struct sassoc *)); i++) {
+    struct sassoc *assoc = ((struct sassoc **)VLO_BEGIN (assocs))[i];
+    assoc->used_p = false;
+    if (find_assoc (assoc->repr) != NULL) {
+      gp_error (GP_REPEATED_TERM_ASSOC, "term %s is repeteadly described in an associtivity clause", assoc->repr);
+    } else {
+      insert_assoc (assoc);
+    }
+  }
+  /* Assign codes and priories */
   for (i = 0; i < num; i++) {
     term = (struct sterm *) VLO_BEGIN (sterms) + i;
     if (term->code < 0) term->code = code++;
+    struct sassoc *assoc = find_assoc (term->repr);
+    if (assoc == NULL) continue;
+    term->priority = assoc->priority;
+    term->assoc = assoc->assoc;
+    assoc->used_p = true;
+  }
+  for (i = 0; i < (int) (VLO_LENGTH (assocs) / sizeof (struct sassoc *)); i++) {
+    struct sassoc *assoc = ((struct sassoc **) VLO_BEGIN (assocs))[i];
+    if (!assoc->used_p)
+      gp_error (GP_UNDEFINED_TERM_ASSOC, "term %s described in associtivity clause is not defined", assoc->repr);
   }
   nsterm = nsrule = 0;
   return 0;
@@ -350,18 +452,23 @@ static void free_sgrammar (void) {
   OS_DELETE (strans);
   OS_DELETE (srhs);
   VLO_DELETE (srules);
+  VLO_DELETE (assocs);
+  OS_DELETE (assocs_os);
+  delete_hash_table (assoc_htab);
   VLO_DELETE (sterms);
   OS_DELETE (stoks);
 }
 
 /* The following two functions implements functions used by YAEP. */
-static const char *sread_terminal (int *code) {
+static const char *sread_terminal (int *code, int *priority, enum gp_assoc *assoc) {
   struct sterm *term;
   const char *name;
 
   term = &((struct sterm *) VLO_BEGIN (sterms))[nsterm];
   if ((char *) term >= (char *) VLO_BOUND (sterms)) return NULL;
   *code = term->code;
+  *priority = term->priority;
+  *assoc = term->assoc;
   name = term->repr;
   nsterm++;
   return name;

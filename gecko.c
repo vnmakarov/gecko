@@ -87,8 +87,10 @@ struct symb {       /* symbol of the grammar: */
   const char *repr; /* external representation of the symbol */
   union {
     struct {
-      int code;     /* code of the terminal symbol */
-      int term_num; /* order number of the terminal */
+      int code;            /* code of the terminal symbol */
+      int term_num;        /* order number of the terminal */
+      int priority;        /* < 0 no priority */
+      enum gp_assoc assoc; /* undefined for priority < 0 */
     } term;
     struct {
       struct rule *rules;            /* all rules with the nonterminal in the rule LHS */
@@ -184,7 +186,7 @@ static FORCE_INLINE struct symb *term_find_by_code (int code) {
 
 /* Create new terminal symbol and return reference for it. The symbol should be not in the tables.
    The function should create own copy of name for the new symbol. */
-static struct symb *symb_add_term (const char *name, int code) {
+static struct symb *symb_add_term (const char *name, int code, int priority, enum gp_assoc assoc) {
   struct symb symb, *result;
   hash_table_entry_t *repr_entry, *code_entry;
 
@@ -193,6 +195,8 @@ static struct symb *symb_add_term (const char *name, int code) {
   symb.num = grammar->symbs->n_nonterms + grammar->symbs->n_terms;
   symb.u.term.code = code;
   symb.u.term.term_num = grammar->symbs->n_terms++;
+  symb.u.term.priority = priority;
+  symb.u.term.assoc = assoc;
   symb.empty_p = false;
   repr_entry = find_hash_table_entry (grammar->symbs->repr_to_symb_tab, &symb, true);
   assert (*repr_entry == NULL);
@@ -243,7 +247,7 @@ static struct symb *symb_get (int n) { /* return N-th symbol (if any) or NULL ot
   return symb;
 }
 
-static struct symb *term_get (int n) { /* return N-th symbol (if any) or NULL otherwise */
+static struct symb *term_get (int n) { /* return N-th term (if any) or NULL otherwise */
   if (n < 0 || (VLO_LENGTH (grammar->symbs->terms_vlo) / sizeof (struct symb *) <= (size_t) n))
     return NULL;
   struct symb *symb = ((struct symb **) VLO_BEGIN (grammar->symbs->terms_vlo))[n];
@@ -438,14 +442,15 @@ static void term_set_fin (struct term_sets *term_sets) { /* finalize work with t
 
 /* This page is abstract data `grammar rules'. */
 
-struct rule {            /* rule of the grammar: */
-  int num;               /* order number of rule */
-  int rhs_len;           /* length of rhs */
-  int lhs_nonterm_num;   /* = lhs->u.nonterm.nonterm_num */
-  struct rule *next;     /* the next grammar rule */
-  struct rule *lhs_next; /* the next grammar rule with the same nonterminal in the rule lhs */
-  struct symb *lhs;      /* nonterminal in the left hand side of the rule */
-  struct symb **rhs;     /* symbols in the right hand side of the rule */
+struct rule {                 /* rule of the grammar: */
+  int num;                    /* order number of rule */
+  int rhs_len;                /* length of rhs */
+  int lhs_nonterm_num;        /* = lhs->u.nonterm.nonterm_num */
+  struct rule *next;          /* the next grammar rule */
+  struct rule *lhs_next;      /* the next grammar rule with the same nonterminal in the rule lhs */
+  struct symb *lhs;           /* nonterminal in the left hand side of the rule */
+  struct symb **rhs;          /* symbols in the right hand side of the rule */
+  struct symb *priority_term; /* last priority terminal, NULL otherwise */
   /* The following three members define rule translation: */
   const char *anode; /* abstract node name if any */
   int anode_cost;    /* the cost of the abstract node if any, otherwise 0 */
@@ -494,6 +499,7 @@ static struct rule *rule_new_start (struct symb *lhs, const char *anode, int ano
   OS_TOP_FINISH (grammar->rules->rules_os);
   rule->lhs = lhs;
   rule->lhs_nonterm_num = lhs->u.nonterm.nonterm_num;
+  rule->priority_term = NULL;
   if (anode == NULL) {
     rule->anode = NULL;
     rule->anode_cost = 0;
@@ -530,6 +536,7 @@ static void rule_new_symb_add (struct symb *symb) {
   OS_TOP_ADD_MEMORY (grammar->rules->rules_os, &empty, sizeof (struct symb *));
   grammar->rules->curr_rule->rhs = (struct symb **) OS_TOP_BEGIN (grammar->rules->rules_os);
   grammar->rules->curr_rule->rhs[grammar->rules->curr_rule->rhs_len] = symb;
+  if (symb->term_p && symb->u.term.priority >= 0) grammar->rules->curr_rule->priority_term = symb;
   grammar->rules->curr_rule->rhs_len++;
   grammar->rules->n_rhs_lens++;
 }
@@ -1133,7 +1140,8 @@ static void check_grammar (int strict_p) {
 #define END_MARKER_CODE -1
 
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
-int gp_read_grammar (struct grammar *g, bool strict_p, const char *(*read_terminal) (int *code),
+int gp_read_grammar (struct grammar *g, bool strict_p,
+                     const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
                      const char *(*read_rule) (const char ***rhs, const char **abs_node,
                                                int *anode_cost, int **transl)) {
   struct symb *symb;
@@ -1143,13 +1151,15 @@ int gp_read_grammar (struct grammar *g, bool strict_p, const char *(*read_termin
   if ((code = setjmp (error_longjump_buff)) != 0) return code;
   if (!grammar->undefined_p) gp_empty_grammar ();
   const char *name;
-  while ((name = (*read_terminal) (&code)) != NULL) {
+  int priority;
+  enum gp_assoc assoc;
+  while ((name = (*read_terminal) (&code, &priority, &assoc)) != NULL) {
     if (code < 0) gp_error (GP_NEGATIVE_TERM_CODE, "term `%s' has negative code", name);
     symb = symb_find_by_repr (name);
     if (symb != NULL) gp_error (GP_REPEATED_TERM_DECL, "repeated declaration of term `%s'", name);
     if (term_tab_find_by_code (code) != NULL)
       gp_error (GP_REPEATED_TERM_CODE, "repeated code %d in term `%s'", code, name);
-    symb_add_term (name, code);
+    symb_add_term (name, code, priority, assoc);
   }
   grammar->axiom = grammar->end_marker = NULL;
   const char *lhs, **rhs, *anode;
@@ -1178,7 +1188,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p, const char *(*read_termin
       if (grammar->end_marker != NULL)
         gp_error (GP_FIXED_NAME_USAGE, "do not use fixed name `%s'", END_MARKER_NAME);
       if (term_tab_find_by_code (END_MARKER_CODE) != NULL) abort ();
-      grammar->end_marker = symb_add_term (END_MARKER_NAME, END_MARKER_CODE);
+      grammar->end_marker = symb_add_term (END_MARKER_NAME, END_MARKER_CODE, -1, GP_NON_ASSOC);
       /* Add rules for start */
       rule = rule_new_start (grammar->axiom, NULL, 0);
       rule_new_symb_add (symb);
@@ -1332,7 +1342,7 @@ static int action_cmp (const void *el1, const void *el2) {
   const struct action *e1 = (const struct action *) el1, *e2 = (const struct action *) el2;
   int diff = e1->term_num - e2->term_num;
   if (diff != 0) return diff;
-  if (e1->shift_p) return -1;
+  if (e1->shift_p) return -1; /* put shift first */
   if (e2->shift_p) return 1;
   return e1->u.rule->num - e2->u.rule->num;
 }
@@ -1351,6 +1361,36 @@ static void print_action (FILE *f, struct action *a) {
   }
 }
 #endif
+
+static void remove_priority_conflict_actions (struct action *actions, int *actions_num) {
+  struct symb *term = term_get (actions[0].term_num);  // ???
+  assert (term->u.term.term_num == actions[0].term_num);
+  int num = *actions_num, new_num = 1;
+  if (term->u.term.priority < 0 || num <= 1 || !actions[0].shift_p) return;
+  bool remove_shift_p = false;
+  for (int i = 1; i < num; i++) {
+    struct action *action = &actions[i];
+    assert (!action->shift_p);
+    struct symb *reduce_term = action->u.rule->priority_term;
+    if (reduce_term == NULL) continue;
+    if (term->u.term.priority < reduce_term->u.term.priority) { /* remove shift */
+      remove_shift_p = true;
+      actions[new_num++] = *action;
+    } else if (term->u.term.priority > reduce_term->u.term.priority) { /* remove reduce */
+    } else if (term->u.term.assoc == GP_LEFT_ASSOC) {                  /* remove shift */
+      remove_shift_p = true;
+      actions[new_num++] = *action;
+    } else if (term->u.term.assoc == GP_RIGHT_ASSOC) { /* remove reduce */
+    } else {                                           /* nonassoc: remove both */
+      remove_shift_p = true;
+    }
+  }
+  if (remove_shift_p) {
+    for (int i = 1; i < new_num; i++) actions[i - 1] = actions[i];
+    new_num--;
+  }
+  *actions_num = new_num;
+}
 
 static void build_goto_map_and_actions (struct set *set) {
   VLO_NULLIFY (symb_sits);
@@ -1408,6 +1448,25 @@ static void build_goto_map_and_actions (struct set *set) {
   if (nta == 0) return;
   /* build action descs: */
   struct action *action_addr = (struct action *) VLO_BEGIN (actions_vlo);
+  qsort (action_addr, nta, sizeof (struct action), action_cmp);
+  int new_nta = 0;
+  for (int i = 0, term_actions_num = 0, start = 0; i < nta; i++) { /* apply priorities: */
+    struct action *action = &action_addr[i];
+    struct action *prev_action = i == 0 ? NULL : &action_addr[i - 1];
+    struct action *next_action = i + 1 >= nta ? NULL : &action_addr[i + 1];
+    if (prev_action != NULL && action->term_num == prev_action->term_num) {
+      term_actions_num++;
+    } else {
+      start = new_nta;
+      term_actions_num = 1;
+    }
+    action_addr[new_nta++] = *action;
+    if (next_action == NULL || action->term_num != next_action->term_num) {
+      remove_priority_conflict_actions (&action_addr[start], &term_actions_num);
+      new_nta = start + term_actions_num;
+    }
+  }
+  nta = new_nta;
   assert (set->action_map == NULL);
   set->action_map = set_calloc (sizeof (struct action_desc) * grammar->symbs->n_terms);
   n_action_vects++;
@@ -1415,9 +1474,8 @@ static void build_goto_map_and_actions (struct set *set) {
   set->actions = set_calloc (sizeof (struct action) * nta);
   set->n_actions = nta;
   n_actions += nta;
-  qsort (action_addr, nta, sizeof (struct action), action_cmp);
   int actions_num = 0;
-  for (int i = 0; i < nta; i++) { /* build derived sets, goto map, and collect actions: */
+  for (int i = 0; i < nta; i++) { /* set up set actions, actions_start, and actions_num: */
     struct action *action = &action_addr[i];
     struct action *prev_action = i == 0 ? NULL : &action_addr[i - 1];
     struct action *next_action = i + 1 >= nta ? NULL : &action_addr[i + 1];
@@ -2563,7 +2621,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[1];
       assert (!el->attr_p);
       *transl = (struct gp_tree_node *) el->anode_attr;
-      if (ambiguous_parse_p) reshape (*transl);  // ??? only opt
+      if (ambiguous_parse_p && (*transl)->type != GP_NIL) reshape (*transl);  // ??? only opt
       res = true;
     }
   }
@@ -2822,8 +2880,10 @@ static void *test_parse_alloc (int size) {
 static int nterm; /* the current number of next input grammar terminal */
 
 /* The function imported by GPARSER (see comments in the interface file). */
-const char *read_terminal (int *code) {
+const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
   nterm++;
+  *priority = -1;
+  *assoc = GP_NON_ASSOC;
   switch (nterm) {
   case 1: *code = 'a'; return "a";
   case 2: *code = '+'; return "+";

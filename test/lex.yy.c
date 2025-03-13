@@ -624,7 +624,7 @@ int yy_flex_debug = 0;
 #define YY_RESTORE_YY_MORE_OFFSET
 char *yytext;
 #line 1 "ansic.l"
-/* This file is a part of GP (General Parser) project.
+/* This file is a part of Gecko Parser (GLR Parser) project.
    Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 #line 13 "ansic.l"

@@ -34,16 +34,20 @@ struct grammar;
 #define GP_NEGATIVE_TERM_CODE 6
 #define GP_TOO_WIDE_TERM_RANGE_CODE 7
 #define GP_REPEATED_TERM_CODE 8
-#define GP_NO_RULES 9
-#define GP_TERM_IN_RULE_LHS 10
-#define GP_INCORRECT_TRANSLATION 11
-#define GP_NEGATIVE_COST 12
-#define GP_INCORRECT_SYMBOL_NUMBER 13
-#define GP_REPEATED_SYMBOL_NUMBER 14
-#define GP_UNACCESSIBLE_NONTERM 15
-#define GP_NONTERM_DERIVATION 16
-#define GP_LOOP_NONTERM 17
-#define GP_INVALID_TOKEN_CODE 18
+#define GP_REPEATED_TERM_ASSOC 9
+#define GP_UNDEFINED_TERM_ASSOC 10
+#define GP_NO_RULES 11
+#define GP_TERM_IN_RULE_LHS 12
+#define GP_INCORRECT_TRANSLATION 13
+#define GP_NEGATIVE_COST 14
+#define GP_INCORRECT_SYMBOL_NUMBER 15
+#define GP_REPEATED_SYMBOL_NUMBER 16
+#define GP_UNACCESSIBLE_NONTERM 17
+#define GP_NONTERM_DERIVATION 18
+#define GP_LOOP_NONTERM 19
+#define GP_INVALID_TOKEN_CODE 20
+
+enum gp_assoc { GP_NON_ASSOC, GP_LEFT_ASSOC, GP_RIGHT_ASSOC };
 
 enum gp_tree_node_type { /* the parse tree node: */
                          GP_NIL,
@@ -131,7 +135,8 @@ extern const char *gp_error_message (struct grammar *g);
    rule will be nil node or the translation of the symbol in RHS given by the single array element.
    The cost of the abstract node if given is passed through ANODE_COST. */
 extern int gp_read_grammar (struct grammar *g, bool strict_p,
-                            const char *(*read_terminal) (int *code),
+                            const char *(*read_terminal) (int *code, int *priority,
+                                                          enum gp_assoc *assoc),
                             const char *(*read_rule) (const char ***rhs, const char **abs_node,
                                                       int *anode_cost, int **transl));
 
