@@ -50,12 +50,12 @@ struct grammar {    /* major structure which stores information about grammar: *
   struct symb *end_marker;    /* auxiliary symbol denoting EOF */
   int recovery_token_matches; /* number of subsequent tokens should be successfuly shifted to finish
                                  error recovery */
-  int debug_level;            /* ??? */
-  bool one_parse_p;           /* true if we need only one parse */
-  bool cost_p;                /* true if we need parse(s) with minimal costs */
-  bool error_recovery_p;      /* true if we need to make error recovery. */
-  struct symbs *symbs;        /* vocabulary used for this grammar */
-  struct rules *rules;        /* rules used for this grammar */
+  int debug_level;
+  bool one_parse_p;            /* true if we need only one parse */
+  bool cost_p;                 /* true if we need parse(s) with minimal costs */
+  bool error_recovery_p;       /* true if we need to make error recovery. */
+  struct symbs *symbs;         /* vocabulary used for this grammar */
+  struct rules *rules;         /* rules used for this grammar */
   struct term_sets *term_sets; /* terminal sets used for this grammar */
   gp_allocator_t *alloc;       /* Allocator */
 };
