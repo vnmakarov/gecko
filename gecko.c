@@ -1477,8 +1477,11 @@ static void build_goto_map_and_actions (struct set *set) {
   if (grammar->debug_level > 2) {
     fprintf (stderr, "  Actions for");
     set_print (stderr, set, false);
+    bool conflict_p = false;
     for (int i = 0; i < nta; i++) {
-      fprintf (stderr, "            ");
+      if (i == 0 || set->actions[i - 1].term_num != set->actions[i].term_num)
+        conflict_p = i + 1 < nta && set->actions[i].term_num == set->actions[i + 1].term_num;
+      fprintf (stderr, "           %c ", conflict_p ? '!' : ' ');
       print_action (stderr, &set->actions[i]);
       fprintf (stderr, "\n");
     }
