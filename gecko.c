@@ -1676,6 +1676,7 @@ typedef struct stack_el {
 } stack_el_t;
 
 struct stack {
+  int num;
   struct recovery_info *recovery;
   vlo_t els;
 };
@@ -1683,14 +1684,16 @@ struct stack {
 static vlo_t free_stacks;
 static vlo_t nodes_vlo;
 
+static int n_stacks;
 #ifndef NO_GP_DEBUG_PRINT
-static int n_stacks, n_stack_els, n_curr_stack_els;
+static int n_stack_els, n_curr_stack_els;
 #endif
 
 static void stack_init (void) {
   VLO_CREATE (free_stacks, grammar->alloc, 16);
+  n_stacks = 0;
 #ifndef NO_GP_DEBUG_PRINT
-  n_stacks = n_stack_els = n_curr_stack_els = 0;
+  n_stack_els = n_curr_stack_els = 0;
 #endif
   recovery_info_init ();
 }
@@ -1712,10 +1715,8 @@ static void stack_finish (void) {
 static struct stack *stack_create (struct stack *base) {
   struct stack *stack;
   if (VLO_LENGTH (free_stacks) == 0) {
-#ifndef NO_GP_DEBUG_PRINT
-    n_stacks++;
-#endif
     stack = gp_malloc (grammar->alloc, sizeof (struct stack));
+    stack->num = n_stacks++;
     VLO_CREATE (stack->els, grammar->alloc,
                 (base == NULL ? 0 : (int) VLO_LENGTH (base->els)) + 4 * sizeof (stack_el_t));
   } else {
@@ -2068,7 +2069,7 @@ static void print_stack_els (FILE *f, struct stack *stack) {
 }
 
 static void print_stack (FILE *f, struct stack *stack) {
-  fprintf (f, "      ");
+  fprintf (f, "      {#%d}", stack->num);
   if (stack->recovery != NULL)
     fprintf (f, "token #%d (matched=%d, cost=%d):", stack->recovery->u.token_info.buff_token_ind,
              stack->recovery->u.token_info.n_matched_toks, stack->recovery->u.token_info.cost);
@@ -2079,7 +2080,7 @@ static void print_single_stack (FILE *f, struct stack *stack, struct action *act
   assert (stack->recovery == NULL);
   fprintf (f, "  Single stack after [");
   print_action (f, action);
-  fprintf (f, "]:");
+  fprintf (f, "]: {#%d}", stack->num);
   print_stack_els (f, stack);
 }
 
