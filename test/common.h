@@ -58,6 +58,7 @@ static void *test_parse_alloc (int size) {
 static void test_parse_free (void *mem) { free (mem); }
 
 /* Printing syntax error. */
+#ifdef YAEP
 static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ignored_tok_num,
                                void *start_ignored_tok_attr, int start_recovered_tok_num,
                                void *start_recovered_tok_attr) {
@@ -67,6 +68,16 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
     fprintf (stderr, "Syntax error on token %d:ignore %d tokens starting with token = %d\n",
              err_tok_num, start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
 }
+#else
+static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
+                               const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+  if (stop_tok_repr == NULL)
+    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
+  else
+    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr,
+             stop_tok_repr);
+}
+#endif
 
 static const char *input;
 static const char *description;
@@ -166,7 +177,9 @@ static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost,
     exit (1);
   }
   if (print_cost) fprintf (stderr, "cost = %d\n", root->val.anode.cost);
+#ifndef YAEP
   if (print_transl) gp_print_translation (stderr, g, root);
+#endif
   free_grammar (g);
 }
 

@@ -150,6 +150,7 @@ static void *test_parse_alloc (int size) {
 }
 
 /* Printing syntax error. */
+#ifdef YAEP
 static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ignored_tok_num,
                                void *start_ignored_tok_attr, int start_recovered_tok_num,
                                void *start_recovered_tok_attr) {
@@ -160,6 +161,16 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
              err_tok_num, (int) (ptrdiff_t) err_tok_attr,
              start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
 }
+#else
+static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
+                               const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+  if (stop_tok_repr == NULL)
+    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
+  else
+    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr,
+             stop_tok_repr);
+}
+#endif
 
 /* The following function imported by Earley's algorithm (see comments
    in the interface file). */

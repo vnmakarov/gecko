@@ -28,7 +28,7 @@ int main (int argc, char **argv) {
 #ifdef linux
   char *start = sbrk (0);
 #endif
-  test_complex_parse (false, true, false, false, argc, argv);
+  test_complex_parse (false, true, false, 3, false, argc, argv);
 #ifdef linux
   printf ("parse time %.2f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
 #else

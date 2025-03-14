@@ -175,13 +175,10 @@ extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
    The function READ_TOKEN provides input tokens.  It returns code the next input token and its
    attribute.  If the function returns negative value we've read all tokens.
 
-   Function SYNTAX_ERROR prints error message about syntax error which occurred on token with number
-   ERR_TOK_NUM and attribute ERR_TOK_ATTR.  The following four parameters describes made error
-   recovery which ignored tokens starting with token given by 3rd and 4th parameters.  The first
-   token which was not ignored is described by the last parameters.  If the number of ignored tokens
-   is zero, the all parameters describes the same token.  If the error recovery is not made (see
-   comments for function `gp_set_error_recovery_flag'), the third and fifth parameters will be
-   negative and forth and sixth parameters will be NULL.
+   Function SYNTAX_ERROR prints error message about syntax error which occurred on token with
+   representation ERR_TOK_REPR and attribute ERR_TOK_ATTR.  The following two parameters describes
+   recovery stop token. If the error recovery is not made (see comments for function
+   `gp_set_error_recovery_flag'), the 3rd and 4th parameters will be NULL.
 
    Function PARSE_ALLOC is used by GECKO to allocate memory for parse tree representation.  After
    calling gp_fin we free all memory allocated by gparser.  At this point it is convenient to
@@ -194,10 +191,8 @@ extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
    NULL but PARSE_FREE is, the memory is not freed. In this case, the returned parse tree should
    also not be freed with gp_free_tree(). */
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr),
-                     void (*syntax_error) (int err_tok_num, void *err_tok_attr,
-                                           int start_ignored_tok_num, void *start_ignored_tok_attr,
-                                           int start_recovered_tok_num,
-                                           void *start_recovered_tok_attr),
+                     void (*syntax_error) (const char *err_tok_repr, void *err_tok_attr,
+                                           const char *stop_tok_repr, void *stop_tok_attr),
                      void *(*parse_alloc) (int nmemb), void (*parse_free) (void *mem),
                      struct gp_tree_node **root, bool *ambiguous_p);
 

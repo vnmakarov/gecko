@@ -1,0 +1,6 @@
+Syntax error on token '*' and stopping on token '('
+      6: ABSTRACT: plus ( 2 5 )
+      2: TERMINAL: code=97, repr='a'
+      5: ABSTRACT: mult ( 2 4 )
+      4: ABSTRACT: plus ( 2 2 )
+

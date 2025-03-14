@@ -64,9 +64,8 @@ static struct grammar *grammar; /* the reference for the current grammar structu
 
 /* The following is set up the parser and used globally. */
 static int (*read_token) (void **attr);
-static void (*syntax_error) (int err_tok_num, void *err_tok_attr, int start_ignored_tok_num,
-                             void *start_ignored_tok_attr, int start_recovered_tok_num,
-                             void *start_recovered_tok_attr);
+static void (*syntax_error) (const char *err_tok_repr, void *err_tok_attr,
+                             const char *stop_tok_repr, void *stop_tok_attr);
 static void *(*parse_alloc) (int nmemb);
 static void (*parse_free) (void *mem);
 
@@ -1586,24 +1585,20 @@ enum recovery_el_type {
   RECOVERY_REPLACE,
 };
 
-struct recovery_log_el {
-  enum recovery_el_type type;
-  int code;         /* code of skipped, inserted, replaced term */
-  int replace_code; /* replace term code for replacement, -1 otherwise */
-  void *attr;       /* attr of skipped or replaced term, NULL otherwise */
-  struct recovery_log_el *next;
-};
-
 struct recovery_info {
   union {
     struct {
       int n_matched_toks; /* number of last matched toks */
       int buff_token_ind;
       int cost;
+      /* Info about last recovery step: */
+      enum recovery_el_type type;
+      int code;         /* code of skipped, inserted, replaced term */
+      int replace_code; /* replace term code for replacement, -1 otherwise */
+      void *attr;       /* attr of skipped or replaced term, NULL otherwise */
     } token_info;
     struct recovery_info *next; /* used for freed infos */
   } u;
-  struct recovery_log_el *log;
 };
 
 static os_t recovery_infos;
@@ -1623,7 +1618,6 @@ static struct recovery_info *recovery_info_get_free (void) {
   OS_TOP_EXPAND (recovery_infos, sizeof (struct recovery_info));
   info = (struct recovery_info *) OS_TOP_BEGIN (recovery_infos);
   OS_TOP_FINISH (recovery_infos);
-  info->log = NULL;
   return info;
 }
 
@@ -1632,41 +1626,12 @@ static void recovery_info_free (struct recovery_info *info) {
   free_recovery_infos = info;
 }
 
-static void recovery_info_add_log (struct recovery_info *info, enum recovery_el_type type, int code,
-                                   int replace_code, void *attr) {
-  OS_TOP_EXPAND (recovery_infos, sizeof (struct recovery_log_el));
-  struct recovery_log_el *el = (struct recovery_log_el *) OS_TOP_BEGIN (recovery_infos);
-  OS_TOP_FINISH (recovery_infos);
-  el->type = type;
-  el->code = code;
-  el->replace_code = replace_code;
-  el->attr = attr;
-  el->next = info->log;
-  info->log = el;
-}
-
-static struct recovery_log_el *recovery_info_log_copy (struct recovery_log_el *log) {
-  struct recovery_log_el *res = NULL, **prev = &res;
-  for (struct recovery_log_el *el = log; el != NULL; el = el->next) {
-    OS_TOP_EXPAND (recovery_infos, sizeof (struct recovery_log_el));
-    struct recovery_log_el *new_el = (struct recovery_log_el *) OS_TOP_BEGIN (recovery_infos);
-    OS_TOP_FINISH (recovery_infos);
-    *prev = new_el;
-    *new_el = *el;
-    new_el->next = NULL;
-    prev = &new_el->next;
-  }
-  return res;
-}
-
 static struct recovery_info *recovery_info_copy (struct recovery_info *info) {
   struct recovery_info *res = recovery_info_get_free ();
   *res = *info;
-  res->log = recovery_info_log_copy (res->log);
   return res;
 }
 
-static void recovery_info_nullify (void) { OS_EMPTY (recovery_infos); }
 static void recovery_info_finish (void) { OS_DELETE (recovery_infos); }
 
 typedef struct stack_el {
@@ -2070,9 +2035,18 @@ static void print_stack_els (FILE *f, struct stack *stack) {
 
 static void print_stack (FILE *f, struct stack *stack) {
   fprintf (f, "      {#%d}", stack->num);
-  if (stack->recovery != NULL)
-    fprintf (f, "token #%d (matched=%d, cost=%d):", stack->recovery->u.token_info.buff_token_ind,
+  if (stack->recovery != NULL) {
+    fprintf (f, "token #%d (matched=%d, cost=%d", stack->recovery->u.token_info.buff_token_ind,
              stack->recovery->u.token_info.n_matched_toks, stack->recovery->u.token_info.cost);
+    if (stack->recovery->u.token_info.type == RECOVERY_SKIP)
+      fprintf (f, ", skip %d", stack->recovery->u.token_info.code);
+    else if (stack->recovery->u.token_info.type == RECOVERY_INSERT)
+      fprintf (f, ", insert %d", stack->recovery->u.token_info.code);
+    else
+      fprintf (f, ", replace %d by %d", stack->recovery->u.token_info.code,
+               stack->recovery->u.token_info.replace_code);
+    fprintf (f, "):");
+  }
   print_stack_els (stderr, stack);
 }
 
@@ -2335,33 +2309,48 @@ static void stack_recovery (struct stack *base_stack) {
   }
 #endif
   int new_els_num = VLO_LENGTH (new_stacks) / sizeof (struct stack *);
-  struct recovery_info *recovery = base_stack->recovery;
-  assert (recovery != NULL);
+  struct recovery_info *base_recovery = base_stack->recovery;
+  assert (base_recovery != NULL);
   struct set *base_set = stack_get_top_set (base_stack);
   void *attr;
-  bool eof_p = token_buff_get (recovery->u.token_info.buff_token_ind, &attr) == END_MARKER_CODE;
+  int code = token_buff_get (base_recovery->u.token_info.buff_token_ind, &attr);
+  bool eof_p = code == END_MARKER_CODE;
   for (int n = 0; n < base_set->n_actions; n++) {
     if (n != 0 && base_set->actions[n - 1].term_num == base_set->actions[n].term_num) continue;
-    int term = base_set->actions[n].term_num;
+    int term_num = base_set->actions[n].term_num;
+    struct symb *term = term_get (term_num);
+    assert (term->u.term.term_num == term_num);
     struct stack *curr_stack = stack_create (base_stack);
     curr_stack->recovery->u.token_info.cost++;
+    curr_stack->recovery->u.token_info.type = RECOVERY_INSERT;
+    curr_stack->recovery->u.token_info.code = term->u.term.code;
+    curr_stack->recovery->u.token_info.attr = NULL;
+    curr_stack->recovery->u.token_info.replace_code = -1;
     VLO_NULLIFY (curr_stacks);
     int start = VLO_LENGTH (new_stacks) / sizeof (struct stack *);
-    process_term_for_stack (curr_stack, term, error_node, true);
+    process_term_for_stack (curr_stack, term_num, error_node, true);
     if (eof_p) continue;
     /* now new stacks from start correspond to token inserts: add stacks with token replacements: */
     for (int i = start, len = VLO_LENGTH (new_stacks) / sizeof (struct stack *); i < len; i++) {
       curr_stack = ((struct stack **) VLO_BEGIN (new_stacks))[i];
       curr_stack = stack_create (curr_stack);
       curr_stack->recovery->u.token_info.buff_token_ind++;
+      curr_stack->recovery->u.token_info.type = RECOVERY_REPLACE;
+      curr_stack->recovery->u.token_info.code = code;
+      curr_stack->recovery->u.token_info.attr = attr;
+      curr_stack->recovery->u.token_info.replace_code = term->u.term.code;
       VLO_ADD_MEMORY (new_stacks, &curr_stack, sizeof (curr_stack));
     }
   }
   if (eof_p) {
     stack_free (base_stack);
   } else {
-    recovery->u.token_info.buff_token_ind++; /* last one stack for skipping token */
-    recovery->u.token_info.cost++;
+    base_recovery->u.token_info.buff_token_ind++; /* last one stack for skipping token */
+    base_recovery->u.token_info.cost++;
+    base_recovery->u.token_info.type = RECOVERY_SKIP;
+    base_recovery->u.token_info.code = code;
+    base_recovery->u.token_info.attr = attr;
+    base_recovery->u.token_info.replace_code = -1;
     VLO_ADD_MEMORY (new_stacks, &base_stack, sizeof (base_stack));
   }
   VLO_NULLIFY (curr_stacks);
@@ -2468,6 +2457,8 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       if (process_term_for_stack (curr_stack, term, attr, false)) shift_p = true;
     }
     bool one_stack_before_recovery_p;
+    struct symb *error_token_term, *stop_token_term;
+    void *error_token_attr, *stop_token_attr;
     if (!shift_p && !recovery_p) { /* start recovery: */
 #ifndef NO_GP_DEBUG_PRINT
       if (grammar->debug_level > 1)
@@ -2477,6 +2468,8 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       one_stack_before_recovery_p = one_stack_p;
       recovery_p = true;
       int len = token_buff_len ();
+      error_token_term = term_find_by_code (code);
+      error_token_attr = attr;
       token_buff_add (code, attr);
       assert (VLO_LENGTH (new_stacks) == 0);
       for (int i = 0; i < (int) (VLO_LENGTH (failed_stacks) / sizeof (struct stack *)); i++) {
@@ -2558,6 +2551,12 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
             print_stacks (stderr, "    Result stacks after error recovery", &new_stacks, 0);
         }
 #endif
+        buff_token_ind -= grammar->recovery_token_matches;
+        assert (buff_token_ind >= 0);
+        int stop_code = token_buff_get (buff_token_ind, &stop_token_attr);
+        stop_token_term = term_find_by_code (stop_code);
+        syntax_error (error_token_term->repr, error_token_attr, stop_token_term->repr,
+                      stop_token_attr);
       }
     }
     if (VLO_LENGTH (new_stacks) == 0) break;
@@ -2695,9 +2694,8 @@ static void parse_free_default (void *mem) { free (mem); }
    we found that the grammer is ambigous (it works even we asked only one parse tree without
    alternatives). */
 int gp_parse (struct grammar *g, int (*read) (void **attr),
-              void (*error) (int err_tok_num, void *err_tok_attr, int start_ignored_tok_num,
-                             void *start_ignored_tok_attr, int start_recovered_tok_num,
-                             void *start_recovered_tok_attr),
+              void (*error) (const char *err_tok_repr, void *err_tok_attr,
+                             const char *stop_tok_repr, void *stop_tok_attr),
               void *(*alloc) (int nmemb), void (*free) (void *mem), struct gp_tree_node **root,
               bool *ambiguous_p) {
   /* Set up parse allocation */
@@ -2953,15 +2951,13 @@ static int test_read_token (void **attr) {
 }
 
 /* Printing syntax error. */
-static void test_syntax_error (int err_tok_num, void *err_tok_attr GP_UNUSED,
-                               int start_ignored_tok_num, void *start_ignored_tok_attr GP_UNUSED,
-                               int start_recovered_tok_num,
-                               void *start_recovered_tok_attr GP_UNUSED) {
-  if (start_ignored_tok_num < 0)
-    fprintf (stderr, "Syntax error on token %d\n", err_tok_num);
+static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
+                               const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+  if (stop_tok_repr == NULL)
+    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
   else
-    fprintf (stderr, "Syntax error on token %d:ignore %d tokens starting with token = %d\n",
-             err_tok_num, start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
+    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr,
+             stop_tok_repr);
 }
 
 /* The following two functions calls Gecko with two different ways of forming grammars. */
