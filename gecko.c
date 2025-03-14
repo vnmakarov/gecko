@@ -1213,7 +1213,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   check_grammar (strict_p);
   symb_finish_adding_terms ();
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 2) {
+  if (grammar->debug_level > 3) {
     /* Print rules. */
     fprintf (stderr, "Rules:\n");
     for (rule = grammar->rules->first_rule; rule != NULL; rule = rule->next) {
@@ -1303,7 +1303,7 @@ static inline void expand_new_start_set (void) {
   }
   set_new_set_stop ();
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 2) set_print (stderr, new_set, grammar->debug_level > 3);
+  if (grammar->debug_level > 3) set_print (stderr, new_set, grammar->debug_level > 3);
 #endif
 }
 
@@ -2244,7 +2244,7 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
   int new_els_num = VLO_LENGTH (new_stacks) / sizeof (struct stack *);
   VLO_ADD_MEMORY (curr_stacks, &start_stack, sizeof (start_stack));
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 3) {
+  if (grammar->debug_level > 5) {
     struct symb *symb = ((struct symb **) VLO_BEGIN (grammar->symbs->terms_vlo))[term];
     fprintf (stderr, "    Processing stack on term %s:", symb->repr);
     print_stack (stderr, start_stack);
@@ -2271,7 +2271,7 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
       struct action *action = &actions[i];
       struct stack *stack = i == actions_num - 1 ? curr_stack : stack_create (curr_stack);
 #ifndef NO_GP_DEBUG_PRINT
-      if (grammar->debug_level > 3) {
+      if (grammar->debug_level > 5) {
         fprintf (stderr, "      Apply action ");
         print_action (stderr, action);
       }
@@ -2292,11 +2292,11 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
       }
     }
 #ifndef NO_GP_DEBUG_PRINT
-    if (grammar->debug_level > 3) fprintf (stderr, "\n");
+    if (grammar->debug_level > 5) fprintf (stderr, "\n");
 #endif
   }
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 3)
+  if (grammar->debug_level > 5)
     print_stacks (stderr, "    Result stacks after processing the stack", &new_stacks, new_els_num);
 #endif
   return shift_p;
@@ -2306,7 +2306,7 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
    insertion or replacement. */
 static void stack_recovery (struct stack *base_stack) {
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 2) {
+  if (grammar->debug_level > 3) {
     fprintf (stderr, " Recovery for stack:");
     print_stack (stderr, base_stack);
   }
@@ -2358,7 +2358,7 @@ static void stack_recovery (struct stack *base_stack) {
   }
   VLO_NULLIFY (curr_stacks);
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 2)
+  if (grammar->debug_level > 3)
     print_stacks (stderr, " Result stacks after the stack recovery", &new_stacks, new_els_num);
 #endif
 }
@@ -2409,7 +2409,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   struct symb *term_symb = term_find_by_code (code);
   int term = term_symb->u.term.term_num;
 #ifndef NO_GP_DEBUG_PRINT
-  if (grammar->debug_level > 1) print_read (stderr, term_symb);
+  if (grammar->debug_level > 2) print_read (stderr, term_symb);
 #endif
   bool one_stack_p;
   VLO_CREATE (failed_stacks, grammar->alloc, 0);
@@ -2432,13 +2432,13 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         if (LIKELY (!actions[0].shift_p)) { /* reduce */
           set = stack_reduce (single_stack, actions[0].u.rule);
 #ifndef NO_GP_DEBUG_PRINT
-          if (grammar->debug_level > 2) print_single_stack (stderr, single_stack, &actions[0]);
+          if (grammar->debug_level > 4) print_single_stack (stderr, single_stack, &actions[0]);
 #endif
         } else { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
           stack_shift (single_stack, shifted_set, attr, true);
-          if (grammar->debug_level > 2) print_single_stack (stderr, single_stack, &actions[0]);
+          if (grammar->debug_level > 4) print_single_stack (stderr, single_stack, &actions[0]);
           goto next_token;
         }
       }
@@ -2464,7 +2464,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     void *error_token_attr, *stop_token_attr;
     if (!shift_p && !recovery_p) { /* start recovery: */
 #ifndef NO_GP_DEBUG_PRINT
-      if (grammar->debug_level > 1)
+      if (grammar->debug_level > 2)
         fprintf (stderr, "<<<%s error recovery start>>>\n",
                  one_stack_p ? "Single stack" : "Multi-stack");
 #endif
@@ -2518,7 +2518,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
           }
         }
 #ifndef NO_GP_DEBUG_PRINT
-        if (grammar->debug_level > 2)
+        if (grammar->debug_level > 3)
           print_stacks (stderr, "    Stacks before error recovery stop", &new_stacks, 0);
 #endif
         int n = 0;
@@ -2547,10 +2547,10 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         VLO_SHORTEN (new_stacks, VLO_LENGTH (new_stacks) - n * sizeof (struct stack *));
         curr_buff_token_ind = buff_token_ind;
 #ifndef NO_GP_DEBUG_PRINT
-        if (grammar->debug_level > 1) {
+        if (grammar->debug_level > 2) {
           fprintf (stderr, "<<<%s error recovery stop (buff token ind =%d)>>>\n",
                    one_stack_before_recovery_p ? "Single stack" : "Multi-stack", buff_token_ind);
-          if (grammar->debug_level > 2)
+          if (grammar->debug_level > 3)
             print_stacks (stderr, "    Result stacks after error recovery", &new_stacks, 0);
         }
 #endif
@@ -2567,12 +2567,12 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     SWAP (curr_stacks, new_stacks, temp_vlo);
     if (merge_stacks (&curr_stacks)) {
 #ifndef NO_GP_DEBUG_PRINT
-      if (grammar->debug_level > 2)
+      if (grammar->debug_level > 4)
         print_stacks (stderr, "  Parsing stacks after node merging", &curr_stacks, 0);
 #endif
     } else {
 #ifndef NO_GP_DEBUG_PRINT
-      if (grammar->debug_level > 2) print_stacks (stderr, "  New parsing stacks", &curr_stacks, 0);
+      if (grammar->debug_level > 4) print_stacks (stderr, "  New parsing stacks", &curr_stacks, 0);
 #endif
     }
     if (VLO_LENGTH (curr_stacks) == sizeof (struct stack *) && !recovery_p) {
@@ -2596,7 +2596,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     term_symb = term_find_by_code (code);
     term = term_symb->u.term.term_num;
 #ifndef NO_GP_DEBUG_PRINT
-    if (grammar->debug_level > 1) print_read (stderr, term_symb);
+    if (grammar->debug_level > 2) print_read (stderr, term_symb);
 #endif
   }
   bool res = false;
