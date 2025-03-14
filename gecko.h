@@ -146,7 +146,17 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
    return the previous parameter value.
 
    * debug_level says what debugging information to output (it works only if we compiled without
-     defined macro NO_GP_DEBUG_PRINT). The default value is 0.
+     defined macro NO_GP_DEBUG_PRINT):
+
+     * 0 (default value) means print nothing
+     * 1 results in printing statistics
+     * 2 results in additional print of the result translation
+     * 3 results in printing read token, actions (conflicts marked by '!') for dynamically generated
+       SLR sets, and high-level erorr recovery info
+     * 4 means printing rules, first/follows nonterminal sets, dynamically generated SLR sets,
+       and reshapping translation for ambiguous parsing
+     * 5 results in printing stacks during parsing and stack merging
+     * 6 results in even more detail info about processing stacks during parsing
 
    * one_parse_flag means building only one parse tree.  For unambiguous grammar the flag does not
      affect the result.  The default value is true.
