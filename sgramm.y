@@ -381,7 +381,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   int code = 256;
 
   ln = 1;
-  if ((code = setjmp (error_longjump_buff)) != 0) {
+  if ((code = setjmp (grammar->error_longjump_buff)) != 0) {
     free_sgrammar ();
     return code;
   }
