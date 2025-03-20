@@ -815,8 +815,8 @@ static void set_init (void) { /* initialize work with sets: */
   OS_CREATE (grammar->sets_os, grammar->alloc, 0);
   grammar->set_tab = create_hash_table (grammar->alloc, 8192, set_hash, set_eq);
   grammar->n_sets = grammar->n_sets_start_sits = 0;
-  grammar->n_goto_vects = grammar->n_goto_vect_len = grammar->n_actions = grammar->n_action_vects
-    = grammar->n_action_vect_len = 0;
+  grammar->n_goto_vects = grammar->n_goto_vect_len = 0;
+  grammar->n_actions = grammar->n_action_vects = grammar->n_action_vect_len = 0;
 }
 
 static FORCE_INLINE struct action *set_get_actions (struct set *set, int term, int *actions_num) {
@@ -1761,10 +1761,9 @@ static int token_buff_get (int ind, void **attr) {
 }
 
 static int token_read (void **attr) {
-  if (grammar->curr_buff_token_ind * sizeof (struct token_buff_el)
-      <= (size_t) VLO_LENGTH (grammar->token_buff)) {
-    if (grammar->curr_buff_token_ind * sizeof (struct token_buff_el)
-        == (size_t) VLO_LENGTH (grammar->token_buff)) {
+  size_t size = grammar->curr_buff_token_ind * sizeof (struct token_buff_el);
+  if (size <= (size_t) VLO_LENGTH (grammar->token_buff)) {
+    if (size == (size_t) VLO_LENGTH (grammar->token_buff)) {
       grammar->curr_buff_token_ind = 0;
       VLO_NULLIFY (grammar->token_buff);
     } else {
@@ -2301,9 +2300,8 @@ static void add_delayed_recovery_stack (struct stack *stack) {
   struct stack_el *prev_el = &((struct stack_el *) VLO_BOUND (delayed_stack->els))[-1];
   delayed_stack->recovery->u.token_info.cost += el->ntoks - prev_el->ntoks;
   VLO_EXPAND (grammar->delayed_stacks, sizeof (struct stack *));
-  int i;
-  for (i = (int) (VLO_LENGTH (grammar->delayed_stacks) / sizeof (struct stack *)) - 2; i >= 0;
-       i--) {
+  int i = (int) (VLO_LENGTH (grammar->delayed_stacks) / sizeof (struct stack *)) - 2;
+  for (; i >= 0; i--) {
     struct stack *s = ((struct stack **) VLO_BEGIN (grammar->delayed_stacks))[i];
     if (s->recovery->u.token_info.cost > delayed_stack->recovery->u.token_info.cost) break;
     /* delayed_stack is inserted deeper than existing stacks with the same cost */
@@ -2521,8 +2519,8 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   VLO_CREATE (grammar->curr_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (grammar->new_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   grammar->toks_num = 0;
-  grammar->n_parse_term_nodes = grammar->n_parse_abstract_nodes = grammar->n_parse_alt_nodes
-    = grammar->n_parse_opt_nodes = 0;
+  grammar->n_parse_term_nodes = grammar->n_parse_abstract_nodes = 0;
+  grammar->n_parse_alt_nodes = grammar->n_parse_opt_nodes = 0;
 #ifndef NO_GP_DEBUG_PRINT
   grammar->n_single_stack_actions = grammar->n_multi_stack_actions = 0;
 #endif
