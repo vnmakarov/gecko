@@ -2213,8 +2213,7 @@ static void reshape (struct gp_tree_node *root) {
 static vlo_t curr_stacks, new_stacks, failed_stacks, delayed_stacks;
 static int n_single_stack_actions, n_multi_stack_actions;
 
-static bool process_term_for_stack (struct stack *start_stack, int term, void *attr,
-                                    bool virt_token_p) {
+static bool process_term_for_stack (struct stack *start_stack, int term, void *attr) {
   bool shift_p = false;
   int len = VLO_LENGTH (curr_stacks);
   int new_els_num = VLO_LENGTH (new_stacks) / sizeof (struct stack *);
@@ -2236,10 +2235,7 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
     int actions_num;
     struct action *actions = set_get_actions (set, term, &actions_num);
     if (actions_num == 0) {
-      if (virt_token_p)
-        stack_free (curr_stack); /* it can happen after a few reductions as we use SLR(1) */
-      else
-        VLO_ADD_MEMORY (failed_stacks, &curr_stack, sizeof (curr_stack));
+      VLO_ADD_MEMORY (failed_stacks, &curr_stack, sizeof (curr_stack));
       continue;
     }
 #ifndef NO_GP_DEBUG_PRINT
@@ -2263,7 +2259,7 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
         stack_shift (stack, shifted_set, attr, attr != (void *) error_node, ntoks + 1);
         VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
         shift_p = true;
-        if (!virt_token_p && stack->recovery != NULL) {
+        if (stack->recovery != NULL) {
           stack->recovery->u.token_info.n_matched_toks++;
           stack->recovery->u.token_info.buff_token_ind++;
         }
@@ -2280,53 +2276,29 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
   return shift_p;
 }
 
-/* Insert stack into delayed_stacks keep order from costly ones to less costly ones */
-static void insert_delayed_stack (struct stack *stack) {
+/* Stack can not be matched: add derived stack to delayed_stacks.  Delayed stacks is oredered by
+   their decreasing cost.  Added delayed stack will be the first between one with the same cost.  */
+static void add_delayed_recovery_stack (struct stack *stack) {
+  assert (VLO_LENGTH (stack->els) != 0);
+  if ((size_t) VLO_LENGTH (stack->els) <= sizeof (struct stack_el)) return;
+  struct stack_el *el = &((struct stack_el *) VLO_BOUND (stack->els))[-1];
+  struct stack *delayed_stack = stack_create (stack);
+  /* stack: S0...SN-1, SN; delayed stack: SO...SN-1 */
+  VLO_SHORTEN (delayed_stack->els, sizeof (struct stack_el));
+  struct stack_el *prev_el = &((struct stack_el *) VLO_BOUND (delayed_stack->els))[-1];
+  delayed_stack->recovery->u.token_info.cost += el->ntoks - prev_el->ntoks;
   VLO_EXPAND (delayed_stacks, sizeof (struct stack *));
   int i;
   for (i = (int) (VLO_LENGTH (delayed_stacks) / sizeof (struct stack *)) - 2; i >= 0; i--) {
     struct stack *s = ((struct stack **) VLO_BEGIN (delayed_stacks))[i];
-    if (s->recovery->u.token_info.cost > stack->recovery->u.token_info.cost) break;
-    /* stack is inserted deeper than existing stacks with the same cost */
+    if (s->recovery->u.token_info.cost > delayed_stack->recovery->u.token_info.cost) break;
+    /* delayed_stack is inserted deeper than existing stacks with the same cost */
     ((struct stack **) VLO_BEGIN (delayed_stacks))[i + 1] = s;
   }
-  ((struct stack **) VLO_BEGIN (delayed_stacks))[i + 1] = stack;
+  ((struct stack **) VLO_BEGIN (delayed_stacks))[i + 1] = delayed_stack;
 }
 
-/* Stack can not be matched: add derived stacks to new_stacks and delayed_stacks */
-static void add_recovery_stacks (struct stack *stack, bool insert_orig_p) {
-  assert (VLO_LENGTH (stack->els) != 0);
-  struct stack_el *el = &((struct stack_el *) VLO_BOUND (stack->els))[-1];
-  struct set *set = el->set;
-  int ntoks = el->ntoks;
-  if ((size_t) VLO_LENGTH (stack->els) > sizeof (struct stack_el)) {
-    struct stack *delayed_stack = stack_create (stack);
-    /* stack: S0...SN-1, SN; delayed stack: SO...SN-1 */
-    VLO_SHORTEN (delayed_stack->els, sizeof (struct stack_el));
-    struct stack_el *prev_el = &((struct stack_el *) VLO_BOUND (delayed_stack->els))[-1];
-    delayed_stack->recovery->u.token_info.cost += el->ntoks - prev_el->ntoks;
-    insert_delayed_stack (delayed_stack);
-  }
-  for (int i = 0; i < grammar->symbs->n_nonterms; i++) {
-    assert (set->goto_map != NULL || set->action_map != NULL);
-    if (set->goto_map == NULL || set->goto_map[i] == NULL) continue;
-    struct stack *new_stack = stack_create (stack);
-    /* stack: S0...SN; new stack: SO...SN,SN+1 where SN+1 is a goto from SN */
-    VLO_EXPAND (new_stack->els, sizeof (struct stack_el));
-    struct stack_el *new_el = &((struct stack_el *) VLO_BOUND (new_stack->els))[-1];
-    new_el->set = set->goto_map[i];
-    new_el->attr_p = false;
-    new_el->ntoks = ntoks;
-    new_el->anode_attr = error_node;
-    struct symb *symb = ((struct symb **) VLO_BEGIN (grammar->symbs->nonterms_vlo))[i];
-    assert (!symb->term_p && symb->u.nonterm.nonterm_num == i);
-    if (!symb->empty_p) new_stack->recovery->u.token_info.cost++;
-    VLO_ADD_MEMORY (new_stacks, &new_stack, sizeof (new_stack));
-  }
-  if (insert_orig_p) VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack)); /* original stack */
-}
-
-/* Finish error recovery modifying new_stacks and returning final single_stack */
+/* Finish error recovery modifying new_stacks and returning final single_stack. */
 static struct stack *recovery_stop (bool one_stack_p, struct symb *error_term, void *error_attr) {
   for (int i = 0; i < (int) (VLO_LENGTH (delayed_stacks) / sizeof (struct stack *)); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (delayed_stacks))[i];
@@ -2403,7 +2375,7 @@ static void print_read (FILE *f, struct symb *term) {
   if (grammar->debug_level < 3) {
     fprintf (f, "\n");
   } else {
-    fprintf (f, ": buff =");
+    fprintf (f, ": buff (%d) =", curr_buff_token_ind);
     token_buff_print (f);
     fprintf (f, "\n");
   }
@@ -2412,7 +2384,8 @@ static void print_read (FILE *f, struct symb *term) {
 
 /* Make error recovery and set up final new_stacks and return final single_stack. */
 static struct stack *recovery (int code, void *attr, bool one_stack_p) {
-  assert (VLO_LENGTH (failed_stacks) != 0 && VLO_LENGTH (new_stacks) == 0);
+  assert (VLO_LENGTH (failed_stacks) != 0 && VLO_LENGTH (new_stacks) == 0
+          && VLO_LENGTH (curr_stacks) == 0);
 #ifndef NO_GP_DEBUG_PRINT
   if (grammar->debug_level > 2)
     fprintf (stderr, "<<<%s error recovery start>>>\n",
@@ -2425,7 +2398,8 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
   for (int i = 0; i < (int) (VLO_LENGTH (failed_stacks) / sizeof (struct stack *)); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (failed_stacks))[i];
     stack_init_recovery (stack, curr_buff_token_ind);
-    add_recovery_stacks (stack, true);
+    add_delayed_recovery_stack (stack);
+    VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
   }
   VLO_NULLIFY (failed_stacks);
   int skipped = 0;
@@ -2441,7 +2415,7 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
       if (ind < 0) break;
       struct stack *stack = ((struct stack **) VLO_BEGIN (delayed_stacks))[ind];
       if (stack->recovery->u.token_info.cost > skipped) break;
-      add_recovery_stacks (stack, false);
+      add_delayed_recovery_stack (stack);
       VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
 #ifndef NO_GP_DEBUG_PRINT
       if (grammar->debug_level > 3) {
@@ -2463,23 +2437,33 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
       if (set->goto_map == NULL && set->action_map == NULL) build_goto_map_and_actions (set);
       int actions_num;
       set_get_actions (set, term->u.term.term_num, &actions_num);
+      bool shift_p = true;
       if (actions_num != 0) {
-        process_term_for_stack (stack, term->u.term.term_num, &attr, false);
+        shift_p = process_term_for_stack (stack, term->u.term.term_num, attr);
       } else { /* skip */
         stack->recovery->u.token_info.buff_token_ind++;
         stack->recovery->u.token_info.cost++;
         stack->recovery->u.token_info.n_matched_toks = 0;
         VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
       }
+      if (shift_p && max_buff_ind < stack->recovery->u.token_info.buff_token_ind)
+        max_buff_ind = stack->recovery->u.token_info.buff_token_ind;
+    }
+    VLO_NULLIFY (curr_stacks);
+    for (int i = 0; i < (int) (VLO_LENGTH (failed_stacks) / sizeof (struct stack *)); i++) {
+      struct stack *stack = ((struct stack **) VLO_BEGIN (failed_stacks))[i];
+      assert (stack->recovery != NULL);
+      stack->recovery->u.token_info.buff_token_ind++;
+      stack->recovery->u.token_info.cost++;
+      stack->recovery->u.token_info.n_matched_toks = 0;
+      VLO_ADD_MEMORY (new_stacks, &stack, sizeof (stack));
       if (max_buff_ind < stack->recovery->u.token_info.buff_token_ind)
         max_buff_ind = stack->recovery->u.token_info.buff_token_ind;
     }
+    VLO_NULLIFY (failed_stacks);
 #ifndef NO_GP_DEBUG_PRINT
     if (grammar->debug_level > 3) print_stacks (stderr, "   New recovery stacks", &new_stacks, 0);
 #endif
-    for (int i = 0; i < (int) (VLO_LENGTH (failed_stacks) / sizeof (struct stack *)); i++)
-      stack_free (((struct stack **) VLO_BEGIN (failed_stacks))[i]);
-    VLO_NULLIFY (failed_stacks);
     for (int i = 0; i < (int) (VLO_LENGTH (new_stacks) / sizeof (struct stack *)); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (new_stacks))[i];
       struct stack_el *el = &((struct stack_el *) VLO_BOUND (stack->els))[-1];
@@ -2575,7 +2559,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     while (VLO_LENGTH (curr_stacks) != 0) {
       struct stack *curr_stack = ((struct stack **) VLO_BOUND (curr_stacks))[-1];
       VLO_SHORTEN (curr_stacks, sizeof (struct stack *));
-      if (process_term_for_stack (curr_stack, term, attr, false)) shift_p = true;
+      if (process_term_for_stack (curr_stack, term, attr)) shift_p = true;
     }
     if (!shift_p) { /* error: */
       single_stack = recovery (code, attr, one_stack_p);
