@@ -381,7 +381,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   int code = 256;
 
   ln = 1;
-  if ((code = setjmp (grammar->error_longjump_buff)) != 0) {
+  if ((code = setjmp (g->error_longjump_buff)) != 0) {
     free_sgrammar ();
     return code;
   }
@@ -393,7 +393,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   VLO_CREATE (srules, g->alloc, 0);
   OS_CREATE (srhs, g->alloc, 0);
   OS_CREATE (strans, g->alloc, 0);
-  assoc_htab = create_hash_table (grammar->alloc, 80, assoc_hash, assoc_eq);
+  assoc_htab = create_hash_table (g->alloc, 80, assoc_hash, assoc_eq);
   curr_ch = grammar_name;
   yyparse ();
   /* sort array of syntax terminals by names. */
