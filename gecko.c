@@ -1747,16 +1747,16 @@ static int token_buff_get (int ind, void **attr) {
 }
 
 static int token_read (void **attr) {
-  if (curr_buff_token_ind * sizeof (struct token_buff_el) < (size_t) VLO_LENGTH (token_buff)) {
-    struct token_buff_el *el
-      = &((struct token_buff_el *) VLO_BEGIN (token_buff))[curr_buff_token_ind++];
-    *attr = el->attr;
-    int code = el->code;
+  if (curr_buff_token_ind * sizeof (struct token_buff_el) <= (size_t) VLO_LENGTH (token_buff)) {
     if (curr_buff_token_ind * sizeof (struct token_buff_el) == (size_t) VLO_LENGTH (token_buff)) {
       curr_buff_token_ind = 0;
       VLO_NULLIFY (token_buff);
+    } else {
+      struct token_buff_el *el
+        = &((struct token_buff_el *) VLO_BEGIN (token_buff))[curr_buff_token_ind++];
+      *attr = el->attr;
+      return el->code;
     }
-    return code;
   }
   return read_token (attr);
 }
