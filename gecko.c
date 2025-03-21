@@ -46,6 +46,7 @@ struct symbs {             /* information about grammar vocabulary: */
 
 struct sit;
 struct set;
+struct action_desc;
 
 struct grammar {    /* major structure which stores information about grammar: */
   bool undefined_p; /* true for undefined or erroneous grammar */
@@ -80,6 +81,8 @@ struct grammar {    /* major structure which stores information about grammar: *
   os_t sits_os;           /* all situations are placed in the object */
   int n_all_sits;         /* current number of unique situations */
 
+  vlo_t sets_vlo; /* use to build sets */
+
   /* The set being created. It is defined only when new_set_ready_p is true. */
   struct set *new_set;
   /* The following says that new_set its members are defined. Before this the access
@@ -100,6 +103,8 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   vlo_t symb_sits;
   vlo_t actions_vlo;
+
+  struct action_desc *empty_action_map; /* no actions for each terminal */
 
   hash_table_t nodes_htab;
   struct gp_tree_node *free_node; /* used for insertion of node into the table */
@@ -824,8 +829,8 @@ static void set_init (void) { /* initialize work with sets: */
 static FORCE_INLINE struct action *set_get_actions (struct set *set, int term, int *actions_num) {
   assert (term >= 0 && term < grammar->symbs->n_terms);
   *actions_num = 0;
-  if (set->actions == NULL) return NULL;
   *actions_num = set->action_map[term].actions_num;
+  assert (actions_num == 0 || set->actions != NULL);
   return &set->actions[set->action_map[term].actions_start];
 }
 
@@ -1445,6 +1450,7 @@ static void build_goto_map_and_actions (struct set *set) {
       if (set_insert ()) {
         grammar->new_set->symb = symb_sit->symb;
         expand_new_start_set ();
+        VLO_ADD_MEMORY (grammar->sets_vlo, &grammar->new_set, sizeof (struct set *));
       }
       struct set *trans_set = grammar->new_set;
       if (!symb_sit->symb->term_p) { /* goto */
@@ -1462,6 +1468,7 @@ static void build_goto_map_and_actions (struct set *set) {
     }
   }
   set_new_set_stop ();
+  set->action_map = grammar->empty_action_map;
   int nta = VLO_LENGTH (grammar->actions_vlo) / sizeof (struct action);
   if (nta == 0) return;
   /* build action descs: */
@@ -1485,7 +1492,7 @@ static void build_goto_map_and_actions (struct set *set) {
     }
   }
   nta = new_nta;
-  assert (set->action_map == NULL);
+  assert (set->action_map == grammar->empty_action_map);
   set->action_map = set_calloc (sizeof (struct action_desc) * grammar->symbs->n_terms);
   grammar->n_action_vects++;
   grammar->n_action_vect_len += grammar->symbs->n_terms;
@@ -1523,7 +1530,19 @@ static void build_goto_map_and_actions (struct set *set) {
 #endif
 }
 
-static struct set *get_start_set (void) { /* Form the 1st set: */
+static void build_empty_action_map (void) {
+  grammar->empty_action_map = set_calloc (sizeof (struct action_desc) * grammar->symbs->n_terms);
+  for (int i = 0; i < grammar->symbs->n_terms; i++) {
+    grammar->empty_action_map[i].actions_num = 0;
+    grammar->empty_action_map[i].actions_start = 0;
+  }
+  grammar->n_action_vects++;
+  grammar->n_action_vect_len += grammar->symbs->n_terms;
+}
+
+static struct set *build_sets (void) { /* Return the 1st set: */
+  build_empty_action_map ();
+  VLO_CREATE (grammar->sets_vlo, grammar->alloc, 0);
   set_new_set_start ();
   for (struct rule *rule = grammar->axiom->u.nonterm.rules; rule != NULL; rule = rule->lhs_next) {
     struct sit *sit = sit_create (rule, 0);
@@ -1533,7 +1552,13 @@ static struct set *get_start_set (void) { /* Form the 1st set: */
   grammar->new_set->symb = grammar->axiom;
   expand_new_start_set ();
   struct set *start_set = grammar->new_set;
-  build_goto_map_and_actions (start_set);
+  VLO_ADD_MEMORY (grammar->sets_vlo, &start_set, sizeof (struct set *));
+  while (VLO_LENGTH (grammar->sets_vlo) != 0) {
+    struct set *set = ((struct set **) VLO_BOUND (grammar->sets_vlo))[-1];
+    VLO_SHORTEN (grammar->sets_vlo, sizeof (struct set *));
+    build_goto_map_and_actions (set);
+  }
+  VLO_DELETE (grammar->sets_vlo);
   return start_set;
 }
 
@@ -2245,7 +2270,6 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
     stack_el_t *el = &((stack_el_t *) VLO_BOUND (curr_stack->els))[-1];
     struct set *set = el->set;
     int ntoks = el->ntoks;
-    if (set->goto_map == NULL && set->action_map == NULL) build_goto_map_and_actions (set);
     int actions_num;
     struct action *actions = set_get_actions (set, term, &actions_num);
     if (actions_num == 0) {
@@ -2449,7 +2473,6 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
       struct set *set = stack_get_top_set (stack);
       int curr_code = token_buff_get (stack->recovery->u.token_info.buff_token_ind, &attr);
       struct symb *term = term_find_by_code (curr_code);
-      if (set->goto_map == NULL && set->action_map == NULL) build_goto_map_and_actions (set);
       int actions_num;
       set_get_actions (set, term->u.term.term_num, &actions_num);
       bool shift_p = true;
@@ -2518,7 +2541,8 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   token_buff_init ();
   tree_nodes_init ();
   struct stack *single_stack = stack_create (NULL);
-  push_init_set (single_stack, get_start_set ());
+  struct set *start_set = build_sets ();
+  push_init_set (single_stack, start_set);
   VLO_CREATE (grammar->curr_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (grammar->new_stacks, grammar->alloc, 2 * sizeof (vlo_t));
   grammar->toks_num = 0;
@@ -2543,7 +2567,6 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
       struct set *set = el->set;
       int ntoks = el->ntoks;
       for (;;) {
-        if (set->action_map == NULL && set->goto_map == NULL) build_goto_map_and_actions (set);
         int actions_num;
         struct action *actions = set_get_actions (set, term, &actions_num);
         if (actions_num != 1) {
