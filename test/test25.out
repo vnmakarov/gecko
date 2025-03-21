@@ -1,4 +1,4 @@
-Syntax error on token '*' and stopping on token '('
+Syntax error on token '*' and stopping on token '*'
       5: ABSTRACT: plus ( 2 4 )
       2: TERMINAL: code=97, repr='a'
       4: ABSTRACT: mult ( 2 3 )
