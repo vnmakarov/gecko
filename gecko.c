@@ -1946,13 +1946,14 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
   VLO_NULLIFY (grammar->nodes_vlo);
   VLO_EXPAND (grammar->nodes_vlo, sizeof (struct gp_tree_node *) * rule->trans_len);
   struct gp_tree_node **children = VLO_BEGIN (grammar->nodes_vlo);
+  for (int i = 0; i < rule->trans_len; i++) children[i] = grammar->empty_node;
   bool err_p = true;
   for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
     int disp = rule->order[i];
     if (disp < 0) continue;
     stack_el_t *el = &stack_addr[start + i];
     struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
-    if (el->attr_p) return get_stack_term_node (el);
+    if (el->attr_p) anode = get_stack_term_node (el);
     children[disp] = anode;
     if (anode != grammar->error_node) err_p = false;
   }
