@@ -14,6 +14,6 @@ static const char *description
     "S : ID KW;\n";
 
 int main (int argc, char **argv) {
-  test_complex_parse (false, false, false, 3, false, argc, argv);
+  test_complex_parse (false, false, 3, false, argc, argv);
   exit (0);
 }

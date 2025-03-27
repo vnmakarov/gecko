@@ -898,7 +898,7 @@ int main (int argc, char **argv) {
   else
     yaep_set_debug_level (g, 3);
   if (argc > 3) yaep_set_error_recovery_flag (g, atoi (argv[3]));
-  if (argc > 4) yaep_set_one_parse_flag (g, atoi (argv[4]));
+  yaep_set_one_parse_flag (g, true);
   int parser_res = yaep_parse_grammar (g, 1, description);
   if (parser_res != 0) fprintf (stderr, "%s\n", yaep_error_message (g));
 #else
@@ -907,7 +907,6 @@ int main (int argc, char **argv) {
   else
     gp_set_debug_level (g, 3);
   if (argc > 2) gp_set_error_recovery_flag (g, atoi (argv[2]));
-  if (argc > 3) gp_set_one_parse_flag (g, atoi (argv[3]));
   int parser_res = gp_parse_grammar (g, 1, description);
   if (parser_res != 0) fprintf (stderr, "%s\n", gp_error_message (g));
 #endif

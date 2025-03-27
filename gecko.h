@@ -59,12 +59,12 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_VISITED = 0x80, /* for internal use only */
 };
 
-struct gp_nil { /* The node exists in one examplar. See comment to read_rule. */
+struct gp_nil { /* The node exists in one exemplar. See comment to read_rule. */
   int used;     /* whether this node has been used in the parse tree */
 };
 
 /* The following node exists in one example.  It is used as translation of terminal `error': */
-struct gp_error { /* The node exists in one examplar. The translation of terminal `error': */
+struct gp_error { /* The node exists in one exemplar. The translation of terminal `error': */
   int used;       /* whether this node has been used in the parse tree */
 };
 
@@ -73,12 +73,11 @@ struct gp_term { /* the terminal node: */
   void *attr;    /* the terminal attributes */
 };
 
-struct gp_anode {   /* the abstract node: */
-  const char *name; /* the abstract node name */
+struct gp_anode { /* the abstract node: */
   /* cost of the node plus costs of all children if the cost flag is set up, otherwise,
      the value is cost of the abstract node itself: */
-  int cost;
   int children_num; /* elements in the next array */
+  const char *name; /* the abstract node name */
   /* References for nodes for which the abstract node refers.  The array end marker is NULL. */
   struct gp_tree_node **children;
 };
@@ -86,12 +85,14 @@ struct gp_anode {   /* the abstract node: */
 /* alternative translations or options (translation choices should be done correspondingly for all
    translation): */
 struct gp_alt {
+  int depth; /* 1, 2, ... */
   struct gp_tree_node *first, *second;
 };
 
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
   unsigned num;                /* node number */
+  int cost;                    /* cost */
   union {                      /* the node itself */
     struct gp_nil nil;
     struct gp_error error;
@@ -158,12 +159,8 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      * 5 results in printing stacks during parsing and stack merging
      * 6 results in even more detail info about processing stacks during parsing
 
-   * one_parse_flag means building only one parse tree.  For unambiguous grammar the flag does not
-     affect the result.  The default value is true.
-
-   * cost_flag means usage costs to build tree (trees if one_parse_flag is not set up) with minimal
-     cost.  For unambiguous grammar the flag does not affect the result.  The default value is
-     false.
+   * cost_flag means usage costs to build tree with minimal cost.  For unambiguous grammar the flag
+     does not affect the result.  The default value is false.
 
    * error_recovery_flag means making error recovery if syntax error occurred.  Otherwise, syntax
      error results in finishing parsing (although syntax_error is called once).  The default value
@@ -172,7 +169,6 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
    * recovery_match means how much subsequent tokens should be successfully shifted to finish error
      recovery.  The default value is 3. */
 extern int gp_set_debug_level (struct grammar *grammar, int level);
-extern bool gp_set_one_parse_flag (struct grammar *grammar, bool flag);
 extern bool gp_set_cost_flag (struct grammar *grammar, bool flag);
 extern bool gp_set_error_recovery_flag (struct grammar *grammar, bool flag);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
@@ -180,7 +176,7 @@ extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 /* Parse input according the read grammar. Returns the error code (which will be also in
    gp_error_code). If the code is zero, also put parse result into *root (*root will be NULL only if
    syntax error was occurred and error recovery was switched off).  Set up *AMBIGOUS_P if we found
-   that the grammar is ambiguous (it works even we asked only one parse tree without alternatives).
+   that the grammar is ambiguous.
 
    The function READ_TOKEN provides input tokens.  It returns code the next input token and its
    attribute.  If the function returns negative value we've read all tokens.

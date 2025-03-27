@@ -206,7 +206,7 @@ numbers :
           }
 	;
 
-cost : { last_anode_cost = 1; }
+cost : { last_anode_cost = 0; }
      | NUMBER { last_anode_cost = $1; }
      ;
 

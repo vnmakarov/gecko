@@ -17,7 +17,6 @@
 #define set_debug_level yaep_set_debug_level
 #define set_error_recovery_flag yaep_set_error_recovery_flag
 #define set_cost_flag yaep_set_cost_flag
-#define set_one_parse_flag yaep_set_one_parse_flag
 #define create_grammar yaep_create_grammar
 #define read_grammar yaep_read_grammar
 #define set_recovery_match yaep_set_recovery_match
@@ -34,7 +33,6 @@
 #define set_debug_level gp_set_debug_level
 #define set_error_recovery_flag gp_set_error_recovery_flag
 #define set_cost_flag gp_set_cost_flag
-#define set_one_parse_flag gp_set_one_parse_flag
 #define create_grammar gp_create_grammar
 #define read_grammar gp_read_grammar
 #define set_recovery_match gp_set_recovery_match
@@ -142,7 +140,7 @@ static void test_standard_read (
   free_grammar (g);
 }
 
-static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost, int recovery_match,
+static void test_complex_parse (bool ambiguous, bool print_cost, int recovery_match,
                                 bool print_transl, int argc, char **argv) {
   struct grammar *g;
   struct tree_node *root;
@@ -152,17 +150,16 @@ static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost,
     fprintf (stderr, "create_grammar: No memory\n");
     exit (1);
   }
-  set_one_parse_flag (g, one_parse);
-  if (print_cost) {
-    set_cost_flag (g, 1);
-  }
+  if (print_cost) set_cost_flag (g, true);
   if (argc > 1)
     set_debug_level (g, atoi (argv[1]));
   else
     set_debug_level (g, 3);
   if (argc > 2) set_error_recovery_flag (g, atoi (argv[2]));
-  if (argc > 3) set_one_parse_flag (g, atoi (argv[3]));
   if (recovery_match) set_recovery_match (g, recovery_match);
+#ifdef YAEP
+  yaep_set_one_parse_flag (g, false);
+#endif
   if (parse_grammar (g, 1, description) != 0) {
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
@@ -176,8 +173,8 @@ static void test_complex_parse (bool one_parse, bool ambiguous, bool print_cost,
     fprintf (stderr, "Grammar should be %sambiguous\n", ambiguous ? "" : "un");
     exit (1);
   }
-  if (print_cost) fprintf (stderr, "cost = %d\n", root->val.anode.cost);
 #ifndef YAEP
+  if (print_cost) fprintf (stderr, "cost = %d\n", root->cost);
   if (print_transl) gp_print_translation (stderr, g, root);
 #endif
   free_grammar (g);

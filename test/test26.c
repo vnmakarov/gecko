@@ -15,6 +15,6 @@ static const char *description
     "  ;\n";
 
 int main (int argc, char **argv) {
-  test_complex_parse (false, true, false, 3, true, argc, argv);
+  test_complex_parse (true, false, 3, true, argc, argv);
   exit (0);
 }

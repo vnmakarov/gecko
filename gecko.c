@@ -57,7 +57,6 @@ struct grammar {    /* major structure which stores information about grammar: *
   int recovery_token_matches; /* number of subsequent tokens should be successfuly shifted to finish
                                  error recovery */
   int debug_level;
-  bool one_parse_p;            /* true if we need only one parse */
   bool cost_p;                 /* true if we need parse(s) with minimal costs */
   bool error_recovery_p;       /* true if we need to make error recovery. */
   struct symbs *symbs;         /* vocabulary used for this grammar */
@@ -74,6 +73,8 @@ struct grammar {    /* major structure which stores information about grammar: *
   void (*parse_free) (void *mem);
 
   int all_searches, all_collisions;
+
+  vlo_t temp_vlo;
 
   /* vlo is array which is indexed by situation number (sit->rule->rule_start_offset + sit->pos): */
   vlo_t sit_table_vlo;
@@ -131,11 +132,10 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   vlo_t transl_diffs;
 
-  vlo_t subst_vlo;
-  vlo_t reshape_stack;
-
   vlo_t curr_stacks, new_stacks, failed_stacks, delayed_stacks;
   int n_single_stack_actions, n_multi_stack_actions;
+
+  vlo_t vlos; /* vlo of vlos used for moving options up */
 
 #ifndef NO_GP_DEBUG_PRINT
   bool *visits_p;
@@ -640,7 +640,12 @@ static void rule_print (FILE *f, struct rule *rule, bool trans_p, bool newln_p) 
   }
   if (trans_p) {
     fprintf (f, " # ");
-    if (rule->anode != NULL) fprintf (f, "%s (", rule->anode);
+    if (rule->anode != NULL) {
+      if (rule->anode_cost == 0)
+        fprintf (f, "%s (", rule->anode);
+      else
+        fprintf (f, "%s %d (", rule->anode, rule->anode_cost);
+    }
     for (i = 0; i < rule->trans_len; i++) {
       for (j = 0; j < rule->rhs_len; j++)
         if (rule->order[j] == i) {
@@ -982,9 +987,8 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   grammar->error_code = 0;
   *grammar->error_message = '\0';
   grammar->debug_level = 0;
-  grammar->one_parse_p = 1;
-  grammar->cost_p = 0;
-  grammar->error_recovery_p = 1;
+  grammar->cost_p = false;
+  grammar->error_recovery_p = true;
   grammar->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
   grammar->symbs = NULL;
   grammar->term_sets = NULL;
@@ -992,6 +996,7 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   grammar->symbs = symb_init ();
   grammar->term_sets = term_set_init ();
   grammar->rules = rule_init ();
+  VLO_CREATE (grammar->temp_vlo, grammar->alloc, 0);
   return grammar;
 }
 
@@ -1292,13 +1297,6 @@ int gp_set_debug_level (struct grammar *g, int level) {
   return old;
 }
 
-bool gp_set_one_parse_flag (struct grammar *g, bool flag) {
-  assert (g != NULL);
-  bool old = g->one_parse_p;
-  g->one_parse_p = flag;
-  return old;
-}
-
 bool gp_set_cost_flag (struct grammar *g, bool flag) {
   assert (g != NULL);
   bool old = g->cost_p;
@@ -1568,32 +1566,37 @@ static uint64_t node_hash (hash_table_entry_t n) {
   switch (node->type) {
   case GP_TERM:
     h = hash64 (node->val.term.code, 2);
-    return hash_finish (hash_step (h, (uint64_t) node->val.term.attr));
+    h = hash_step (h, (uint64_t) node->val.term.attr);
+    break;
   case GP_ANODE:
     h = hash (node->val.anode.children,
               sizeof (struct gp_tree_node *) * node->val.anode.children_num, 3);
     /* name exists in one exemplar */
-    return hash_finish (hash_step (h, (uint64_t) node->val.anode.name));
+    h = hash_step (h, (uint64_t) node->val.anode.name);
+    break;
   case GP_ALT: seed = 4; goto alt_opt;
   case GP_OPT:
     seed = 5;
   alt_opt:
     h = hash64 ((uint64_t) node->val.alt.first, seed);
     h = hash64 ((uint64_t) node->val.alt.second, h);
-    return hash_finish (h);
+    break;
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
+  h = hash_step (h, node->cost);
+  return hash_finish (h);
 }
 
 static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
   struct gp_tree_node *node1 = (struct gp_tree_node *) n1, *node2 = (struct gp_tree_node *) n2;
-  if (node1->type != node2->type) return false;
+  if (node1->type != node2->type || node1->cost != node2->cost) return false;
   switch (node1->type) {
   case GP_TERM:
     return (node1->val.term.code == node2->val.term.code
             && node1->val.term.attr == node2->val.term.attr);
   case GP_ANODE:
     if (node1->val.anode.children_num != node2->val.anode.children_num) return false;
+    if (node1->cost != node2->cost) return false;
     if (strcmp (node1->val.anode.name, node2->val.anode.name) != 0) return false;
     return (memcmp (node1->val.anode.children, node2->val.anode.children,
                     sizeof (struct gp_tree_node *) * node1->val.anode.children_num)
@@ -1862,6 +1865,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (int code, void *attr) {
   grammar->free_node->type = GP_TERM;
   grammar->free_node->val.term.code = code;
   grammar->free_node->val.term.attr = attr;
+  grammar->free_node->cost = 0;
   if ((term_node = tree_node_insert (grammar->free_node)) != grammar->free_node) return term_node;
 #if !defined(NO_GP_DEBUG_PRINT)
   grammar->n_parse_term_nodes++;
@@ -1884,6 +1888,7 @@ static struct gp_tree_node *get_anode (const char *name, int children_num,
   grammar->free_node->val.anode.name = name;
   grammar->free_node->val.anode.children_num = children_num;
   grammar->free_node->val.anode.children = children;
+  grammar->free_node->cost = cost;
   if ((anode = tree_node_insert (grammar->free_node)) != grammar->free_node) return anode;
 #if !defined(NO_GP_DEBUG_PRINT)
   grammar->n_parse_abstract_nodes++;
@@ -1891,39 +1896,107 @@ static struct gp_tree_node *get_anode (const char *name, int children_num,
   anode = grammar->free_node;
   grammar->free_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
   anode->num = grammar->n_parse_nodes++;
-  anode->val.anode.cost = cost;
   anode->val.anode.children = grammar->parse_alloc (children_num * sizeof (struct gp_tree_node *));
   memcpy (anode->val.anode.children, children, children_num * sizeof (struct gp_tree_node *));
   return anode;
 }
 
+static int get_opt_depth (struct gp_tree_node *node) {
+  if (node->type != GP_OPT) return 0;
+  return node->val.alt.depth;
+}
+
 static struct gp_tree_node *get_alt_opt_node (enum gp_tree_node_type type,
                                               struct gp_tree_node *first,
-                                              struct gp_tree_node *second) {
+                                              struct gp_tree_node *second, int cost) {
+  struct gp_tree_node *node = grammar->free_node;
   grammar->ambiguous_parse_p = true;
-  grammar->free_node->type = type;
-  grammar->free_node->val.alt.first = first;
-  grammar->free_node->val.alt.second = second;
-  struct gp_tree_node *res = tree_node_insert (grammar->free_node);
-  if (res != grammar->free_node) return res;
+  node->type = type;
+  node->val.alt.first = first;
+  node->val.alt.second = second;
+  node->cost = cost >= 0 ? cost : first->cost <= second->cost ? first->cost : second->cost;
+  struct gp_tree_node *res = tree_node_insert (node);
+  if (res != node) return res;
 #ifndef NO_GP_DEBUG_PRINT
   if (type == GP_ALT)
     grammar->n_parse_alt_nodes++;
   else
     grammar->n_parse_opt_nodes++;
 #endif
-  res = grammar->free_node;
+  int depth = get_opt_depth (first);
+  assert (get_opt_depth (second) == depth);
+  node->val.alt.depth = depth + 1;
+  res = node;
   grammar->free_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
   res->num = grammar->n_parse_nodes++;
   return res;
 }
 
-static struct gp_tree_node *get_alt_node (struct gp_tree_node *first, struct gp_tree_node *second) {
-  return get_alt_opt_node (GP_ALT, first, second);
+static struct gp_tree_node *get_alt_node (struct gp_tree_node *first, struct gp_tree_node *second,
+                                          int cost) {
+  return get_alt_opt_node (GP_ALT, first, second, cost);
 }
 
-static struct gp_tree_node *get_opt_node (struct gp_tree_node *first, struct gp_tree_node *second) {
-  return get_alt_opt_node (GP_OPT, first, second);
+static struct gp_tree_node *get_opt_node (struct gp_tree_node *first, struct gp_tree_node *second,
+                                          int cost) {
+  return get_alt_opt_node (GP_OPT, first, second, cost);
+}
+
+static struct gp_tree_node *make_deep_opt (struct gp_tree_node *node, int depth) {
+  for (int d = get_opt_depth (node); d < depth; d++) node = get_opt_node (node, node, 0);
+  return node;
+}
+
+static void make_equal_depth (struct gp_tree_node **node1, struct gp_tree_node **node2) {
+  *node1 = make_deep_opt (*node1, get_opt_depth (*node2));
+  *node2 = make_deep_opt (*node2, get_opt_depth (*node1));
+}
+
+static void collect_opt_leaves (vlo_t *vlo_ref, struct gp_tree_node *node, int depth,
+                                int max_depth) {
+  assert (depth <= max_depth);
+  if (node->type == GP_OPT) {
+    collect_opt_leaves (vlo_ref, node->val.alt.first, depth + 1, max_depth);
+    collect_opt_leaves (vlo_ref, node->val.alt.second, depth + 1, max_depth);
+    return;
+  }
+  for (int i = (1 << (max_depth - depth)); i > 0; i--)
+    VLO_ADD_MEMORY (*vlo_ref, &node, sizeof (node));
+}
+
+static struct gp_tree_node *build_opts (struct gp_tree_node **nodes, int n_nodes) {
+  assert (n_nodes > 1);
+  for (;;) {
+    assert (n_nodes % 2 == 0);
+    int n = 0;
+    for (int i = 0; i < n_nodes; i += 2) {
+      nodes[n++] = get_opt_node (nodes[i], nodes[i + 1], 0);
+    }
+    if (n == 1) return nodes[0];
+    n_nodes = n;
+  }
+}
+
+static void vlos_init (void) { VLO_CREATE (grammar->vlos, grammar->alloc, 64); }
+
+static void vlos_finish (void) {
+  for (int i = 0; i < (int) (VLO_LENGTH (grammar->vlos) / sizeof (vlo_t)); i++)
+    VLO_DELETE (((vlo_t *) VLO_BEGIN (grammar->vlos))[i]);
+  VLO_DELETE (grammar->vlos);
+}
+
+static void vlos_expand (int n) {
+  for (int i = 0; i < n; i++) {
+    vlo_t *vlo_ref;
+    if (i < (int) (VLO_LENGTH (grammar->vlos) / sizeof (vlo_t))) {
+      vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[i];
+      VLO_NULLIFY (*vlo_ref);
+    } else {
+      VLO_EXPAND (grammar->vlos, sizeof (vlo_t));
+      vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[i];
+      VLO_CREATE (*vlo_ref, grammar->alloc, 64);
+    }
+  }
 }
 
 static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct rule *rule) {
@@ -1948,17 +2021,43 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
   struct gp_tree_node **children = VLO_BEGIN (grammar->nodes_vlo);
   for (int i = 0; i < rule->trans_len; i++) children[i] = grammar->empty_node;
   bool err_p = true;
+  int max_opt_depth = 0;
   for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
     int disp = rule->order[i];
     if (disp < 0) continue;
     stack_el_t *el = &stack_addr[start + i];
     struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
-    if (el->attr_p) anode = get_stack_term_node (el);
+    if (el->attr_p) {
+      anode = get_stack_term_node (el);
+    } else if (anode->type == GP_OPT) {
+      int depth = get_opt_depth (anode);
+      if (max_opt_depth < depth) max_opt_depth = depth;
+    }
     children[disp] = anode;
     if (anode != grammar->error_node) err_p = false;
   }
   if (err_p) return grammar->error_node; /* all children are error node */
-  return get_anode (rule->caller_anode, rule->trans_len, children, rule->anode_cost);
+  if (max_opt_depth == 0)
+    return get_anode (rule->caller_anode, rule->trans_len, children, rule->anode_cost);
+  /* Move opts up.  Collect opt leaves first: */
+  vlos_expand (rule->trans_len);
+  for (int i = 0; i < rule->trans_len; i++)
+    collect_opt_leaves (&((vlo_t *) VLO_BEGIN (grammar->vlos))[i], children[i], 0, max_opt_depth);
+  VLO_NULLIFY (grammar->temp_vlo);
+  struct gp_tree_node *node;
+  for (int n = 1 << max_opt_depth, i = 0; i < n; i++) {
+    VLO_NULLIFY (grammar->nodes_vlo);
+    for (int j = 0; j < rule->trans_len; j++) {
+      vlo_t *vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[j];
+      node = ((struct gp_tree_node **) VLO_BEGIN (*vlo_ref))[i];
+      VLO_ADD_MEMORY (grammar->nodes_vlo, &node, sizeof (node));
+    }
+    node = get_anode (rule->caller_anode, rule->trans_len,
+                      ((struct gp_tree_node **) VLO_BEGIN (grammar->nodes_vlo)), rule->anode_cost);
+    VLO_ADD_MEMORY (grammar->temp_vlo, &node, sizeof (node));
+  }
+  return build_opts (VLO_BEGIN (grammar->temp_vlo),
+                     VLO_LENGTH (grammar->temp_vlo) / sizeof (struct gp_tree_node *));
 }
 
 static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
@@ -1997,11 +2096,30 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
   for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
     stack_el_t *el1 = &stack_addr1[i], *el2 = &stack_addr2[i];
     if (el1->set != el2->set) return false;
-    if (el1->anode_attr != el2->anode_attr) {
-      VLO_ADD_MEMORY (grammar->transl_diffs, &i, sizeof (i));
-    }
+    if (el1->anode_attr != el2->anode_attr) VLO_ADD_MEMORY (grammar->transl_diffs, &i, sizeof (i));
   }
   return true;
+}
+
+static struct gp_tree_node *combine_into_alt (struct gp_tree_node *node1,
+                                              struct gp_tree_node *node2) {
+  if (node1->type != GP_OPT && node2->type != GP_OPT) return get_alt_node (node1, node2, 0);
+  make_equal_depth (&node1, &node2);
+  int depth = get_opt_depth (node1);
+  vlos_expand (2);
+  collect_opt_leaves (&((vlo_t *) VLO_BEGIN (grammar->vlos))[0], node1, 0, depth);
+  collect_opt_leaves (&((vlo_t *) VLO_BEGIN (grammar->vlos))[1], node2, 0, depth);
+  VLO_NULLIFY (grammar->temp_vlo);
+  for (int n = 1 << depth, i = 0; i < n; i++) {
+    vlo_t *vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[0];
+    struct gp_tree_node *first = ((struct gp_tree_node **) VLO_BEGIN (*vlo_ref))[i];
+    vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[1];
+    struct gp_tree_node *second = ((struct gp_tree_node **) VLO_BEGIN (*vlo_ref))[i];
+    struct gp_tree_node *node = get_alt_node (first, second, 0);
+    VLO_ADD_MEMORY (grammar->temp_vlo, &node, sizeof (node));
+  }
+  return build_opts (VLO_BEGIN (grammar->temp_vlo),
+                     VLO_LENGTH (grammar->temp_vlo) / sizeof (struct gp_tree_node *));
 }
 
 static void combine_nodes (struct stack *s, struct stack *s2) {
@@ -2010,19 +2128,14 @@ static void combine_nodes (struct stack *s, struct stack *s2) {
     assert (ind >= 0 && (size_t) ind < VLO_LENGTH (s->els) / sizeof (stack_el_t));
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (s->els))[ind];
     stack_el_t *el2 = &((stack_el_t *) VLO_BEGIN (s2->els))[ind];
-    assert (el->set == el2->set);
-    if (el->attr_p) {
-      el->anode_attr = (void *) get_stack_term_node (el);
-      el->attr_p = false;
+    assert (el->set == el2->set && !el->attr_p && !el2->attr_p);
+    struct gp_tree_node *node = el->anode_attr, *node2 = el2->anode_attr;
+    if (n == 1 && node->type != GP_OPT && node2->type != GP_OPT) {
+      el->anode_attr = combine_into_alt (node, node2);
+    } else {
+      make_equal_depth (&node, &node2);
+      el->anode_attr = get_opt_node (node, node2, 0);
     }
-    if (el2->attr_p) {
-      el2->anode_attr = (void *) get_stack_term_node (el2);
-      el2->attr_p = false;
-    }
-    el->attr_p = false;
-    el->anode_attr = n == 1 ? get_alt_node (el->anode_attr, el2->anode_attr)
-                            : get_opt_node (el->anode_attr, el2->anode_attr);
-    if (el->ntoks < el2->ntoks) el->ntoks = el2->ntoks;
   }
 }
 
@@ -2087,171 +2200,6 @@ static void print_stacks (FILE *f, const char *title, vlo_t *stacks, int start) 
     print_stack (f, ((struct stack **) VLO_BEGIN (*stacks))[i]);
 }
 #endif
-
-struct reshape_stack_el {
-  struct gp_tree_node *node, *father;
-  int node_ind;
-  bool reshape_children_p;
-};
-
-static void subst_set (struct gp_tree_node *node, struct gp_tree_node *subst) {
-  size_t len = VLO_LENGTH (grammar->subst_vlo);
-  if (len <= node->num * sizeof (struct gp_tree_node *)) {
-    size_t add = (node->num + 1) * sizeof (struct gp_tree_node *) - len;
-    VLO_EXPAND (grammar->subst_vlo, add);
-    memset ((char *) VLO_BEGIN (grammar->subst_vlo) + len, 0, add);
-  }
-  ((struct gp_tree_node **) VLO_BEGIN (grammar->subst_vlo))[node->num] = subst;
-}
-
-static struct gp_tree_node *subst_get (struct gp_tree_node *node) {
-  if ((size_t) VLO_LENGTH (grammar->subst_vlo) <= node->num * sizeof (struct gp_tree_node *))
-    return NULL;
-  return ((struct gp_tree_node **) VLO_BEGIN (grammar->subst_vlo))[node->num];
-}
-
-static struct reshape_stack_el *reshape_stack_top (void) {
-  return &((struct reshape_stack_el *) VLO_BOUND (grammar->reshape_stack))[-1];
-}
-
-static void reshape_stack_push (struct gp_tree_node *node, struct gp_tree_node *father,
-                                int node_ind, bool reshape_children_p) {
-  VLO_EXPAND (grammar->reshape_stack, sizeof (struct reshape_stack_el));
-  struct reshape_stack_el *top = reshape_stack_top ();
-  top->node = node;
-  top->father = father;
-  top->node_ind = node_ind;
-  top->reshape_children_p = reshape_children_p;
-}
-
-static void process_child (struct gp_tree_node *father, struct gp_tree_node **child,
-                           int child_ind) {
-  struct gp_tree_node *subst = subst_get (*child);
-  if (subst == NULL)
-    reshape_stack_push (*child, father, child_ind, true);
-  else
-    *child = subst;
-}
-
-static void print_parse (FILE *f, struct grammar *grammar, struct gp_tree_node *root);
-
-static void reshape (struct gp_tree_node *root) {
-#ifndef NO_GP_DEBUG_PRINT
-  if (UNLIKELY (grammar->debug_level > 3)) {
-    fprintf (stderr, "==Before reshaping:\n");
-    print_parse (stderr, grammar, root);
-  }
-#endif
-  assert (root->type != GP_OPT);
-  VLO_CREATE (grammar->reshape_stack, grammar->alloc, 0);
-  VLO_CREATE (grammar->subst_vlo, grammar->alloc, 0);
-  reshape_stack_push (root, NULL, 0, true);
-  while (VLO_LENGTH (grammar->reshape_stack) != 0) {
-    struct reshape_stack_el *top = reshape_stack_top ();
-    struct gp_tree_node *node = top->node;
-    if (top->reshape_children_p) {
-      if (node->type == GP_ALT || node->type == GP_OPT) {
-        process_child (node, &node->val.alt.first, 0);
-        process_child (node, &node->val.alt.second, 1);
-      } else if (node->type == GP_ANODE) {
-        for (int i = 0; i < node->val.anode.children_num; i++)
-          process_child (node, &node->val.anode.children[i], i);
-      }
-      top->reshape_children_p = false;
-      if (node->type != GP_TERM && node->type != GP_OPT) continue;
-    }
-    bool opt_p = false;
-    if (node->type == GP_ALT) {
-      if (node->val.alt.first->type == GP_OPT)
-        opt_p = true;
-      else if (node->val.alt.second->type == GP_OPT)
-        opt_p = true;
-    } else if (node->type == GP_ANODE) {
-      for (int i = 0; i < node->val.anode.children_num; i++)
-        if (node->val.anode.children[i]->type == GP_OPT) {
-          opt_p = true;
-          break;
-        }
-    }
-    if (!opt_p) { /* always case for term and opt */
-      VLO_SHORTEN (grammar->reshape_stack, sizeof (struct reshape_stack_el));
-      subst_set (node, node);
-      continue;
-    }
-    struct gp_tree_node *child, *anodes[2];
-    for (int i = 0; i < 2; i++) {
-      if (node->type == GP_ALT) {
-        struct gp_tree_node *first = node->val.alt.first, *second = node->val.alt.second;
-        if (first->type != GP_OPT) { /* (alt 1 (opt 2 3)) -> (opt 1 (alt 2 3)): */
-          anodes[i] = i == 0 ? first : get_alt_node (second->val.alt.first, second->val.alt.second);
-        } else if (second->type != GP_OPT) { /* (alt (opt 1 2) 3) -> (opt (alt 1 2) 3): */
-          anodes[i] = i == 1 ? second : get_alt_node (first->val.alt.first, first->val.alt.second);
-        } else { /* (alt (opt 1 2) (opt 3 4)) -> (opt (alt 1 3) (alt 2 4)): */
-          first = i == 0 ? first->val.alt.first : first->val.alt.second;
-          second = i == 0 ? second->val.alt.first : second->val.alt.second;
-          anodes[i] = get_alt_node (first, second);
-        }
-      } else if (node->type == GP_ANODE) {
-        VLO_NULLIFY (grammar->nodes_vlo);
-        for (int j = 0; j < node->val.anode.children_num; j++) {
-          child = node->val.anode.children[j];
-          if (child->type == GP_OPT) child = i == 0 ? child->val.alt.first : child->val.alt.second;
-          VLO_ADD_MEMORY (grammar->nodes_vlo, &child, sizeof (child));
-        }
-        anodes[i] = get_anode (node->val.anode.name, node->val.anode.children_num,
-                               VLO_BEGIN (grammar->nodes_vlo), node->val.anode.cost);
-      }
-    }
-    VLO_SHORTEN (grammar->reshape_stack, sizeof (struct reshape_stack_el));
-    struct gp_tree_node *father = top->father;
-    if (top->father == NULL) continue;
-#ifndef NO_GP_DEBUG_PRINT
-    int node_num = node->num;
-#endif
-    struct gp_tree_node *subst = get_opt_node (anodes[0], anodes[1]);
-    subst_set (node, subst);
-    node = subst;
-    if (father->type == GP_ALT) {
-      if (top->node_ind == 0)
-        father->val.alt.first = node;
-      else
-        father->val.alt.second = node;
-    } else if (father->type == GP_ANODE) {
-      father->val.anode.children[top->node_ind] = node;
-    }
-#ifndef NO_GP_DEBUG_PRINT
-    if (UNLIKELY (grammar->debug_level > 3)) {
-      fprintf (stderr, "==Result after moving opts of n%d:\n", node_num);
-      print_parse (stderr, grammar, root);
-    }
-#endif
-  }
-  VLO_DELETE (grammar->subst_vlo);
-  /* Rename opts to alts which now are at the top: */
-  VLO_NULLIFY (grammar->reshape_stack);
-  if (root->type == GP_ALT) {
-    VLO_ADD_MEMORY (grammar->reshape_stack, &root->val.alt.first, sizeof (struct gp_tree_node *));
-    VLO_ADD_MEMORY (grammar->reshape_stack, &root->val.alt.second, sizeof (struct gp_tree_node *));
-  } else {
-    assert (root->type == GP_ANODE);
-    for (int i = 0; i < root->val.anode.children_num; i++)
-      VLO_ADD_MEMORY (grammar->reshape_stack, &root->val.anode.children[i],
-                      sizeof (struct gp_tree_node *));
-  }
-  do {
-    struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BOUND (grammar->reshape_stack))[-1];
-    VLO_SHORTEN (grammar->reshape_stack, sizeof (struct gp_tree_node *));
-    if (node->type != GP_OPT) continue;
-    node->type = GP_ALT;
-#ifndef NO_GP_DEBUG_PRINT
-    grammar->n_parse_opt_nodes--;
-    grammar->n_parse_alt_nodes++;
-#endif
-    VLO_ADD_MEMORY (grammar->reshape_stack, &node->val.alt.first, sizeof (struct gp_tree_node *));
-    VLO_ADD_MEMORY (grammar->reshape_stack, &node->val.alt.second, sizeof (struct gp_tree_node *));
-  } while (VLO_LENGTH (grammar->reshape_stack) != 0);
-  VLO_DELETE (grammar->reshape_stack);
-}
 
 static bool process_term_for_stack (struct stack *start_stack, int term, void *attr) {
   bool shift_p = false;
@@ -2409,8 +2357,8 @@ static struct stack *recovery_stop (bool one_stack_p, struct symb *error_term, v
 }
 
 #ifndef NO_GP_DEBUG_PRINT
-static void print_read (FILE *f, struct symb *term) {
-  fprintf (f, "  Read %s (%d)", term->repr, grammar->toks_num);
+static void print_read (FILE *f, struct symb *term, int stacks_num) {
+  fprintf (f, "  Read %s (%d, #stacks: %d)", term->repr, grammar->toks_num, stacks_num);
   grammar->toks_num++;
   if (grammar->debug_level < 3) {
     fprintf (f, "\n");
@@ -2516,7 +2464,9 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
     if (token_buff_len () <= max_buff_ind) {
       int new_code = token_buff_read (&attr);
 #ifndef NO_GP_DEBUG_PRINT
-      if (UNLIKELY (grammar->debug_level > 2)) print_read (stderr, term_find_by_code (new_code));
+      if (UNLIKELY (grammar->debug_level > 2))
+        print_read (stderr, term_find_by_code (new_code),
+                    VLO_LENGTH (grammar->new_stacks) / sizeof (struct stack *));
 #endif
       skipped++;
     }
@@ -2531,9 +2481,11 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   grammar->empty_node = (struct gp_tree_node *) grammar->parse_alloc (sizeof (struct gp_tree_node));
   grammar->empty_node->type = GP_NIL;
   grammar->empty_node->num = grammar->n_parse_nodes++;
+  grammar->empty_node->cost = 0;
   grammar->error_node = (struct gp_tree_node *) grammar->parse_alloc (sizeof (struct gp_tree_node));
   grammar->error_node->type = GP_ERROR;
   grammar->error_node->num = grammar->n_parse_nodes++;
+  grammar->error_node->cost = 0;
   VLO_CREATE (grammar->symb_sits, grammar->alloc, 16);
   VLO_CREATE (grammar->actions_vlo, grammar->alloc, 16);
   VLO_CREATE (grammar->nodes_vlo, grammar->alloc, 16);
@@ -2541,6 +2493,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   stack_init ();
   token_buff_init ();
   tree_nodes_init ();
+  vlos_init ();
   struct stack *single_stack = stack_create (NULL);
   struct set *start_set = build_sets ();
   push_init_set (single_stack, start_set);
@@ -2557,7 +2510,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   struct symb *term_symb = term_find_by_code (code);
   int term = term_symb->u.term.term_num;
 #ifndef NO_GP_DEBUG_PRINT
-  if (UNLIKELY (grammar->debug_level > 2)) print_read (stderr, term_symb);
+  if (UNLIKELY (grammar->debug_level > 2)) print_read (stderr, term_symb, 1);
 #endif
   bool one_stack_p;
   VLO_CREATE (grammar->failed_stacks, grammar->alloc, 0);
@@ -2599,7 +2552,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
           term_symb = term_find_by_code (code);
           term = term_symb->u.term.term_num;
 #ifndef NO_GP_DEBUG_PRINT
-          if (UNLIKELY (grammar->debug_level > 2)) print_read (stderr, term_symb);
+          if (UNLIKELY (grammar->debug_level > 2)) print_read (stderr, term_symb, 1);
 #endif
         }
       }
@@ -2641,7 +2594,8 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     term_symb = term_find_by_code (code);
     term = term_symb->u.term.term_num;
 #ifndef NO_GP_DEBUG_PRINT
-    if (UNLIKELY (grammar->debug_level > 2)) print_read (stderr, term_symb);
+    if (UNLIKELY (grammar->debug_level > 2))
+      print_read (stderr, term_symb, VLO_LENGTH (grammar->curr_stacks) / sizeof (struct stack *));
 #endif
   }
 finish:
@@ -2655,8 +2609,6 @@ finish:
       stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[1];
       assert (!el->attr_p);
       *transl = (struct gp_tree_node *) el->anode_attr;
-      if (grammar->ambiguous_parse_p && (*transl)->type != GP_NIL)
-        reshape (*transl);  // ??? only opt
       res = true;
     }
   }
@@ -2672,6 +2624,7 @@ finish:
   stack_finish ();
   token_buff_finish ();
   tree_nodes_finish ();
+  vlos_finish ();
   *ambiguous_p = grammar->ambiguous_parse_p;
   return res;
 }
@@ -2694,7 +2647,10 @@ static void print_node (FILE *f, struct gp_tree_node *node) {
              term_find_by_code (node->val.term.code)->repr);
     break;
   case GP_ANODE:
-    fprintf (f, "ABSTRACT: %s (", node->val.anode.name);
+    if (node->cost == 0)
+      fprintf (f, "ABSTRACT: %s (", node->val.anode.name);
+    else
+      fprintf (f, "ABSTRACT: %s %d (", node->val.anode.name, node->cost);
     for (i = 0; i < node->val.anode.children_num; i++)
       fprintf (f, " %d", node->val.anode.children[i]->num);
     fprintf (f, " )\n");
@@ -2736,12 +2692,11 @@ static void *parse_alloc_default (int nmemb) {
 
 static void parse_free_default (void *mem) { free (mem); }
 
-/* Parse input according read grammar. ONE_PARSE_FLAG means build only one parse tree. For
-   unambiguous grammar the flag does not affect the result. D_LEVEL says what debugging information
-   to output (it works only if we compiled without defined macro NO_GP_DEBUG_PRINT). The function
-   returns the error code (which will be also in error_code). The function sets up *AMBIGUOUS_P if
-   we found that the grammer is ambigous (it works even we asked only one parse tree without
-   alternatives). */
+/* Parse input according read grammar. For unambiguous grammar the flag does not affect the result.
+   D_LEVEL says what debugging information to output (it works only if we compiled without defined
+   macro NO_GP_DEBUG_PRINT). The function returns the error code (which will be also in error_code).
+   The function sets up *AMBIGUOUS_P if we found that the grammer is ambigous (it works even we
+   asked only one parse tree without alternatives). */
 int gp_parse (struct grammar *g, int (*read) (void **attr),
               void (*error) (const char *err_tok_repr, void *err_tok_attr,
                              const char *stop_tok_repr, void *stop_tok_attr),
@@ -2823,6 +2778,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
 void gp_free_grammar (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
     gp_allocator_t *allocator = g->alloc;
+    VLO_DELETE (grammar->temp_vlo);
     rule_fin (g->rules);
     term_set_fin (g->term_sets);
     symb_fin (g->symbs);
@@ -3026,13 +2982,12 @@ static void use_functions (int argc, char **argv) {
     exit (1);
   }
   OS_CREATE (mem_os, grammar->alloc, 0);
-  gp_set_one_parse_flag (g, false);
   if (argc > 1)
     gp_set_debug_level (g, atoi (argv[2]));
   else
     gp_set_debug_level (g, 3);
   if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
-  if (argc > 4) gp_set_one_parse_flag (g, atoi (argv[4]));
+  if (argc > 4) gp_set_cost_flag (g, atoi (argv[4]));
   if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     OS_DELETE (mem_os);
@@ -3069,13 +3024,12 @@ static void use_description (int argc, char **argv) {
     exit (1);
   }
   OS_CREATE (mem_os, grammar->alloc, 0);
-  gp_set_one_parse_flag (g, false);
   if (argc > 2)
     gp_set_debug_level (g, atoi (argv[2]));
   else
     gp_set_debug_level (g, 3);
   if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
-  if (argc > 4) gp_set_one_parse_flag (g, atoi (argv[4]));
+  if (argc > 4) gp_set_cost_flag (g, atoi (argv[4]));
   if (gp_parse_grammar (g, true, description) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     OS_DELETE (mem_os);
