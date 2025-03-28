@@ -1965,7 +1965,6 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
   struct gp_tree_node **children = VLO_BEGIN (grammar->nodes_vlo);
   for (int i = 0; i < rule->trans_len; i++) children[i] = grammar->empty_node;
   bool err_p = true;
-  int max_opt_depth = 0;
   for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
     int disp = rule->order[i];
     if (disp < 0) continue;
@@ -1973,9 +1972,6 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
     struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
     if (el->attr_p) {
       anode = get_stack_term_node (el);
-    } else if (anode->type == GP_OPT) {
-      int depth = get_opt_depth (anode);
-      if (max_opt_depth < depth) max_opt_depth = depth;
     }
     children[disp] = anode;
     if (anode != grammar->error_node) err_p = false;
