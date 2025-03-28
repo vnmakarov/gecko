@@ -1747,25 +1747,6 @@ static void stack_free (struct stack *stack) {
 #endif
 }
 
-static void stack_insert (vlo_t *vlo_ref, struct stack *stack) {
-#if 0
-  int len = VLO_LENGTH (stack->els);
-  VLO_EXPAND (*vlo_ref, sizeof (struct stack *));
-  for (int i = VLO_LENGTH (*vlo_ref) / sizeof (struct stack *) - 2; i >= 0; i--) {
-    struct stack *stack2 = ((struct stack **) VLO_BEGIN (*vlo_ref))[i];
-    int len2 = VLO_LENGTH (stack2->els);
-    if (len <= len2) {
-      ((struct stack **) VLO_BEGIN (*vlo_ref))[i + 1] = stack;
-      return;
-    }
-    ((struct stack **) VLO_BEGIN (*vlo_ref))[i + 1] = stack2;
-  }
-  ((struct stack **) VLO_BEGIN (*vlo_ref))[0] = stack;
-#else
-  VLO_ADD_MEMORY (*vlo_ref, &stack, sizeof (stack));
-#endif
-}
-
 static void stack_init_recovery (struct stack *stack, int buff_token_ind) {
   assert (stack->recovery == NULL);
   stack->recovery = recovery_info_get_free ();
@@ -1962,66 +1943,6 @@ static struct gp_tree_node *get_opt_node (struct gp_tree_node *first, struct gp_
   return get_alt_opt_node (GP_OPT, first, second, cost);
 }
 
-static struct gp_tree_node *make_deep_opt (struct gp_tree_node *node, int depth) {
-  for (int d = get_opt_depth (node); d < depth; d++) node = get_opt_node (node, node, 0);
-  return node;
-}
-
-static void make_equal_depth (struct gp_tree_node **node1, struct gp_tree_node **node2) {
-  *node1 = make_deep_opt (*node1, get_opt_depth (*node2));
-  *node2 = make_deep_opt (*node2, get_opt_depth (*node1));
-}
-
-static void collect_opt_leaves (vlo_t *vlo_ref, struct gp_tree_node *node, int depth,
-                                int max_depth) {
-  assert (depth <= max_depth);
-  if (node->type == GP_OPT) {
-    collect_opt_leaves (vlo_ref, node->val.alt.first, depth + 1, max_depth);
-    collect_opt_leaves (vlo_ref, node->val.alt.second, depth + 1, max_depth);
-    return;
-  }
-  for (int i = (1 << (max_depth - depth)); i > 0; i--)
-    VLO_ADD_MEMORY (*vlo_ref, &node, sizeof (node));
-}
-
-static struct gp_tree_node *build_opts (struct gp_tree_node **nodes, int n_nodes) {
-  assert (n_nodes > 1);
-  for (;;) {
-    assert (n_nodes % 2 == 0);
-    int n = 0;
-    for (int i = 0; i < n_nodes; i += 2) {
-      if (nodes[i] == nodes[i + 1])
-        nodes[n++] = nodes[i];
-      else
-        nodes[n++] = get_opt_node (nodes[i], nodes[i + 1], 0);
-    }
-    if (n == 1) return nodes[0];
-    n_nodes = n;
-  }
-}
-
-static void vlos_init (void) { VLO_CREATE (grammar->vlos, grammar->alloc, 64); }
-
-static void vlos_finish (void) {
-  for (int i = 0; i < (int) (VLO_LENGTH (grammar->vlos) / sizeof (vlo_t)); i++)
-    VLO_DELETE (((vlo_t *) VLO_BEGIN (grammar->vlos))[i]);
-  VLO_DELETE (grammar->vlos);
-}
-
-static void vlos_expand (int n) {
-  for (int i = 0; i < n; i++) {
-    vlo_t *vlo_ref;
-    if (i < (int) (VLO_LENGTH (grammar->vlos) / sizeof (vlo_t))) {
-      vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[i];
-      VLO_NULLIFY (*vlo_ref);
-    } else {
-      VLO_EXPAND (grammar->vlos, sizeof (vlo_t));
-      vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[i];
-      VLO_CREATE (*vlo_ref, grammar->alloc, 64);
-    }
-  }
-}
-
 static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct rule *rule) {
   int rhs_len = rule->rhs_len;
   if (rule->anode == NULL) {
@@ -2060,27 +1981,7 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
     if (anode != grammar->error_node) err_p = false;
   }
   if (err_p) return grammar->error_node; /* all children are error node */
-  if (true || max_opt_depth == 0)
-    return get_anode (rule->caller_anode, rule->trans_len, children, rule->anode_cost);
-  /* Move opts up.  Collect opt leaves first: */
-  vlos_expand (rule->trans_len);
-  for (int i = 0; i < rule->trans_len; i++)
-    collect_opt_leaves (&((vlo_t *) VLO_BEGIN (grammar->vlos))[i], children[i], 0, max_opt_depth);
-  VLO_NULLIFY (grammar->temp_vlo);
-  struct gp_tree_node *node;
-  for (int n = 1 << max_opt_depth, i = 0; i < n; i++) {
-    VLO_NULLIFY (grammar->nodes_vlo);
-    for (int j = 0; j < rule->trans_len; j++) {
-      vlo_t *vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[j];
-      node = ((struct gp_tree_node **) VLO_BEGIN (*vlo_ref))[i];
-      VLO_ADD_MEMORY (grammar->nodes_vlo, &node, sizeof (node));
-    }
-    node = get_anode (rule->caller_anode, rule->trans_len,
-                      ((struct gp_tree_node **) VLO_BEGIN (grammar->nodes_vlo)), rule->anode_cost);
-    VLO_ADD_MEMORY (grammar->temp_vlo, &node, sizeof (node));
-  }
-  return build_opts (VLO_BEGIN (grammar->temp_vlo),
-                     VLO_LENGTH (grammar->temp_vlo) / sizeof (struct gp_tree_node *));
+  return get_anode (rule->caller_anode, rule->trans_len, children, rule->anode_cost);
 }
 
 static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
@@ -2124,27 +2025,6 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2) {
   return true;
 }
 
-static struct gp_tree_node *combine_into_alt (struct gp_tree_node *node1,
-                                              struct gp_tree_node *node2) {
-  if (true || node1->type != GP_OPT && node2->type != GP_OPT) return get_alt_node (node1, node2, 0);
-  make_equal_depth (&node1, &node2);
-  int depth = get_opt_depth (node1);
-  vlos_expand (2);
-  collect_opt_leaves (&((vlo_t *) VLO_BEGIN (grammar->vlos))[0], node1, 0, depth);
-  collect_opt_leaves (&((vlo_t *) VLO_BEGIN (grammar->vlos))[1], node2, 0, depth);
-  VLO_NULLIFY (grammar->temp_vlo);
-  for (int n = 1 << depth, i = 0; i < n; i++) {
-    vlo_t *vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[0];
-    struct gp_tree_node *first = ((struct gp_tree_node **) VLO_BEGIN (*vlo_ref))[i];
-    vlo_ref = &((vlo_t *) VLO_BEGIN (grammar->vlos))[1];
-    struct gp_tree_node *second = ((struct gp_tree_node **) VLO_BEGIN (*vlo_ref))[i];
-    struct gp_tree_node *node = get_alt_node (first, second, 0);
-    VLO_ADD_MEMORY (grammar->temp_vlo, &node, sizeof (node));
-  }
-  return build_opts (VLO_BEGIN (grammar->temp_vlo),
-                     VLO_LENGTH (grammar->temp_vlo) / sizeof (struct gp_tree_node *));
-}
-
 static void combine_nodes (struct stack *s, struct stack *s2) {
   for (int i = 0, n = (int) (VLO_LENGTH (grammar->transl_diffs) / sizeof (int)); i < n; i++) {
     int ind = ((int *) VLO_BEGIN (grammar->transl_diffs))[i];
@@ -2154,9 +2034,8 @@ static void combine_nodes (struct stack *s, struct stack *s2) {
     assert (el->set == el2->set && !el->attr_p && !el2->attr_p);
     struct gp_tree_node *node = el->anode_attr, *node2 = el2->anode_attr;
     if (n == 1 && node->type != GP_OPT && node2->type != GP_OPT) {
-      el->anode_attr = combine_into_alt (node, node2);
+      el->anode_attr = get_alt_node (node, node2, 0);
     } else {
-      if (false) make_equal_depth (&node, &node2);
       el->anode_attr = get_opt_node (node, node2, 0);
     }
   }
@@ -2171,11 +2050,7 @@ static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
     ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
     for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
-#if 0
-      if (curr2 == NULL || VLO_LENGTH (curr->els) != VLO_LENGTH (curr2->els)) break;
-#else
       if (curr2 == NULL) continue;
-#endif
       if (!stack_eq_p (curr, curr2)) continue;
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
       merge_p = true;
@@ -2233,7 +2108,7 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
   bool shift_p = false;
   int len = VLO_LENGTH (grammar->curr_stacks);
   int new_els_num = VLO_LENGTH (grammar->new_stacks) / sizeof (struct stack *);
-  stack_insert (&grammar->curr_stacks, start_stack);
+  VLO_ADD_MEMORY (grammar->curr_stacks, &start_stack, sizeof (start_stack));
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (grammar->debug_level > 5)) {
     struct symb *symb = ((struct symb **) VLO_BEGIN (grammar->symbs->terms_vlo))[term];
@@ -2267,12 +2142,12 @@ static bool process_term_for_stack (struct stack *start_stack, int term, void *a
 #endif
       if (LIKELY (!action->shift_p)) { /* reduce */
         set = stack_reduce (stack, action->u.rule);
-        stack_insert (&grammar->curr_stacks, stack);
+        VLO_ADD_MEMORY (grammar->curr_stacks, &stack, sizeof (stack));
       } else { /* shift */
         struct set *shifted_set = action->u.set;
         assert (shifted_set != NULL);
         stack_shift (stack, shifted_set, attr, attr != (void *) grammar->error_node, ntoks + 1);
-        stack_insert (&grammar->new_stacks, stack);
+        VLO_ADD_MEMORY (grammar->new_stacks, &stack, sizeof (stack));
         shift_p = true;
         if (stack->recovery != NULL) {
           stack->recovery->u.token_info.n_matched_toks++;
@@ -2415,7 +2290,7 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (grammar->failed_stacks))[i];
     stack_init_recovery (stack, grammar->curr_buff_token_ind);
     add_delayed_recovery_stack (stack);
-    stack_insert (&grammar->new_stacks, stack);
+    VLO_ADD_MEMORY (grammar->new_stacks, &stack, sizeof (stack));
   }
   VLO_NULLIFY (grammar->failed_stacks);
   int skipped = 0;
@@ -2432,7 +2307,7 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (grammar->delayed_stacks))[ind];
       if (stack->recovery->u.token_info.cost > skipped) break;
       add_delayed_recovery_stack (stack);
-      stack_insert (&grammar->new_stacks, stack);
+      VLO_ADD_MEMORY (grammar->new_stacks, &stack, sizeof (stack));
 #ifndef NO_GP_DEBUG_PRINT
       if (UNLIKELY (grammar->debug_level > 3)) {
         fprintf (stderr, " Move delayed stack:");
@@ -2459,7 +2334,7 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
         stack->recovery->u.token_info.buff_token_ind++;
         stack->recovery->u.token_info.cost++;
         stack->recovery->u.token_info.n_matched_toks = 0;
-        stack_insert (&grammar->new_stacks, stack);
+        VLO_ADD_MEMORY (grammar->new_stacks, &stack, sizeof (stack));
       }
       if (shift_p && max_buff_ind < stack->recovery->u.token_info.buff_token_ind)
         max_buff_ind = stack->recovery->u.token_info.buff_token_ind;
@@ -2472,7 +2347,7 @@ static struct stack *recovery (int code, void *attr, bool one_stack_p) {
       stack->recovery->u.token_info.buff_token_ind++;
       stack->recovery->u.token_info.cost++;
       stack->recovery->u.token_info.n_matched_toks = 0;
-      stack_insert (&grammar->new_stacks, stack);
+      VLO_ADD_MEMORY (grammar->new_stacks, &stack, sizeof (stack));
       if (max_buff_ind < stack->recovery->u.token_info.buff_token_ind)
         max_buff_ind = stack->recovery->u.token_info.buff_token_ind;
     }
@@ -2521,7 +2396,6 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   stack_init ();
   token_buff_init ();
   tree_nodes_init ();
-  vlos_init ();
   struct stack *single_stack = stack_create (NULL);
   struct set *start_set = build_sets ();
   push_init_set (single_stack, start_set);
@@ -2552,7 +2426,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
         int actions_num;
         struct action *actions = set_get_actions (set, term, &actions_num);
         if (actions_num != 1) {
-          stack_insert (&grammar->curr_stacks, single_stack);
+          VLO_ADD_MEMORY (grammar->curr_stacks, &single_stack, sizeof (single_stack));
           one_stack_p = actions_num == 0;
           single_stack = NULL;
           goto multi_stack;
@@ -2573,7 +2447,7 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
           if (UNLIKELY (grammar->debug_level > 4))
             print_single_stack (stderr, single_stack, &actions[0]);
           if (code == END_MARKER_CODE) {
-            stack_insert (&grammar->curr_stacks, single_stack);
+            VLO_ADD_MEMORY (grammar->curr_stacks, &single_stack, sizeof (single_stack));
             goto finish;
           }
           code = token_read (&attr);
@@ -2652,7 +2526,6 @@ finish:
   stack_finish ();
   token_buff_finish ();
   tree_nodes_finish ();
-  vlos_finish ();
   *ambiguous_p = grammar->ambiguous_parse_p;
   return res;
 }
