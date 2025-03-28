@@ -83,7 +83,7 @@ struct gp_anode { /* the abstract node: */
 /* alternative translations or options (translation choices should be done correspondingly for all
    translation): */
 struct gp_alt {
-  long stack_id; /* used internally: 0, 1, ... */
+  int depth; /* 1, 2, ... */
   struct gp_tree_node *first, *second;
 };
 
