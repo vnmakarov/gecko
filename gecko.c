@@ -1901,11 +1901,6 @@ static struct gp_tree_node *get_anode (const char *name, int children_num,
   return anode;
 }
 
-static int get_opt_depth (struct gp_tree_node *node) {
-  if (node->type != GP_OPT) return 0;
-  return node->val.alt.depth;
-}
-
 static struct gp_tree_node *get_alt_opt_node (enum gp_tree_node_type type,
                                               struct gp_tree_node *first,
                                               struct gp_tree_node *second, int cost) {
@@ -1923,10 +1918,6 @@ static struct gp_tree_node *get_alt_opt_node (enum gp_tree_node_type type,
   else
     grammar->n_parse_opt_nodes++;
 #endif
-  int depth = get_opt_depth (first);
-  int depth2 = get_opt_depth (second);
-  if (depth2 > depth) depth = depth2;
-  node->val.alt.depth = depth + 1;
   res = node;
   grammar->free_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
   res->num = grammar->n_parse_nodes++;
