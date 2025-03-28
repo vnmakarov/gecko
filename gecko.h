@@ -60,12 +60,10 @@ enum gp_tree_node_type { /* the parse tree node: */
 };
 
 struct gp_nil { /* The node exists in one exemplar. See comment to read_rule. */
-  int used;     /* whether this node has been used in the parse tree */
 };
 
 /* The following node exists in one example.  It is used as translation of terminal `error': */
 struct gp_error { /* The node exists in one exemplar. The translation of terminal `error': */
-  int used;       /* whether this node has been used in the parse tree */
 };
 
 struct gp_term { /* the terminal node: */
