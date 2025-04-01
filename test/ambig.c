@@ -15,8 +15,8 @@ static const char *input = "a" S100 S100;
 
 static const char *description
   = "\n"
-    "E : E '+' E # plus (0 2)\n"
-    "  | 'a'     # 0\n"
+    "E : E '+' E\n"
+    "  | 'a'\n"
     "  ;\n";
 
 #ifdef linux

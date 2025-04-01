@@ -55,7 +55,6 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_TERM,
                          GP_ANODE,
                          GP_ALT,
-                         GP_OPT,            /* for internal use only */
                          GP_VISITED = 0x80, /* for internal use only */
 };
 
@@ -80,10 +79,7 @@ struct gp_anode { /* the abstract node: */
   struct gp_tree_node **children;
 };
 
-/* alternative translations or options (translation choices should be done correspondingly for all
-   translation): */
-struct gp_alt {
-  int depth; /* 1, 2, ... */
+struct gp_alt { /* alternative translations: */
   struct gp_tree_node *first, *second;
 };
 
