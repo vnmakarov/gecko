@@ -1,5 +1,5 @@
 /* This file is a part of Gecko (GLR parser) project.
-   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+   Copyright (C) 2026 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
 /* Simple high-quality multiplicative hash passing rurban-smhasher, the same speed as VMUM on keys

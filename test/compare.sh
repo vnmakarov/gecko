@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# Copyright (c) 2025  Vladimir Makarov <vmakarov@gcc.gnu.org>
+# Copyright (c) 2026  Vladimir Makarov <vmakarov@gcc.gnu.org>
 #
 # Usage: compare.sh
 #
-# The script uses Bison, Yacc (byacc), gcc, lex, YAEP.
+# The script uses Bison, Yacc (byacc), gcc, lex, YAEP, ElkHound
 #
 
 SRCDIR=`dirname $0`

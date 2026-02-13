@@ -1,5 +1,5 @@
 /* This file is a part of Gecko Parser (GLR parser) project.
-   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+   Copyright (C) 2026 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
 /* This is interface file of general (working on any CFG) syntax parser with minimal error recovery

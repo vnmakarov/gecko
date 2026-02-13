@@ -1,5 +1,5 @@
 /* This file is a major part of Gecko Parser (GLR parser) project.
-   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+   Copyright (C) 2026 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
 #include <stdio.h>

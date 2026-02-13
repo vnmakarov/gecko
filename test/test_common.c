@@ -1,5 +1,5 @@
 /* A part of Gecko Parser (GLR Parser) project.
-   Copyright (c) 2025  Vladimir Makarov <vmakarov@gcc.gnu.org>
+   Copyright (c) 2026  Vladimir Makarov <vmakarov@gcc.gnu.org>
 */
 
 #define GP_TEST_ANSIC_H_ /* FIXME: avoid inclusion of ansic.h via ansic.c */

@@ -1,5 +1,5 @@
 /* This file is a part of Gecko Parser (GLR Parser) project.
-   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+   Copyright (C) 2026 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
 D			[0-9]
