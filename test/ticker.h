@@ -13,15 +13,24 @@
 struct ticker {
   /* The following member value is time of the ticker creation with taking into account time when
      the ticker is off.  Active time of the ticker is current time minus the value. */
-  clock_t modified_creation_time;
-  /* The following member value is time (incremented by one) when the ticker was off.  Zero value
-     means that now the ticker is on. */
-  clock_t incremented_off_time;
+  double modified_creation_time;
+  /* The following member value is time (when the ticker was off.
+     Negative value means that now the ticker is on. */
+  double incremented_off_time;
 };
 
 /* The ticker is represented by the following type. */
 typedef struct ticker ticker_t;
 
+#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
+
+static inline double clock_get () {
+  struct timespec tv;
+  clock_gettime (CLOCK_MONOTONIC, &tv);
+  return (double) tv.tv_sec + (double) tv.tv_nsec / 1.0e9;
+}
+
+#else
 /* We don't use times or getrusage here because they have the same
    accuracy as clock on major machines Linux, Solaris, AIX.  The
    single difference is IRIX on which getrusage is more accurate. */
@@ -43,35 +52,37 @@ typedef struct ticker ticker_t;
 #endif
 #endif /* CLOCKS_PER_SECOND */
 
+static inline double clock_get () { return (double) clock () / (double) CLOCKS_PER_SECOND; }
+#endif /* _POSIX_C_SOURCE >= 199309L */
+
 /* The following function creates ticker and makes it active. */
 static inline ticker_t create_ticker (void) {
   ticker_t ticker;
-  ticker.modified_creation_time = clock ();
-  ticker.incremented_off_time = 0;
+  ticker.modified_creation_time = clock_get ();
+  ticker.incremented_off_time = -1.0;
   return ticker;
 }
 
 /* The following function switches off given ticker. */
 static inline void ticker_off (ticker_t *ticker) {
-  if (ticker->incremented_off_time == 0) ticker->incremented_off_time = clock () + 1;
+  if (ticker->incremented_off_time < 0) ticker->incremented_off_time = clock_get ();
 }
 
 /* The following function switches on given ticker. */
 static inline void ticker_on (ticker_t *ticker) {
-  if (ticker->incremented_off_time != 0) {
-    ticker->modified_creation_time += clock () - ticker->incremented_off_time + 1;
-    ticker->incremented_off_time = 0;
+  if (ticker->incremented_off_time >= 0.0) {
+    ticker->modified_creation_time += clock_get () - ticker->incremented_off_time;
+    ticker->incremented_off_time = -1.0;
   }
 }
 
 /* The following function returns current time since the moment when given ticker was created.  The
    result is measured in seconds as float number. */
 static inline double active_time (ticker_t ticker) {
-  if (ticker.incremented_off_time != 0)
-    return (((double) (ticker.incremented_off_time - 1 - ticker.modified_creation_time))
-            / CLOCKS_PER_SECOND);
+  if (ticker.incremented_off_time >= 0.0)
+    return ticker.incremented_off_time - ticker.modified_creation_time;
   else
-    return (((double) (clock () - ticker.modified_creation_time)) / CLOCKS_PER_SECOND);
+    return clock_get () - ticker.modified_creation_time;
 }
 
 /* The following function returns string representation of active time of given ticker.  The result
@@ -92,7 +103,7 @@ static inline double active_time (ticker_t ticker) {
 
 static inline const char *active_time_string (ticker_t ticker) {
   static char str[40];
-  sprintf (str, "%.2f", active_time (ticker));
+  sprintf (str, "%.6f", active_time (ticker));
   return str;
 }
 
