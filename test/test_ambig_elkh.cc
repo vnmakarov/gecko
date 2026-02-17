@@ -49,7 +49,7 @@ string Lexer::tokenKindDesc (int kind) const {
 }
 
 int main (void) {
-  ticker_t t;
+  ticker_t t = create_ticker ();
 #ifdef linux
   char *start = (char *) sbrk (0);
 #endif
