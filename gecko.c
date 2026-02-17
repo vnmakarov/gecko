@@ -2420,7 +2420,11 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
     one_stack_p = false;
   multi_stack: /* error recovery start through this too */
     assert (VLO_LENGTH (grammar->new_stacks) == 0);
-    VLO_NULLIFY (grammar->failed_stacks);
+    while (VLO_LENGTH (grammar->failed_stacks) != 0) {
+      struct stack *failed_stack = ((struct stack **) VLO_BOUND (grammar->failed_stacks))[-1];
+      VLO_SHORTEN (grammar->failed_stacks, sizeof (struct stack *));
+      stack_free (failed_stack);
+    }
     bool shift_p = false;
     while (VLO_LENGTH (grammar->curr_stacks) != 0) {
       struct stack *curr_stack = ((struct stack **) VLO_BOUND (grammar->curr_stacks))[-1];
