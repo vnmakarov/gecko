@@ -30,9 +30,9 @@ int main (int argc, char **argv) {
 #endif
   test_complex_parse (true, false, 3, false, argc, argv);
 #ifdef linux
-  printf ("parse time %.2f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
 #else
-  printf ("parse time %.2f\n", active_time (t));
+  printf ("parse time %.6f\n", active_time (t));
 #endif
   exit (0);
 }

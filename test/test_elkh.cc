@@ -233,10 +233,10 @@ int main (void) {
   t = create_ticker ();
   store_lexs (alloc);
 #ifdef linux
-  printf ("scanner time %.2f, memory=%.1fkB\n", active_time (t),
+  printf ("scanner time %.6f, memory=%.1fkB\n", active_time (t),
           ((char *) sbrk (0) - start) / 1024.);
 #else
-  printf ("scanner time %.2f\n", active_time (t));
+  printf ("scanner time %.6f\n", active_time (t));
 #endif
   initiate_typedefs (alloc);
   curr = NULL;
@@ -259,9 +259,9 @@ int main (void) {
     exit (1);
   }
 #ifdef linux
-  printf ("parse time %.2f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
 #else
-  printf ("parse time %.2f\n", active_time (t));
+  printf ("parse time %.6f\n", active_time (t));
 #endif
   return 0;
 }

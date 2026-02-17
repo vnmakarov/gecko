@@ -874,7 +874,7 @@ int main (int argc, char **argv) {
   t = create_ticker ();
   store_lexs (alloc);
 #ifdef linux
-  printf ("scanner time %.2f, memory=%.1fkB\n", active_time (t),
+  printf ("scanner time %.6f, memory=%.1fkB\n", active_time (t),
           ((char *) sbrk (0) - start) / 1024.);
 #else
   printf ("scanner time %.2f\n", active_time (t));
@@ -919,15 +919,13 @@ int main (int argc, char **argv) {
 #ifdef YAEP
   int ambiguous_p;
   struct yaep_tree_node *root;
-  parser_res = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, NULL, &root,
-                           &ambiguous_p);
+  parser_res = yaep_parse (g, test_read_token, test_syntax_error, NULL, NULL, &root, &ambiguous_p);
   if (parser_res) fprintf (stderr, "yaep_parse: %s\n", yaep_error_message (g));
   yaep_free_grammar (g);
 #else
   bool ambiguous_p;
   struct gp_tree_node *root;
-  parser_res
-    = gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, NULL, &root, &ambiguous_p);
+  parser_res = gp_parse (g, test_read_token, test_syntax_error, NULL, NULL, &root, &ambiguous_p);
   if (parser_res) fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_free_grammar (g);
 #endif
@@ -936,9 +934,9 @@ int main (int argc, char **argv) {
     exit (1);
   }
 #ifdef linux
-  printf ("parse time %.2f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
 #else
-  printf ("parse time %.2f\n", active_time (t));
+  printf ("parse time %.6f\n", active_time (t));
 #endif
   OS_DELETE (mem_os);
   gp_alloc_del (alloc);

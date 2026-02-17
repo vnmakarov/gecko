@@ -90,9 +90,9 @@ int main (void) {
   t = create_ticker ();
   code = yyparse ();
 #ifdef linux
-  printf ("parse time %.2f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
 #else
-  printf ("parse time %.2f\n", active_time (t));
+  printf ("parse time %.6f\n", active_time (t));
 #endif
   gp_alloc_del (alloc);
   exit (code);
