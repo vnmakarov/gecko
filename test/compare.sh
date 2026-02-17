@@ -41,7 +41,7 @@ for i in 0 1 2 3 4 5 6 7 8 9;do cat $SRCDIR/test1.i >>$TEST;done
 if test x$BISON != x; then
   # BISON
   echo ++++++++Bison: pure parsing
-  if $BISON -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$TEST; then
+  if $BISON -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && $outfile <$TEST; then
     echo
   else
     echo Failure with $BISON
@@ -52,7 +52,7 @@ fi
 if test x$BISON != x; then
   # BISON
   echo Bison -- Big test "(lines: `wc -l $BIG_TEST`)"
-  if $BISON -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$BIG_TEST; then
+  if $BISON -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && $outfile <$BIG_TEST; then
     echo
   else
     echo Failure with $BISON on the big test
@@ -63,7 +63,7 @@ fi
 if test x$YACC != x; then
   # YACC
   echo ++++++++Yacc: pure parsing
-  if $YACC -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$TEST; then
+  if $YACC -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && $outfile <$TEST; then
     echo
   else
     echo Failure with $YACC
@@ -75,7 +75,7 @@ if test x$YACC != x; then
   # YACC
   echo YACC -- Big test "(lines: `wc -l $BIG_TEST`)"
 
-  if $YACC -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$BIG_TEST; then
+  if $YACC -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && $outfile <$BIG_TEST; then
     echo
   else
     echo Failure with $YACC on the big test
@@ -86,7 +86,7 @@ fi
 if test x$MSTA != x; then
     # MSTA
     echo ++++++++Msta: pure parsing
-    if $MSTA -yacc-file-names -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$TEST; then
+    if $MSTA -yacc-file-names -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && $outfile <$TEST; then
 	echo
     else
 	echo Failure with $MSTA
@@ -97,7 +97,7 @@ fi
 if test x$MSTA != x; then
     # MSTA
     echo Msta -- Big test "(lines: `wc -l $BIG_TEST`)"
-    if $MSTA -yacc-file-names -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && time $outfile <$BIG_TEST; then
+    if $MSTA -yacc-file-names -y $SRCDIR/ansic.y && $GCC -I$SRCDIR -I$SRCDIR/.. $SRCDIR/test_yyparse.c -o $outfile && $outfile <$BIG_TEST; then
 	echo
     else
 	echo Failure with $MSTA on the big test
@@ -133,7 +133,7 @@ if test x$YAEPDIR != x; then
     # YAEP (Yet Another Earley Parser)
     echo ++++++++YAEP '(Yet Another Earley Parser)': pure parsing
     echo Static Lookahead
-    if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $YAEPLIB -o $outfile && time $outfile 1 0 <$TEST; then
+    if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $YAEPLIB -o $outfile && $outfile 1 0 <$TEST; then
 	echo
     else
 	echo Failure with 'YAEP (Yet Another Earley Parser)'
@@ -141,14 +141,14 @@ if test x$YAEPDIR != x; then
     fi
 
     echo Static Lookahead -- Big test "(lines: `wc -l $BIG_TEST`)"
-    if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $YAEPLIB -o $outfile && time $outfile 1 1 <$BIG_TEST; then
+    if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $YAEPLIB -o $outfile && $outfile 1 1 <$BIG_TEST; then
 	echo
     else
 	echo Failure with 'YAEP (Yet Another Earley Parser)'
 	exit 1
     fi
     echo ++++++++YAEP: ambiguous 'E=E+E|a' and 200 operators
-    if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $YAEPLIB -o $outfile && time $outfile 1; then
+    if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $YAEPLIB -o $outfile && $outfile 1; then
 	echo
     else
 	echo Failure with 'Gecko Parser (GLR Parser)'
@@ -181,7 +181,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
 
     echo ++++++++ELKHOUND '(GLR Parser)': pure parsing
     $ELKHOUND_EXE $SRCDIR/elkh-c.gr
-    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && time $outfile <$TEST; then
+    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && $outfile <$TEST; then
 	echo
     else
 	echo Failure with 'Elkhound'
@@ -189,7 +189,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
     fi
 
     echo ELKHOUND '(GLR Parser)': Big test "(lines: `wc -l $BIG_TEST`)"
-    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && time $outfile <$BIG_TEST; then
+    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && $outfile <$BIG_TEST; then
 	echo
     else
 	echo Failure with 'Elkhound'
@@ -198,7 +198,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
 
     echo ELKHOUND '(GLR Parser)': ambiguous 'E=E+E|a' and 200 operators
     $ELKHOUND_EXE $SRCDIR/elkh-ambig.gr
-    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_ambig_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && time $outfile; then
+    if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_ambig_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && $outfile; then
 	echo
     else
 	echo Failure with 'Elkhound'
@@ -209,7 +209,7 @@ fi
 
 # Gecko
 echo ++++++++Gecko: pure parsing
-if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1 <$TEST; then
+if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && $outfile 1 <$TEST; then
   echo
 else
   echo Failure with 'Gecko Parser (GLR Parser)'
@@ -217,7 +217,7 @@ else
 fi
 
 echo Gecko -- Big test "(lines: `wc -l $BIG_TEST`)"
-if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1 <$BIG_TEST; then
+if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $SRCDIR/../gecko.c -o $outfile && $outfile 1 <$BIG_TEST; then
   echo
 else
   echo Failure with 'Gecko Parser (GLR Parser)'
@@ -225,7 +225,7 @@ else
 fi
 
 echo ++++++++Gecko: ambiguous 'E=E+E|a' and 200 operators
-if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $SRCDIR/../gecko.c -o $outfile && time $outfile 1; then
+if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/ambig.c $SRCDIR/../gecko.c -o $outfile && $outfile 1; then
   echo
 else
   echo Failure with 'Gecko Parser (GLR Parser)'
