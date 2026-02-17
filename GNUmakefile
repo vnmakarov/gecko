@@ -150,3 +150,16 @@ more-tests:
 bench: $(BUILD_DIR)/libgecko.$(LIBSUFF)
 	$(SRC_DIR)/test/compare.sh
 
+# ------------------ miscellaneous ----------------------
+
+.PHONY: sloc
+
+sloc:
+	@echo -n 'Gecko: ' && cloc $(SRC_DIR)/gecko.[ch] | awk '/SUM:/{print $$5}'
+	@echo -n 'ADT: ' && cloc $(SRC_DIR)/allocate.h $(SRC_DIR)/bitmap.h \
+	                          $(SRC_DIR)/hash.h $(SRC_DIR)/hashtab.h \
+				  $(SRC_DIR)/objstack.h $(SRC_DIR)/vlobject.h | awk '/SUM:/{print $$5}'
+	@echo -n 'Overall: ' && cloc $(SRC_DIR)/gecko.[ch] $(SRC_DIR)/allocate.h $(SRC_DIR)/bitmap.h \
+	                          $(SRC_DIR)/hash.h $(SRC_DIR)/hashtab.h \
+				  $(SRC_DIR)/objstack.h $(SRC_DIR)/vlobject.h \
+	| awk '/SUM:/{print $$5}'
