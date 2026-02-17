@@ -107,4 +107,30 @@ static inline const char *active_time_string (ticker_t ticker) {
   return str;
 }
 
+#ifdef linux
+
+#include <string.h>
+#include <unistd.h>
+
+static inline unsigned long get_peak_heap_size (void) {
+  unsigned long peak_vm = 0;
+  FILE *fp = fopen ("/proc/self/status", "r");
+  if (fp != NULL) {
+    char line[256];
+    while (fgets (line, sizeof (line), fp)) {
+      if (strncmp (line, "VmPeak:", 7) == 0) {
+        // Parse the value, the unit is typically kB
+        sscanf (line + 7, "%lu", &peak_vm);
+        // Convert from kB to bytes
+        peak_vm *= 1024;
+        break;
+      }
+    }
+    fclose (fp);
+  }
+  return peak_vm;
+}
+
+#endif
+
 #endif /* __TICKER__ */
