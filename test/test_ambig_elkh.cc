@@ -50,9 +50,6 @@ string Lexer::tokenKindDesc (int kind) const {
 
 int main (void) {
   ticker_t t = create_ticker ();
-#ifdef linux
-  char *start = (char *) sbrk (0);
-#endif
   curr = 0;
   Lexer lexer;
   lexer.nextToken (&lexer);
@@ -68,7 +65,7 @@ int main (void) {
     exit (1);
   }
 #ifdef linux
-  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), get_peak_heap_size () / 1024.);
 #else
   printf ("parse time %.6f\n", active_time (t));
 #endif

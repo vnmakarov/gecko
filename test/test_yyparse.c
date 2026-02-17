@@ -75,9 +75,6 @@ static void store_lexs (gp_allocator_t *alloc) {
 int main (void) {
   ticker_t t;
   int code;
-#ifdef linux
-  char *start = sbrk (0);
-#endif
 
   gp_allocator_t *alloc = gp_alloc_new (NULL, NULL, NULL, NULL);
   if (alloc == NULL) exit (1);
@@ -90,7 +87,7 @@ int main (void) {
   t = create_ticker ();
   code = yyparse ();
 #ifdef linux
-  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), ((char *) sbrk (0) - start) / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), get_peak_heap_size () / 1024.);
 #else
   printf ("parse time %.6f\n", active_time (t));
 #endif
