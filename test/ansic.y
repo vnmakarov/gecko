@@ -127,7 +127,7 @@ logical_or_expr
 
 conditional_expr
 	: logical_or_expr
-	| logical_or_expr '?' logical_or_expr ':' conditional_expr
+	| logical_or_expr '?' expr ':' conditional_expr
 	;
 
 assignment_expr
