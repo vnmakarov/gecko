@@ -33,7 +33,7 @@
 #endif
 
 struct symbs {             /* information about grammar vocabulary: */
-  int n_terms, n_nonterms; /* number of all symbols and terminals */
+  int n_terms, n_nonterms; /* number of all terminals and non-terminals */
   os_t symbs_os;           /* all symbols are placed in this object */
   /* References to the symbols, terminals, nonterminals are stored in the following vlos. The
      indexes in the arrays are the same as corresponding symbol, terminal, and nonterm numbers. */
@@ -108,7 +108,7 @@ struct grammar {    /* major structure which stores information about grammar: *
   struct action_desc *empty_action_map; /* no actions for each terminal */
 
   hash_table_t nodes_htab;
-  struct gp_tree_node *free_node; /* used for insertion of node into the table */
+  struct gp_tree_node temp_node; /* used for insertion of node into the table */
 
   int toks_num, n_parse_nodes, n_parse_term_nodes;
   int n_parse_abstract_nodes, n_parse_alt_nodes;
@@ -1603,23 +1603,11 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
   }
 }
 
-/* Return node in the table  */
-static struct gp_tree_node *tree_node_insert (struct gp_tree_node *node) {
-  hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
-  if (*entry != NULL) return *(struct gp_tree_node **) entry;
-  *entry = node;
-  return node;
-}
-
 static void tree_nodes_init (void) {
-  grammar->free_node = (struct gp_tree_node *) grammar->parse_alloc (sizeof (struct gp_tree_node));
   grammar->nodes_htab = create_hash_table (grammar->alloc, 300, node_hash, node_eq_p);
 }
 
-static void tree_nodes_finish (void) {
-  if (grammar->parse_free != NULL) grammar->parse_free (grammar->free_node);
-  delete_htab_update_statistics (grammar->nodes_htab);
-}
+static void tree_nodes_finish (void) { delete_htab_update_statistics (grammar->nodes_htab); }
 
 #define SWAP(a, b, t) \
   do {                \
@@ -1855,17 +1843,20 @@ static FORCE_INLINE struct set *stack_shift (struct stack *stack, struct set *se
 }
 
 static FORCE_INLINE struct gp_tree_node *get_term_node (int code, void *attr) {
-  struct gp_tree_node *term_node;
-  grammar->free_node->type = GP_TERM;
-  grammar->free_node->val.term.code = code;
-  grammar->free_node->val.term.attr = attr;
-  grammar->free_node->cost = 0;
-  if ((term_node = tree_node_insert (grammar->free_node)) != grammar->free_node) return term_node;
+  struct gp_tree_node *node = &grammar->temp_node;
+  node->type = GP_TERM;
+  node->val.term.code = code;
+  node->val.term.attr = attr;
+  node->cost = 0;
+  hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
+  struct gp_tree_node *term_node = (struct gp_tree_node *) *entry;
+  if (term_node != NULL) return term_node;
 #if !defined(NO_GP_DEBUG_PRINT)
   grammar->n_parse_term_nodes++;
 #endif
-  term_node = grammar->free_node;
-  grammar->free_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
+  term_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
+  *term_node = *node;
+  *entry = term_node;
   term_node->num = grammar->n_parse_nodes++;
   return term_node;
 }
@@ -1877,41 +1868,46 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (stack_el_t *el) {
 
 static struct gp_tree_node *get_anode (const char *name, int children_num,
                                        struct gp_tree_node **children, int cost) {
-  struct gp_tree_node *anode;
-  grammar->free_node->type = GP_ANODE;
-  grammar->free_node->val.anode.name = name;
-  grammar->free_node->val.anode.children_num = children_num;
-  grammar->free_node->val.anode.children = children;
-  grammar->free_node->cost = cost;
-  if ((anode = tree_node_insert (grammar->free_node)) != grammar->free_node) return anode;
+  struct gp_tree_node *node = &grammar->temp_node;
+  node->type = GP_ANODE;
+  node->val.anode.name = name;
+  node->val.anode.children_num = children_num;
+  node->val.anode.children = children;
+  node->cost = cost;
+  hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
+  struct gp_tree_node *anode = (struct gp_tree_node *) *entry;
+  if (anode != NULL) return anode;
 #if !defined(NO_GP_DEBUG_PRINT)
   grammar->n_parse_abstract_nodes++;
 #endif
-  anode = grammar->free_node;
-  grammar->free_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
+  anode = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
+  *anode = *node;
   anode->num = grammar->n_parse_nodes++;
   anode->val.anode.children = grammar->parse_alloc (children_num * sizeof (struct gp_tree_node *));
   memcpy (anode->val.anode.children, children, children_num * sizeof (struct gp_tree_node *));
+  *entry = anode;
   return anode;
 }
 
 static struct gp_tree_node *get_alt_node (struct gp_tree_node *first, struct gp_tree_node *second,
                                           int cost) {
-  struct gp_tree_node *node = grammar->free_node;
+  struct gp_tree_node *node = &grammar->temp_node;
   grammar->ambiguous_parse_p = true;
   node->type = GP_ALT;
   node->val.alt.first = first;
   node->val.alt.second = second;
   node->cost = cost >= 0 ? cost : first->cost <= second->cost ? first->cost : second->cost;
-  struct gp_tree_node *res = tree_node_insert (node);
-  if (res != node) return res;
+  hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
+  struct gp_tree_node *alt_node = (struct gp_tree_node *) *entry;
+  if (alt_node != NULL) return alt_node;
 #ifndef NO_GP_DEBUG_PRINT
   grammar->n_parse_alt_nodes++;
 #endif
-  res = node;
-  grammar->free_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
-  res->num = grammar->n_parse_nodes++;
-  return res;
+  alt_node = (*grammar->parse_alloc) (sizeof (struct gp_tree_node));
+  *alt_node = *node;
+  alt_node->num = grammar->n_parse_nodes++;
+  *entry = alt_node;
+  return alt_node;
 }
 
 static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct rule *rule) {
@@ -2560,14 +2556,10 @@ static void parse_free_default (void *mem) { free (mem); }
 int gp_parse (struct grammar *g, int (*read) (void **attr),
               void (*error) (const char *err_tok_repr, void *err_tok_attr,
                              const char *stop_tok_repr, void *stop_tok_attr),
-              void *(*alloc) (int nmemb), void (*free) (void *mem), struct gp_tree_node **root,
-              bool *ambiguous_p) {
+              void *(*alloc) (int nmemb), struct gp_tree_node **root, bool *ambiguous_p) {
   /* Set up parse allocation */
-  if (alloc == NULL) {
-    if (free != NULL) return GP_NO_MEMORY;
-    /* Set up defaults */
+  if (alloc == NULL) { /* Set up defaults */
     alloc = parse_alloc_default;
-    free = parse_free_default;
   }
 
   grammar->all_searches = grammar->all_collisions = 0;
@@ -2852,7 +2844,7 @@ static void use_functions (int argc, char **argv) {
     exit (1);
   }
   ntok = 0;
-  if (gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, NULL, &root, &ambiguous_p))
+  if (gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, &root, &ambiguous_p))
     fprintf (stderr, "gecko: %s\n", gp_error_message (g));
   OS_DELETE (mem_os);
   gp_free_grammar (g);
@@ -2893,7 +2885,7 @@ static void use_description (int argc, char **argv) {
     OS_DELETE (mem_os);
     exit (1);
   }
-  if (gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, NULL, &root, &ambiguous_p))
+  if (gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, &root, &ambiguous_p))
     fprintf (stderr, "gecko: %s\n", gp_error_message (g));
   OS_DELETE (mem_os);
   gp_free_grammar (g);

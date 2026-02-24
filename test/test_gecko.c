@@ -921,7 +921,7 @@ int main (int argc, char **argv) {
 #else
   bool ambiguous_p;
   struct gp_tree_node *root;
-  parser_res = gp_parse (g, test_read_token, test_syntax_error, NULL, NULL, &root, &ambiguous_p);
+  parser_res = gp_parse (g, test_read_token, test_syntax_error, NULL, &root, &ambiguous_p);
   if (parser_res) fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_free_grammar (g);
 #endif

@@ -180,21 +180,14 @@ extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
    recovery stop token. If the error recovery is not made (see comments for function
    `gp_set_error_recovery_flag'), the 3rd and 4th parameters will be NULL.
 
-   Function PARSE_ALLOC is used by GECKO to allocate memory for parse tree representation.  After
-   calling gp_fin we free all memory allocated by gparser.  At this point it is convenient to
-   free all memory but parse tree.  Therefore we require the following function. If PARSE_ALLOC is a
-   null pointer, then PARSE_FREE must also be a null pointer. In this case, GECKO will handle the
-   memory management. Otherwise, the caller will be responsible to allocate and free memory for
-   parse tree representation.  But the caller should not free the memory until gp_fin is called.
-   The function may be called even during reading the grammar not only during the parsing.  Function
-   PARSE_FREE is used by the parser to free memory allocated by PARSE_ALLOC. If PARSE_ALLOC is not
-   NULL but PARSE_FREE is, the memory is not freed. In this case, the returned parse tree should
-   also not be freed with gp_free_tree(). */
+   Function PARSE_ALLOC is used by GECKO to allocate memory for parse tree representation.
+   If PARSE_ALLOC is a null pointer, GECKO uses malloc.  Otherwise, the caller will be responsible
+   to allocate and free memory (in gp_free_tree). */
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr),
                      void (*syntax_error) (const char *err_tok_repr, void *err_tok_attr,
                                            const char *stop_tok_repr, void *stop_tok_attr),
-                     void *(*parse_alloc) (int nmemb), void (*parse_free) (void *mem),
-                     struct gp_tree_node **root, bool *ambiguous_p);
+                     void *(*parse_alloc) (int nmemb), struct gp_tree_node **root,
+                     bool *ambiguous_p);
 
 #ifndef NO_GP_DEBUG_PRINT
 /* Print translation of ROOT parsed for GRAMMAR. */
@@ -204,14 +197,11 @@ extern void gp_print_translation (FILE *f, struct grammar *grammar, struct gp_tr
 /* Frees memory allocated for the grammar */
 extern void gp_free_grammar (struct grammar *grammar);
 
-/* Free memory allocated for the parse tree. It must not be called until
-   after gp_free_grammar() has been called. ROOT must be the root of the parse tree as returned by
-   gp_parse(). If ROOT is a null pointer, no operation is performed. Otherwise, the argument
-   passed for PARSE_FREE must be the same as passed for the parameter of the same name in
-   gp_parse() (but do not call this function with PARSE_FREE a null pointer if you called
-   gp_parse() with PARSE_ALLOC not a null pointer). Otherwise, if TERMCB is not a null pointer, it
-   will be called exactly once for each term node in the parse tree. The TERMCB callback can be used
-   by the caller to free the term attributes. The term node itself must not be freed. */
+/* Free memory allocated for the parse tree. ROOT must be the root of the parse tree as returned by
+   gp_parse(). If PARSE_FREE is NULL, free function is used.  If ROOT is a null pointer, no
+   operation is performed.  If TERMCB is not a null pointer, it will be called exactly once for each
+   term node in the parse tree. The TERMCB callback can be used by the caller to free the term
+   attributes. The term node itself must not be freed by TERMCB. */
 extern void gp_free_tree (struct gp_tree_node *root, void (*parse_free) (void *),
                           void (*termcb) (struct gp_term *term));
 

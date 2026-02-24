@@ -24,7 +24,6 @@
 #define parse_grammar yaep_parse_grammar
 #define parse yaep_parse
 #define free_grammar yaep_free_grammar
-#define parse yaep_parse
 #define error_message yaep_error_message
 #else
 #include "gecko.h"
@@ -37,9 +36,8 @@
 #define read_grammar gp_read_grammar
 #define set_recovery_match gp_set_recovery_match
 #define parse_grammar gp_parse_grammar
-#define parse gp_parse
+#define parse(g, read, error, alloc, free, root, amb) gp_parse (g, read, error, alloc, root, amb)
 #define free_grammar gp_free_grammar
-#define parse gp_parse
 #define error_message gp_error_message
 #endif
 
