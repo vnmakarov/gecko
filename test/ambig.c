@@ -11,12 +11,12 @@
 #define S10 "+a+a+a+a+a+a+a+a+a+a"
 #define S100 S10 S10 S10 S10 S10 S10 S10 S10 S10 S10
 static const char *input = "a" S100 S100;
-// static const char *input = "a+a+a+a";
+// static const char *input = "a+a+a+a+a";
 
 static const char *description
   = "\n"
-    "E : E '+' E\n"
-    "  | 'a'\n"
+    "E : E '+' E # plus (0 2) \n"
+    "  | 'a' # 0\n"
     "  ;\n";
 
 #ifdef linux
