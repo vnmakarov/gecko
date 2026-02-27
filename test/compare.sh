@@ -227,7 +227,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
 	echo Failure with 'Elkhound'
 	exit 1
     fi
-    rm -f elkh-c.cc elkh-c.h elkh-ambig.cc elkh-ambig.cc
+    rm -f $SRCDIR/elkh-c.cc $SRCDIR/elkh-c.h $SRCDIR/elkh-ambig.cc $SRCDIR/elkh-ambig.h
 fi
 
 # Gecko

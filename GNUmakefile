@@ -128,7 +128,7 @@ $(BUILD_DIR)/sgramm.c: $(SRC_DIR)/sgramm.y
 
 .PHONY: clean-gecko
 clean-gecko:
-	$(RM) $(GP_BUILD) $(GP_BUILD:.$(OBJSUFF)=.d)
+	$(RM) $(GP_BUILD) $(GP_BUILD:.$(OBJSUFF)=.d) $(BUILD_DIR)/sgramm.c $(BUILD_DIR)/libgecko.$(LIBSUFF)
 
 -include $(GP_BUILD:.$(OBJSUFF)=.d)
 

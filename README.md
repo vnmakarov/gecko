@@ -148,8 +148,9 @@ static void parse (void)
 |YAEP                  |   0.62          |   1152               |
 |Gecko                 |   0.71          |    340               |
 
-    * YAEP has very good results as it works very fast on files consisting of repeating parts.
-      * The file below is more realistic for speed comparison.
+
+  * YAEP has very good results as it works very fast on files consisting of repeating parts.
+    * The file below is more realistic for speed comparison.
       
   * Second file (~**500K** lines) -- a whole old gcc:
 
