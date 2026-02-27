@@ -81,8 +81,14 @@ int main (void) {
 #if YYDEBUG
   yydebug = 1;
 #endif
+  t = create_ticker ();
   store_lexs (alloc);
   initiate_typedefs (alloc);
+#ifdef linux
+  printf ("scanner time %.6f, memory=%.1fkB\n", active_time (t), get_peak_heap_size () / 1024.);
+#elsey
+  printf ("scanner time %.2f\n", active_time (t));
+#endif
   curr = NULL;
   t = create_ticker ();
   code = yyparse ();
