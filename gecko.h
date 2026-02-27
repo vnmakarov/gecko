@@ -161,11 +161,22 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      is true.
 
    * recovery_match means how much subsequent tokens should be successfully shifted to finish error
-     recovery.  The default value is 3. */
+     recovery.  The default value is 3.
+
+   * gp_set_attr_merge_func is used during merging stacks.  It gets two attributes of a symbol
+     (terminal or nonterminal) from stacks being merged and returns the result attribute.  Null FUNC
+     sets up the default function which returns always the first attr.  The default function is set
+     up in GP_CREATE_GRAMMAR.  Using the default function results in returning only one translation
+     by GP_PARSE. */
+
 extern int gp_set_debug_level (struct grammar *grammar, int level);
 extern bool gp_set_cost_flag (struct grammar *grammar, bool flag);
 extern bool gp_set_error_recovery_flag (struct grammar *grammar, bool flag);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
+
+typedef void *(*gp_attr_merge_func_t) (void *attr1, void *attr2);
+extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar,
+                                                    gp_attr_merge_func_t func);
 
 /* Parse input according the read grammar. Returns the error code (which will be also in
    gp_error_code). If the code is zero, also put parse result into *root (*root will be NULL only if

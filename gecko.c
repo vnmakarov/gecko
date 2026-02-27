@@ -66,6 +66,8 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   jmp_buf error_longjump_buff; /* Jump buffer for processing errors. */
 
+  gp_attr_merge_func_t attr_merge;
+
   int (*read_token) (void **attr);
   void (*syntax_error) (const char *err_tok_repr, void *err_tok_attr, const char *stop_tok_repr,
                         void *stop_tok_attr);
@@ -962,6 +964,8 @@ static void error_func_for_allocate (void *ignored) { /* Process allocation erro
   gp_error (GP_NO_MEMORY, "no memory");
 }
 
+static void *default_attr_merge (void *attr1, void *attr2 GP_UNUSED) { return attr1; }
+
 struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
   gp_allocator_t *allocator;
 
@@ -994,6 +998,7 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   grammar->symbs = symb_init ();
   grammar->term_sets = term_set_init ();
   grammar->rules = rule_init ();
+  grammar->attr_merge = default_attr_merge;
   VLO_CREATE (grammar->temp_vlo, grammar->alloc, 0);
   return grammar;
 }
@@ -1321,6 +1326,12 @@ static void gp_parse_init (void) { /* initialize all internal data for parser: *
   set_init ();
   for (struct rule *rule = grammar->rules->first_rule; rule != NULL; rule = rule->next)
     rule->caller_anode = NULL;
+}
+
+gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar, gp_attr_merge_func_t func) {
+  gp_attr_merge_func_t res = grammar->attr_merge;
+  grammar->attr_merge = func == NULL ? default_attr_merge : func;
+  return res;
 }
 
 /* The function should be called the last (it frees all allocated data for parser). */
@@ -1974,20 +1985,17 @@ static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *
   return goto_set;
 }
 
-static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *diff) {
+static bool stack_eq_p (struct stack *stack1, struct stack *stack2, bool *diff_attr_p) {
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
   assert (stack1->recovery == NULL && stack2->recovery == NULL);
   stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (stack1->els);
   stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (stack2->els);
-  int diff_el_num = -1;
+  *diff_attr_p = false;
   for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
     stack_el_t *el1 = &stack_addr1[i], *el2 = &stack_addr2[i];
     if (el1->set != el2->set) return false;
-    if (el1->anode_attr == el2->anode_attr) continue;
-    if (diff_el_num >= 0) return false;
-    diff_el_num = i;
+    if (el1->anode_attr != el2->anode_attr) *diff_attr_p = true;
   }
-  *diff = diff_el_num;
   return true;
 }
 
@@ -2001,14 +2009,17 @@ static FORCE_INLINE bool merge_stacks (vlo_t *stacks) {
     for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
       if (curr2 == NULL) continue;
-      int diff;
-      if (!stack_eq_p (curr, curr2, &diff)) continue;
-      ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
+      bool diff_attr_p;
+      if (!stack_eq_p (curr, curr2, &diff_attr_p)) continue;
       merge_p = true;
-      if (diff >= 0) {
-        void **attr_ref = &((stack_el_t *) VLO_BEGIN (curr->els))[diff].anode_attr;
-        *attr_ref
-          = get_alt_node (*attr_ref, ((stack_el_t *) VLO_BEGIN (curr2->els))[diff].anode_attr, 0);
+      ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
+      if (diff_attr_p) {
+        stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (curr->els);
+        stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (curr2->els);
+        for (int k = (int) (VLO_LENGTH (curr->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
+          stack_el_t *el1 = &stack_addr1[k], *el2 = &stack_addr2[k];
+          el1->anode_attr = grammar->attr_merge (el1->anode_attr, el2->anode_attr);
+        }
       }
       stack_free (curr2);
     }
@@ -2551,7 +2562,7 @@ static void parse_free_default (void *mem) { free (mem); }
 /* Parse input according read grammar. For unambiguous grammar the flag does not affect the result.
    D_LEVEL says what debugging information to output (it works only if we compiled without defined
    macro NO_GP_DEBUG_PRINT). The function returns the error code (which will be also in error_code).
-   The function sets up *AMBIGUOUS_P if we found that the grammer is ambigous (it works even we
+   The function sets up *AMBIGUOUS_P if we found that the grammar is ambigous (it works even we
    asked only one parse tree without alternatives). */
 int gp_parse (struct grammar *g, int (*read) (void **attr),
               void (*error) (const char *err_tok_repr, void *err_tok_attr,
