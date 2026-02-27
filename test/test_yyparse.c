@@ -86,7 +86,7 @@ int main (void) {
   initiate_typedefs (alloc);
 #ifdef linux
   printf ("scanner time %.6f, memory=%.1fkB\n", active_time (t), get_peak_heap_size () / 1024.);
-#elsey
+#else
   printf ("scanner time %.2f\n", active_time (t));
 #endif
   curr = NULL;
