@@ -148,20 +148,24 @@ static void parse (void)
 |YAEP                  |   0.62          |   1152               |
 |Gecko                 |   0.71          |    340               |
 
-    * YAEP has very good results as it works very fast on files consisting of repeating parts
-      * The file below is more realistic for speed comparison
+    * YAEP has very good results as it works very fast on files consisting of repeating parts.
+      * The file below is more realistic for speed comparison.
       
-  * Second file (**476K** lines) -- a whole old gcc:
+  * Second file (~**500K** lines) -- a whole old gcc:
 
 |                      |  Time (s)       | Max Memory MB        |
 |----------------------|----------------:|---------------------:|
-|YACC                  |  0.26           |  123                 |
-|ElkHound              |  0.73           |  127                 |
-|YAEP                  |  0.66           |  471                 |
-|Gecko                 |  0.29           |  124                 |
+|gcc -fsyntax-only     |   0.73          |    283               |
+|gcc -O0               |   8.52          |    881               |
+|clang -fsyntax-only   |   0.69          |    223               |
+|clang -O0             |   2.08          |    470               |
+|YACC                  |   0.26          |    123               |
+|ElkHound              |   0.73          |    127               |
+|YAEP                  |   0.66          |    471               |
+|Gecko                 |   0.29          |    124               |
 
-  * GCC and Clang can not compile correctly the 2nd file (as they requires different
-    extensions like `__builtin_va_list` and many others).  Therefore they are excluded.
+  * GCC and Clang have a bit different test as other parsers can not take
+    C extensions in the original test.
 
 * Highly ambigous grammar (E=E+E|a) with abstract tree generation
   * Input is `a(+a){200}`.  In other words, 200 operators `+` are used:
