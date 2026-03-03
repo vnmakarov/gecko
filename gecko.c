@@ -2376,7 +2376,9 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
           set = stack_shift (single_stack, shifted_set, attr, ntoks + 1);
+#ifndef NO_GP_DEBUG_PRINT
           if (UNLIKELY (grammar->debug_level > 4)) print_single_stack (stderr, single_stack, &actions[0]);
+#endif
           if (code == END_MARKER_CODE) {
             VLO_ADD_MEMORY (grammar->curr_stacks, &single_stack, sizeof (single_stack));
             goto finish;
