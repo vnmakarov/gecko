@@ -61,8 +61,8 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
   if (start_ignored_tok_num < 0)
     fprintf (stderr, "Syntax error on token %d\n", err_tok_num);
   else
-    fprintf (stderr, "Syntax error on token %d:ignore %d tokens starting with token = %d\n",
-             err_tok_num, start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
+    fprintf (stderr, "Syntax error on token %d:ignore %d tokens starting with token = %d\n", err_tok_num,
+             start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
 }
 #else
 static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
@@ -70,8 +70,7 @@ static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_U
   if (stop_tok_repr == NULL)
     fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
   else
-    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr,
-             stop_tok_repr);
+    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
 }
 #endif
 
@@ -103,8 +102,7 @@ static void test_standard_parse (void) {
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
-  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
-             &ambiguous_p)) {
+  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
@@ -114,10 +112,11 @@ static void test_standard_parse (void) {
 static void test_standard_read (
 #ifdef YAEP
   const char *(*read_terminal) (int *),
+  const char *(*read_rule) (const char ***, const char **, int *, int **) ) {
 #else
   const char *(*read_terminal) (int *, int *, enum gp_assoc *),
+  const char *(*read_rule) (const char ***, const char **, int **) ) {
 #endif
-  const char *(*read_rule) (const char ***, const char **, int *, int **) ) {
   struct grammar *g;
   struct tree_node *root;
   ambig_type ambiguous_p;
@@ -130,16 +129,21 @@ static void test_standard_read (
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
-  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
-             &ambiguous_p)) {
+  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
   free_grammar (g);
 }
 
-static void test_complex_parse (bool ambiguous, bool print_cost, int recovery_match,
-                                bool print_transl, int argc, char **argv) {
+#ifdef __GNUC__
+#define UNUSED __attribute__ ((unused))
+#else
+#define UNUSED
+#endif
+
+static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int recovery_match, bool print_transl,
+                                int argc, char **argv) {
   struct grammar *g;
   struct tree_node *root;
   ambig_type ambiguous_p;
@@ -148,7 +152,9 @@ static void test_complex_parse (bool ambiguous, bool print_cost, int recovery_ma
     fprintf (stderr, "create_grammar: No memory\n");
     exit (1);
   }
+#ifdef YAEP
   if (print_cost) set_cost_flag (g, true);
+#endif
   if (argc > 1)
     set_debug_level (g, atoi (argv[1]));
   else
@@ -162,8 +168,7 @@ static void test_complex_parse (bool ambiguous, bool print_cost, int recovery_ma
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
-  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
-             &ambiguous_p)) {
+  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
@@ -172,7 +177,6 @@ static void test_complex_parse (bool ambiguous, bool print_cost, int recovery_ma
     exit (1);
   }
 #ifndef YAEP
-  if (print_cost) fprintf (stderr, "cost = %d\n", root->cost);
   if (print_transl) gp_print_translation (stderr, g, root);
 #endif
   free_grammar (g);

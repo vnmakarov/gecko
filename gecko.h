@@ -39,7 +39,6 @@ struct grammar;
 #define GP_NO_RULES 11
 #define GP_TERM_IN_RULE_LHS 12
 #define GP_INCORRECT_TRANSLATION 13
-#define GP_NEGATIVE_COST 14
 #define GP_INCORRECT_SYMBOL_NUMBER 15
 #define GP_REPEATED_SYMBOL_NUMBER 16
 #define GP_UNACCESSIBLE_NONTERM 17
@@ -70,9 +69,7 @@ struct gp_term { /* the terminal node: */
   void *attr;    /* the terminal attributes */
 };
 
-struct gp_anode { /* the abstract node: */
-  /* cost of the node plus costs of all children if the cost flag is set up, otherwise,
-     the value is cost of the abstract node itself: */
+struct gp_anode {   /* the abstract node: */
   int children_num; /* elements in the next array */
   const char *name; /* the abstract node name */
   /* References for nodes for which the abstract node refers.  The array end marker is NULL. */
@@ -86,7 +83,6 @@ struct gp_alt { /* alternative translations: */
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
   unsigned num;                /* node number */
-  int cost;                    /* cost */
   union {                      /* the node itself */
     struct gp_nil nil;
     struct gp_error error;
@@ -126,13 +122,11 @@ extern const char *gp_error_message (struct grammar *g);
    GP_NIL_TRANSLATION_NUMBER.  If *TRANSL is NULL or contains only the end marker, translations of
    the rule will be nil node.  If ABS_NODE is NULL, abstract node is not created.  In this case
    *TRANSL should be NULL or contain at most one element which means that the translation of the
-   rule will be nil node or the translation of the symbol in RHS given by the single array element.
-   The cost of the abstract node if given is passed through ANODE_COST. */
+   rule will be nil node or the translation of the symbol in RHS given by the single array element. */
 extern int gp_read_grammar (struct grammar *g, bool strict_p,
-                            const char *(*read_terminal) (int *code, int *priority,
-                                                          enum gp_assoc *assoc),
+                            const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
                             const char *(*read_rule) (const char ***rhs, const char **abs_node,
-                                                      int *anode_cost, int **transl));
+                                                      int **transl));
 
 /* Analogous to the previous one but it parses grammar description. */
 extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *description);
@@ -153,9 +147,6 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      * 5 results in printing stacks during parsing and stack merging
      * 6 results in even more detail info about processing stacks during parsing
 
-   * cost_flag means usage costs to build tree with minimal cost.  For unambiguous grammar the flag
-     does not affect the result.  The default value is false.
-
    * error_recovery_flag means making error recovery if syntax error occurred.  Otherwise, syntax
      error results in finishing parsing (although syntax_error is called once).  The default value
      is true.
@@ -170,13 +161,11 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      by GP_PARSE. */
 
 extern int gp_set_debug_level (struct grammar *grammar, int level);
-extern bool gp_set_cost_flag (struct grammar *grammar, bool flag);
 extern bool gp_set_error_recovery_flag (struct grammar *grammar, bool flag);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
 typedef void *(*gp_attr_merge_func_t) (void *attr1, void *attr2);
-extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar,
-                                                    gp_attr_merge_func_t func);
+extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar, gp_attr_merge_func_t func);
 
 /* Parse input according the read grammar. Returns the error code (which will be also in
    gp_error_code). If the code is zero, also put parse result into *root (*root will be NULL only if
@@ -197,8 +186,7 @@ extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar,
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr),
                      void (*syntax_error) (const char *err_tok_repr, void *err_tok_attr,
                                            const char *stop_tok_repr, void *stop_tok_attr),
-                     void *(*parse_alloc) (int nmemb), struct gp_tree_node **root,
-                     bool *ambiguous_p);
+                     void *(*parse_alloc) (int nmemb), struct gp_tree_node **root, bool *ambiguous_p);
 
 #ifndef NO_GP_DEBUG_PRINT
 /* Print translation of ROOT parsed for GRAMMAR. */

@@ -57,7 +57,6 @@ struct grammar {    /* major structure which stores information about grammar: *
   int recovery_token_matches; /* number of subsequent tokens should be successfuly shifted to finish
                                  error recovery */
   int debug_level;
-  bool cost_p;                 /* true if we need parse(s) with minimal costs */
   bool error_recovery_p;       /* true if we need to make error recovery. */
   struct symbs *symbs;         /* vocabulary used for this grammar */
   struct rules *rules;         /* rules used for this grammar */
@@ -526,7 +525,6 @@ struct rule {                 /* rule of the grammar: */
   struct symb *priority_term; /* last priority terminal, NULL otherwise */
   /* The following three members define rule translation: */
   const char *anode; /* abstract node name if any */
-  int anode_cost;    /* the cost of the abstract node if any, otherwise 0 */
   int trans_len;     /* number of symbol translations in the rule translation */
   /* ???Array elements correspond to element of rhs with the same index. The element value is order
      number of the corresponding symbol translation in the rule translation. If the symbol
@@ -562,7 +560,7 @@ static struct rules *rule_init (void) {
 }
 
 /* Create new rule with LHS empty rhs. */
-static struct rule *rule_new_start (struct symb *lhs, const char *anode, int anode_cost) {
+static struct rule *rule_new_start (struct symb *lhs, const char *anode) {
   struct rule *rule;
   struct symb *empty;
 
@@ -575,12 +573,10 @@ static struct rule *rule_new_start (struct symb *lhs, const char *anode, int ano
   rule->priority_term = NULL;
   if (anode == NULL) {
     rule->anode = NULL;
-    rule->anode_cost = 0;
   } else {
     OS_TOP_ADD_STRING (grammar->rules->rules_os, anode);
     rule->anode = (char *) OS_TOP_BEGIN (grammar->rules->rules_os);
     OS_TOP_FINISH (grammar->rules->rules_os);
-    rule->anode_cost = anode_cost;
   }
   rule->trans_len = 0;
   rule->order = NULL;
@@ -645,10 +641,7 @@ static void rule_print (FILE *f, struct rule *rule, bool trans_p, bool newln_p) 
   if (trans_p) {
     fprintf (f, " # ");
     if (rule->anode != NULL) {
-      if (rule->anode_cost == 0)
-        fprintf (f, "%s (", rule->anode);
-      else
-        fprintf (f, "%s %d (", rule->anode, rule->anode_cost);
+      fprintf (f, "%s (", rule->anode);
     }
     for (i = 0; i < rule->trans_len; i++) {
       for (j = 0; j < rule->rhs_len; j++)
@@ -993,7 +986,6 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   grammar->error_code = 0;
   *grammar->error_message = '\0';
   grammar->debug_level = 0;
-  grammar->cost_p = false;
   grammar->error_recovery_p = true;
   grammar->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
   grammar->symbs = NULL;
@@ -1178,8 +1170,7 @@ static void check_grammar (int strict_p) {
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p,
                      const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
-                     const char *(*read_rule) (const char ***rhs, const char **abs_node, int *anode_cost,
-                                               int **transl)) {
+                     const char *(*read_rule) (const char ***rhs, const char **abs_node, int **transl)) {
   struct symb *symb;
   assert (g != NULL);
   grammar = g;
@@ -1199,10 +1190,10 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   }
   grammar->axiom = grammar->end_marker = NULL;
   const char *lhs, **rhs, *anode;
-  int anode_cost, *transl;
+  int *transl;
   struct rule *rule;
   struct symb *start;
-  while ((lhs = (*read_rule) (&rhs, &anode, &anode_cost, &transl)) != NULL) {
+  while ((lhs = (*read_rule) (&rhs, &anode, &transl)) != NULL) {
     symb = symb_find_by_repr (lhs);
     if (symb == NULL)
       symb = symb_add_nonterm (lhs);
@@ -1210,8 +1201,6 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
       gp_error (GP_TERM_IN_RULE_LHS, "term `%s' in the left hand side of rule", lhs);
     if (anode == NULL && transl != NULL && *transl >= 0 && transl[1] >= 0)
       gp_error (GP_INCORRECT_TRANSLATION, "rule for `%s' has incorrect translation", lhs);
-    if (anode != NULL && anode_cost < 0)
-      gp_error (GP_NEGATIVE_COST, "translation for `%s' has negative cost", lhs);
     if (grammar->axiom == NULL) {
       /* We made this here becuase we want that the start rule has number 0. */
       /* Add axiom and end marker. */
@@ -1225,14 +1214,14 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
       if (term_tab_find_by_code (END_MARKER_CODE) != NULL) abort ();
       grammar->end_marker = symb_add_term (END_MARKER_NAME, END_MARKER_CODE, -1, GP_NON_ASSOC);
       /* Add rules for start */
-      rule = rule_new_start (grammar->axiom, NULL, 0);
+      rule = rule_new_start (grammar->axiom, NULL);
       rule_new_symb_add (symb);
       rule_new_symb_add (grammar->end_marker);
       rule_new_stop ();
       rule->order[0] = 0;
       rule->trans_len = 1;
     }
-    rule = rule_new_start (symb, anode, (anode != NULL ? anode_cost : 0));
+    rule = rule_new_start (symb, anode);
     while (*rhs != NULL) {
       symb = symb_find_by_repr (*rhs);
       if (symb == NULL) symb = symb_add_nonterm (*rhs);
@@ -1297,13 +1286,6 @@ int gp_set_debug_level (struct grammar *g, int level) {
   assert (g != NULL);
   int old = g->debug_level;
   g->debug_level = level;
-  return old;
-}
-
-bool gp_set_cost_flag (struct grammar *g, bool flag) {
-  assert (g != NULL);
-  bool old = g->cost_p;
-  g->cost_p = flag;
   return old;
 }
 
@@ -1588,19 +1570,17 @@ static uint64_t node_hash (hash_table_entry_t n) {
     break;
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
-  h = hash_step (h, node->cost);
   return hash_finish (h);
 }
 
 static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
   struct gp_tree_node *node1 = (struct gp_tree_node *) n1, *node2 = (struct gp_tree_node *) n2;
-  if (node1->type != node2->type || node1->cost != node2->cost) return false;
+  if (node1->type != node2->type) return false;
   switch (node1->type) {
   case GP_TERM:
     return (node1->val.term.code == node2->val.term.code && node1->val.term.attr == node2->val.term.attr);
   case GP_ANODE:
     if (node1->val.anode.children_num != node2->val.anode.children_num) return false;
-    if (node1->cost != node2->cost) return false;
     if (strcmp (node1->val.anode.name, node2->val.anode.name) != 0) return false;
     return (memcmp (node1->val.anode.children, node2->val.anode.children,
                     sizeof (struct gp_tree_node *) * node1->val.anode.children_num)
@@ -1859,7 +1839,6 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (int code, void *attr) {
   node->type = GP_TERM;
   node->val.term.code = code;
   node->val.term.attr = attr;
-  node->cost = 0;
   hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
   struct gp_tree_node *term_node = (struct gp_tree_node *) *entry;
   if (term_node != NULL) return term_node;
@@ -1878,14 +1857,12 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (stack_el_t *el) {
   return get_term_node (el->set->symb->u.term.code, el->anode_attr);
 }
 
-static struct gp_tree_node *get_anode (const char *name, int children_num, struct gp_tree_node **children,
-                                       int cost) {
+static struct gp_tree_node *get_anode (const char *name, int children_num, struct gp_tree_node **children) {
   struct gp_tree_node *node = &grammar->temp_node;
   node->type = GP_ANODE;
   node->val.anode.name = name;
   node->val.anode.children_num = children_num;
   node->val.anode.children = children;
-  node->cost = cost;
   hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
   struct gp_tree_node *anode = (struct gp_tree_node *) *entry;
   if (anode != NULL) return anode;
@@ -1901,12 +1878,11 @@ static struct gp_tree_node *get_anode (const char *name, int children_num, struc
   return anode;
 }
 
-static struct gp_tree_node *get_alt_node (struct gp_tree_node *first, struct gp_tree_node *second, int cost) {
+static struct gp_tree_node *get_alt_node (struct gp_tree_node *first, struct gp_tree_node *second) {
   struct gp_tree_node *node = &grammar->temp_node;
   node->type = GP_ALT;
   node->val.alt.first = first;
   node->val.alt.second = second;
-  node->cost = cost >= 0 ? cost : first->cost <= second->cost ? first->cost : second->cost;
   hash_table_entry_t *entry = find_hash_table_entry (grammar->nodes_htab, node, true);
   struct gp_tree_node *alt_node = (struct gp_tree_node *) *entry;
   if (alt_node != NULL) return alt_node;
@@ -1954,7 +1930,7 @@ static NO_INLINE void *get_transl (stack_el_t *stack_addr, int stack_len, struct
     if (anode != grammar->error_node) err_p = false;
   }
   if (err_p) return grammar->error_node; /* all children are error node */
-  return get_anode (rule->caller_anode, rule->trans_len, children, rule->anode_cost);
+  return get_anode (rule->caller_anode, rule->trans_len, children);
 }
 
 static FORCE_INLINE struct set *stack_reduce (struct stack *stack, struct rule *rule) {
@@ -2345,11 +2321,9 @@ static bool parse (bool *ambiguous_p, struct gp_tree_node **transl) {
   grammar->empty_node = (struct gp_tree_node *) grammar->parse_alloc (sizeof (struct gp_tree_node));
   grammar->empty_node->type = GP_NIL;
   grammar->empty_node->num = grammar->n_parse_nodes++;
-  grammar->empty_node->cost = 0;
   grammar->error_node = (struct gp_tree_node *) grammar->parse_alloc (sizeof (struct gp_tree_node));
   grammar->error_node->type = GP_ERROR;
   grammar->error_node->num = grammar->n_parse_nodes++;
-  grammar->error_node->cost = 0;
   VLO_CREATE (grammar->symb_sits, grammar->alloc, 16);
   VLO_CREATE (grammar->actions_vlo, grammar->alloc, 16);
   VLO_CREATE (grammar->temp_nodes_vlo, grammar->alloc, 16);
@@ -2508,10 +2482,7 @@ static void print_node (FILE *f, struct gp_tree_node *node) {
              term_find_by_code (node->val.term.code)->repr);
     break;
   case GP_ANODE:
-    if (node->cost == 0)
-      fprintf (f, "ABSTRACT: %s (", node->val.anode.name);
-    else
-      fprintf (f, "ABSTRACT: %s %d (", node->val.anode.name, node->cost);
+    fprintf (f, "ABSTRACT: %s (", node->val.anode.name);
     for (i = 0; i < node->val.anode.children_num; i++) fprintf (f, " %d", node->val.anode.children[i]->num);
     fprintf (f, " )\n");
     for (i = 0; i < node->val.anode.children_num; i++) print_node (f, node->val.anode.children[i]);
@@ -2740,7 +2711,7 @@ const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
 static int nrule; /* the current number of next rule grammar terminal */
 
 /* The function imported by Gecko (see comments in the interface file). */
-const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, int **transl) {
+const char *read_rule (const char ***rhs, const char **anode, int **transl) {
   static const char *rhs_1[] = {"T", NULL};
   static int tr_1[] = {0, -1};
   static const char *rhs_2[] = {"E", "+", "T", NULL};
@@ -2759,7 +2730,6 @@ const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, i
   case 1:
     *rhs = rhs_1;
     *anode = NULL;
-    *anode_cost = 0;
     *transl = tr_1;
     return "E";
   case 2:
@@ -2770,7 +2740,6 @@ const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, i
   case 3:
     *rhs = rhs_3;
     *anode = NULL;
-    *anode_cost = 0;
     *transl = tr_3;
     return "T";
   case 4:
@@ -2781,13 +2750,11 @@ const char *read_rule (const char ***rhs, const char **anode, int *anode_cost, i
   case 5:
     *rhs = rhs_5;
     *anode = NULL;
-    *anode_cost = 0;
     *transl = tr_5;
     return "F";
   case 6:
     *rhs = rhs_6;
     *anode = NULL;
-    *anode_cost = 0;
     *transl = tr_6;
     return "F";
   default: return NULL;
@@ -2834,7 +2801,6 @@ static void use_functions (int argc, char **argv) {
   else
     gp_set_debug_level (g, 3);
   if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
-  if (argc > 4) gp_set_cost_flag (g, atoi (argv[4]));
   if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     OS_DELETE (mem_os);
@@ -2876,7 +2842,6 @@ static void use_description (int argc, char **argv) {
   else
     gp_set_debug_level (g, 3);
   if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
-  if (argc > 4) gp_set_cost_flag (g, atoi (argv[4]));
   if (gp_parse_grammar (g, true, description) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     OS_DELETE (mem_os);

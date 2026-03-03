@@ -56,8 +56,6 @@
     /* The following members are left hand side nonterminal
        representation and abstract node name (if any) for the rule. */
     char *lhs, *anode;
-    /* The following is the cost of given anode if it is defined. Otherwise, the value is zero. */
-    int anode_cost;
     /* The following is length of right hand side of the rule. */
     int rhs_len;
     /* Terminal/nonterminal representations in RHS of the rule.  The array end marker is NULL. */
@@ -76,9 +74,6 @@
   /* The following contain all right hand sides and translations arrays.
      See members rhs, trans in structure `rule'. */
   static os_t srhs, strans;
-
-  /* The following is cost of the last translation which contains an abstract node. */
-  static int last_anode_cost;
 
   /* This variable is used in yacc action to process alternatives. */
   static char *slhs;
@@ -150,7 +145,6 @@ alt : seq trans {
 	OS_TOP_ADD_MEMORY (strans, &end_marker, sizeof (int));
 	rule.lhs = slhs;
 	rule.anode = (char *) $2;
-	rule.anode_cost = (rule.anode == NULL ? 0 : last_anode_cost);
 	rule.rhs_len = OS_TOP_LENGTH (srhs) / sizeof (char *);
         OS_TOP_EXPAND (srhs, sizeof (char *));
 	rule.rhs = (char **) OS_TOP_BEGIN (srhs);
@@ -191,8 +185,8 @@ trans : { $$ = NULL; }
           $$ = NULL;
          OS_TOP_ADD_MEMORY (strans, &symb_num, sizeof (int));
         }
-      | '#' IDENT cost '(' numbers ')' { $$ = $2; }
-      | '#' IDENT cost { $$ = $2; }
+      | '#' IDENT '(' numbers ')' { $$ = $2; }
+      | '#' IDENT { $$ = $2; }
       ;
 
 numbers :
@@ -205,10 +199,6 @@ numbers :
             OS_TOP_ADD_MEMORY (strans, &symb_num, sizeof (int));
           }
 	;
-
-cost : { last_anode_cost = 0; }
-     | NUMBER { last_anode_cost = $1; }
-     ;
 
 %%
 /* The following is current input character of the grammar description. */
@@ -474,8 +464,7 @@ static const char *sread_terminal (int *code, int *priority, enum gp_assoc *asso
   return name;
 }
 
-static const char *sread_rule (const char ***rhs, const char **abs_node, int *anode_cost,
-                               int **transl) {
+static const char *sread_rule (const char ***rhs, const char **abs_node, int **transl) {
   struct srule *rule;
   const char *lhs;
 
@@ -484,7 +473,6 @@ static const char *sread_rule (const char ***rhs, const char **abs_node, int *an
   lhs = rule->lhs;
   *rhs = (const char **) rule->rhs;
   *abs_node = rule->anode;
-  *anode_cost = rule->anode_cost;
   *transl = rule->trans;
   nsrule++;
   return lhs;
