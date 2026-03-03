@@ -10,11 +10,11 @@
   * x86-64 code size is only 80KB
   * 3.5K C SLOC
 * Fast
-  * Close to YACC/Bison speed on unambigous grammars (about 25% slower)
+  * Close to YACC/Bison speed on unambigous grammars (about 5-10% slower)
   * Process 2M C lines per second on AMD9900X
-  * 2.5 times faster than YEAP (the fastest Early parser) on unambigous and moderately ambigous grammars
-  * 2 times faster than ElkHound (a famous GLR parser) on umambigous and moderately ambigous grammars
-  * 10 times faster than ElkHound on higly ambigous grammars
+  * 2 times faster than YEAP (the fastest Early parser) on unambigous and moderately ambigous grammars
+  * 2.5 times faster than ElkHound (a famous GLR parser) on umambigous and moderately ambigous grammars
+  * 50 times faster than ElkHound on higly ambigous grammars
 * Automatic syntax error recovery and error reporting
   * Simple interface for custom support of syntax error reporting
 * Operator grammar support
