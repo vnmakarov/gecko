@@ -149,8 +149,9 @@ static void parse (void)
 |Gecko                 |   0.71          |    340               |
 
 
-  * YAEP has very good results as it works very fast on files consisting of repeating parts.
-    * The file below is more realistic for speed comparison.
+  * YAEP has very good results as it uses a dynamic programming to speedup Earley's parser
+    and therefore it works very fast on files consisting of repeating parts.
+  * The file below is more realistic for speed comparison.
       
   * Second file (~**500K** lines) -- a whole old gcc:
 
