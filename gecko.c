@@ -132,7 +132,16 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   bool ambiguous_parse_p;
 
-  vlo_t curr_stacks, new_stacks, failed_stacks, delayed_stacks;
+  /* The current stacks and the stacks which will be current after reading and processing current
+     terminal, in order word stacks containing situation with position after the terminal.  */
+  vlo_t curr_stacks, new_stacks;
+  /* Stacks used during error recovery.  They are ordered by decreasing cost.
+     Delayed stacks are produced by removing symbol from the original stack.  */
+  vlo_t delayed_stacks;
+  /* Current stacks which had no actions on the current term.  They and delayed stacks
+     from them are start stacks for error recovery.  Error recovery starts when there
+     are no actions on all current stacks.  They are also used during error recovery.  */
+  vlo_t failed_stacks;
   int n_single_stack_actions, n_multi_stack_actions;
 
   vlo_t vlos; /* vlo of vlos used for moving options up */
