@@ -1337,9 +1337,9 @@ static void gp_parse_init (void) { /* initialize all internal data for parser: *
     rule->caller_anode = NULL;
 }
 
-gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar, gp_attr_merge_func_t func) {
-  gp_attr_merge_func_t res = grammar->attr_merge;
-  grammar->attr_merge = func == NULL ? default_attr_merge : func;
+gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *g, gp_attr_merge_func_t func) {
+  gp_attr_merge_func_t res = g->attr_merge;
+  g->attr_merge = func == NULL ? default_attr_merge : func;
   return res;
 }
 
