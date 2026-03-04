@@ -27,7 +27,7 @@
     a YACC-like description syntax
   * Very **fast startup** after reading grammar from file or string
 
-# Differences between Gecko and [YAEP](https://github.com/vnmakarov/yaep) (the fastest Earley Parser implementation):
+# Differences between Gecko and [YAEP](https://github.com/vnmakarov/yaep) (the fastest Earley Parser implementation I know):
   * Gecko is faster on unambigous and moderately ambigous grammars
   * Gecko speed practically does not depend on grammar size
   * Gecko requires less memory for parsing
@@ -35,15 +35,14 @@
   * Gecko does not require to modify grammar for syntax error recovery and reporting
   * Gecko permits shorter grammars by supporting operator grammars (operator associativity
     and precedence) analogously to YACC/Bison
-  * YAEP is faster on higly ambigous grammars when all possible translations
-    or minimal cost translation are required.  It also generates much smaller DAG
-    for all possible translations for highly ambigous grammars
+  * YAEP can permit to describe rules with costs and find minimal cost translation for ambigous gramamrs
+  * YAEP is faster on higly ambigous grammars when all possible translations or minimal cost translation
+    are required.  It also generates much smaller DAG for all possible translations for highly ambigous grammars
 
 # Usage example:
 
-* The following is a small example of how to use Gecko to parse expressions.
-  We have omitted the functions `read_token`, `syntax_error_func`,
-  and `parse_alloc_func` which are needed to provide tokens, print syntax
+* The following is a small example of how to use Gecko to parse expressions.  We have omitted the functions
+  `read_token`, `syntax_error_func`, and `parse_alloc_func` which are needed to provide tokens, print syntax
   error messages, and allocate memory for the parser.
 
 ```
