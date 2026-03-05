@@ -2190,7 +2190,7 @@ static struct stack *recovery_stop (bool one_stack_p, struct symb *error_term, v
   }
 #endif
   buff_token_ind -= grammar->recovery_token_matches;
-  assert (buff_token_ind >= 0);
+  if (buff_token_ind < 0) buff_token_ind = 0; /* we can finish at the end marker */
   void *stop_token_attr;
   int stop_code = token_buff_get (buff_token_ind, &stop_token_attr);
   struct symb *stop_token_term = term_find_by_code (stop_code);
