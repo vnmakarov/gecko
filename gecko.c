@@ -1581,7 +1581,7 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
     return (node1->val.term.code == node2->val.term.code && node1->val.term.attr == node2->val.term.attr);
   case GP_ANODE:
     if (node1->val.anode.children_num != node2->val.anode.children_num) return false;
-    if (strcmp (node1->val.anode.name, node2->val.anode.name) != 0) return false;
+    if (node1->val.anode.name != node2->val.anode.name) return false; /* name exists in one examplar */
     return (memcmp (node1->val.anode.children, node2->val.anode.children,
                     sizeof (struct gp_tree_node *) * node1->val.anode.children_num)
             == 0);
