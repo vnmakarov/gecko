@@ -178,7 +178,7 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
     exit (1);
   }
 #ifndef YAEP
-  if (print_transl) gp_print_translation (stderr, g, root);
+  if (print_transl) gp_print_translation (g, stderr, root);
 #endif
   free_grammar (g);
 }

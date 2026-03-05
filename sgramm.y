@@ -34,7 +34,12 @@
 #define yyss gp_yyss
 #define yyvs gp_yyvs
 
-  /* The following structure describes syntax grammar terminal. */
+#define YYLEX_PARAM g
+#define YYPARSE_PARAM g
+#define YYERROR_DECL() yyerror(void *, const char *s)
+#define YYERROR_CALL(msg) yyerror(g, msg)
+
+/* The following structure describes syntax grammar terminal. */
   struct sterm {
     char *repr; /* terminal representation. */
     int code;   /* terminal code. */
@@ -79,9 +84,9 @@
   static char *slhs;
 
   /* Forward declarations. */
-  extern int yyerror (const char *str);
-  extern int yylex (void);
-  extern int yyparse (void);
+  extern int yyerror (void *arg, const char *str);
+  extern int yylex (void *);
+  extern int yyparse (void *);
 
 %}
 
@@ -214,7 +219,7 @@ static os_t stoks;
 static int nsterm, nsrule;
 
 /* The following implements lexical analyzer for yacc code. */
-int yylex (void) {
+int yylex (void *g) {
   int c;
   int n_errs = 0;
 
@@ -230,11 +235,11 @@ int yylex (void) {
       if (c != '*' && n_errs == 0) {
         n_errs++;
         curr_ch--;
-        yyerror ("invalid input character /");
+        yyerror (g, "invalid input character /");
       }
       for (;;) {
         c = *curr_ch++;
-        if (c == '\0') yyerror ("unfinished comment");
+        if (c == '\0') yyerror (g, "unfinished comment");
         if (c == '\n') ln++;
         if (c == '*') {
           c = *curr_ch++;
@@ -254,7 +259,7 @@ int yylex (void) {
       OS_TOP_ADD_BYTE (stoks, '\'');
       yylval.num = *curr_ch++;
       OS_TOP_ADD_BYTE (stoks, yylval.num);
-      if (*curr_ch++ != '\'') yyerror ("invalid character");
+      if (*curr_ch++ != '\'') yyerror (g, "invalid character");
       OS_TOP_ADD_BYTE (stoks, '\'');
       OS_TOP_ADD_BYTE (stoks, '\0');
       yylval.ref = OS_TOP_BEGIN (stoks);
@@ -303,9 +308,9 @@ int yylex (void) {
 
           if (isprint (c)) {
             sprintf (str, "invalid input character '%c'", c);
-            yyerror (str);
+            yyerror (g, str);
           } else
-            yyerror ("invalid input character");
+            yyerror (g, "invalid input character");
         }
       }
     }
@@ -313,8 +318,8 @@ int yylex (void) {
 }
 
 /* The following implements syntactic error diagnostic function yacc code. */
-int yyerror (const char *str GP_UNUSED) {
-  gp_error (GP_DESCRIPTION_SYNTAX_ERROR_CODE, "description syntax error on ln %d", ln);
+int yyerror (void *g, const char *str GP_UNUSED) {
+  gp_error (g, GP_DESCRIPTION_SYNTAX_ERROR_CODE, "description syntax error on ln %d", ln);
   return 0;
 }
 
@@ -385,7 +390,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   OS_CREATE (strans, g->alloc, 0);
   assoc_htab = create_hash_table (g->alloc, 80, assoc_hash, assoc_eq);
   curr_ch = grammar_name;
-  yyparse ();
+  yyparse (g);
   /* sort array of syntax terminals by names. */
   num = VLO_LENGTH (sterms) / sizeof (struct sterm);
   arr = (struct sterm *) VLO_BEGIN (sterms);
@@ -401,7 +406,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
 
       strncpy (str, prev->repr, sizeof (str));
       str[sizeof (str) - 1] = '\0';
-      gp_error (GP_REPEATED_TERM_CODE, "term %s described repeatedly with different code", str);
+      gp_error (g,GP_REPEATED_TERM_CODE, "term %s described repeatedly with different code", str);
     } else if (prev->code != -1)
       prev->code = term->code;
   }
@@ -413,7 +418,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
     struct sassoc *assoc = ((struct sassoc **)VLO_BEGIN (assocs))[i];
     assoc->used_p = false;
     if (find_assoc (assoc->repr) != NULL) {
-      gp_error (GP_REPEATED_TERM_ASSOC, "term %s is repeteadly described in an associtivity clause", assoc->repr);
+      gp_error (g,GP_REPEATED_TERM_ASSOC, "term %s is repeteadly described in an associtivity clause", assoc->repr);
     } else {
       insert_assoc (assoc);
     }
@@ -431,7 +436,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   for (i = 0; i < (int) (VLO_LENGTH (assocs) / sizeof (struct sassoc *)); i++) {
     struct sassoc *assoc = ((struct sassoc **) VLO_BEGIN (assocs))[i];
     if (!assoc->used_p)
-      gp_error (GP_UNDEFINED_TERM_ASSOC, "term %s described in associtivity clause is not defined", assoc->repr);
+      gp_error (g,GP_UNDEFINED_TERM_ASSOC, "term %s described in associtivity clause is not defined", assoc->repr);
   }
   nsterm = nsrule = 0;
   return 0;

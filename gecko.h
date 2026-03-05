@@ -190,7 +190,7 @@ extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr),
 
 #ifndef NO_GP_DEBUG_PRINT
 /* Print translation of ROOT parsed for GRAMMAR. */
-extern void gp_print_translation (FILE *f, struct grammar *grammar, struct gp_tree_node *root);
+extern void gp_print_translation (struct grammar *grammar, FILE *f, struct gp_tree_node *root);
 #endif
 
 /* Frees memory allocated for the grammar */
