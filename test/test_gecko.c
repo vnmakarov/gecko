@@ -158,8 +158,8 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
     fprintf (stderr, "Syntax error on token %d\n", err_tok_num);
   else
     fprintf (stderr, "Syntax error on token %d(ln %d):ignore %d tokens starting with token = %d\n",
-             err_tok_num, (int) (ptrdiff_t) err_tok_attr,
-             start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
+             err_tok_num, (int) (ptrdiff_t) err_tok_attr, start_recovered_tok_num - start_ignored_tok_num,
+             start_ignored_tok_num);
 }
 #else
 static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
@@ -167,8 +167,7 @@ static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_U
   if (stop_tok_repr == NULL)
     fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
   else
-    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr,
-             stop_tok_repr);
+    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
 }
 #endif
 
