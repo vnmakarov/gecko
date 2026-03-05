@@ -70,7 +70,7 @@ if test x$ALL != x && test -x /usr/bin/time; then
 
     echo
     echo GCC -- whole old GCC test "(lines: `wc -l $GCC_FOR_GCC_TEST`)"
-    
+
     echo ++++++++GCC: gcc -fsyntax-only
     /usr/bin/time gcc -fsyntax-only -w $GCC_FOR_GCC_TEST -c -o /dev/null 2>&1
 
@@ -86,7 +86,7 @@ if test x$ALL != x && test -x /usr/bin/time; then
 
 	echo
 	echo CLANG -- whole old GCC test "(lines: `wc -l $GCC_FOR_CLANG_TEST`)"
-    
+
 	echo ++++++++CLANG: clang -fsyntax-only
 	/usr/bin/time clang -fsyntax-only -w $GCC_FOR_CLANG_TEST -c -o /dev/null 2>&1
 
@@ -181,7 +181,7 @@ if test x$YAEPDIR != x; then
 	    exit 1
 	fi
     fi
-    
+
     echo Static Lookahead -- whole old GCC test "(lines: `wc -l $GCC_TEST`)"
     if $GCC -DYAEP -I$YAEPDIR -I$SRCDIR/.. -I$SRCDIR $SRCDIR/test_gecko.c $YAEPLIB -o $outfile && $outfile 1 1 <$GCC_TEST; then
 	echo
@@ -222,7 +222,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
    && test x$SMBASE_LIB != x && test x$SMBASE_INCL != x; then
 
     $ELKHOUND_EXE $SRCDIR/elkh-c.gr
-    
+
     if test x$ALL != x; then
 	echo ++++++++ELKHOUND '(GLR Parser)': pure parsing
 	if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && $outfile <$TEST; then
@@ -232,7 +232,7 @@ if test x$ELKHOUND_DIR != x && test x$ELKHOUND_LIB != x && test x$ELKHOUND_EXE !
 	    exit 1
 	fi
     fi
-    
+
     echo ELKHOUND '(GLR Parser)': whole old GCC test "(lines: `wc -l $GCC_TEST`)"
     if $GCCP -I$SRCDIR/.. -I$SRCDIR -I$ELKHOUND_INCL -I$SMBASE_INCL $SRCDIR/test_elkh.cc $ELKHOUND_LIB  $SMBASE_LIB -o $outfile && $outfile <$GCC_TEST; then
 	echo
