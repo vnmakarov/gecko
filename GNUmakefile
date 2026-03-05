@@ -150,6 +150,9 @@ more-tests:
 bench: $(BUILD_DIR)/libgecko.$(LIBSUFF)
 	$(SRC_DIR)/test/compare.sh
 
+bench-all: $(BUILD_DIR)/libgecko.$(LIBSUFF)
+	$(SRC_DIR)/test/compare.sh --all
+
 # ------------------ miscellaneous ----------------------
 
 .PHONY: sloc
