@@ -1,6 +1,6 @@
-      6: ALTERNATIVE:4 5
-      4: ABSTRACT: plus ( 2 3 )
+      7: ABSTRACT: plus ( 2 6 )
       2: TERMINAL: code=97, repr='a'
-      3: ABSTRACT: plus ( 2 2 )
-      5: ABSTRACT: plus ( 3 2 )
+      6: ABSTRACT: plus ( 3 5 )
+      3: TERMINAL: code=97, repr='a'
+      5: TERMINAL: code=97, repr='a'
 
