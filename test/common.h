@@ -68,9 +68,10 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
 static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
                                const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
   if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
+    fprintf (stderr, "Syntax error on token %s (pos=%d)\n", err_tok_repr, (int) err_tok_attr);
   else
-    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
+    fprintf (stderr, "Syntax error on token %s (pos=%d) and stopping on token %s (pos=%d)\n", err_tok_repr,
+             (int) err_tok_attr, stop_tok_repr, (int) stop_tok_attr);
 }
 #endif
 
@@ -81,7 +82,7 @@ static const char *description;
 static int test_read_token (void **attr) {
   static int ntok = 0;
 
-  *attr = NULL;
+  *attr = (void *) ntok;
   if (input[ntok]) {
     return input[ntok++];
   } else {
