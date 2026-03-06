@@ -1760,12 +1760,20 @@ static struct stack *stack_create (struct grammar *g, struct stack *base) {
   return stack;
 }
 
+/* Max free stacks to speedup stack allocation */
+#define MAX_FREE_STACKS 1000
+
 static void stack_free (struct grammar *g, struct stack *stack) {
   if (stack->recovery != NULL) recovery_info_free (g, stack->recovery);
-  VLO_ADD_MEMORY (g->free_stacks, &stack, sizeof (stack));
 #ifndef NO_GP_DEBUG_PRINT
   g->n_curr_stack_els -= VLO_LENGTH (stack->els) / sizeof (stack_el_t);
 #endif
+  if (VLO_LENGTH (g->free_stacks) < MAX_FREE_STACKS) { /* keep free stack in cache */
+    VLO_ADD_MEMORY (g->free_stacks, &stack, sizeof (stack));
+  } else {
+    VLO_DELETE (stack->els);
+    gp_free (g->alloc, stack);
+  }
 }
 
 static void stack_init_recovery (struct grammar *g, struct stack *stack, int buff_token_ind) {
@@ -2068,7 +2076,7 @@ static void print_stack_els (FILE *f, struct stack *stack) {
       fprintf (f, ":a%llx", (long long) el->anode_attr);
     } else {
       struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
-      fprintf (f, ":n%d", anode->num);
+      fprintf (f, ":n%u", anode->num);
     }
   }
   fprintf (f, "\n");
@@ -2367,7 +2375,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
   return recovery_stop (g, one_stack_p, error_term, error_attr);
 }
 
-static void gc_mark_anode (struct grammar *g, struct gp_tree_node *anode) {
+static FORCE_INLINE void gc_mark_anode (struct grammar *g, struct gp_tree_node *anode) {
   if (!bitmap_set_bit_p (&g->marked_nodes, anode->num) || (anode->type != GP_ANODE && anode->type != GP_ALT))
     return;
   VLO_ADD_MEMORY (g->temp_vlo, &anode, sizeof (struct gp_tree_node *));
@@ -2424,9 +2432,9 @@ static void gc (struct grammar *g, vlo_t *stacks) {
 #ifndef NO_GP_DEBUG_PRINT
       removed++;
       if (g->debug_level > 3) {
-        fprintf (stderr, " n%d", node->num);
+        fprintf (stderr, " n%u", node->num);
         n++;
-        if (n >= 20) {
+        if (n >= 16) {
           fprintf (stderr, "\n");
           n = 0;
         }
@@ -2459,6 +2467,9 @@ static void gc (struct grammar *g, vlo_t *stacks) {
              last, removed, (unsigned) hash_table_size (g->nodes_htab));
 #endif
 }
+
+/* Start threshold to initiate parse tree nodes GC */
+#define GC_START_NODES_THRESHOLD 1000
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **transl) {
@@ -2493,6 +2504,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   if (UNLIKELY (g->debug_level > 2)) print_read (g, stderr, term_symb, 1);
 #endif
   bool one_stack_p;
+  size_t gc_nodes_threshold = GC_START_NODES_THRESHOLD;
   VLO_CREATE (g->failed_stacks, g->alloc, 0);
   VLO_CREATE (g->delayed_stacks, g->alloc, 0);
   for (;;) {
@@ -2573,7 +2585,10 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
       single_stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
       VLO_NULLIFY (g->curr_stacks);
     }
-    if (g->parse_free != NULL && VLO_LENGTH (g->all_nodes) >= 1000) gc (g, &g->curr_stacks);
+    if (g->parse_free != NULL && VLO_LENGTH (g->all_nodes) >= gc_nodes_threshold) {
+      gc (g, &g->curr_stacks);
+      gc_nodes_threshold = 2 * VLO_LENGTH (g->all_nodes);
+    }
     code = token_read (g, &attr);
     term_symb = term_find_by_code (g, code);
     term = term_symb->u.term.term_num;
