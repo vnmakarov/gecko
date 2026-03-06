@@ -14,6 +14,7 @@
 #include "hashtab.h"
 #include "vlobject.h"
 #include "objstack.h"
+#include "bitmap.h"
 #include "gecko.h"
 
 #ifdef __GNUC__
@@ -67,10 +68,12 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   gp_attr_merge_func_t attr_merge; /* function for merging stack elements attributes */
 
-  int (*read_token) (void **attr); /* function for reading tokens */
-  void (*syntax_error) (const char *err_tok_repr, void *err_tok_attr, const char *stop_tok_repr,
-                        void *stop_tok_attr);
-  void *(*parse_alloc) (int nmemb); /* function to allocate parse tree nodes */
+  int (*read_token) (void **attr);     /* function for reading tokens */
+  gp_parse_alloc_func_t parse_alloc;   /* function to allocate parse tree nodes */
+  gp_parse_free_func_t parse_free;     /* function to free parse tree nodes */
+  gp_syntax_error_func_t syntax_error; /* function to print syntax error */
+
+  vlo_t caller_anode_names; /* Pointers to allocated names of anodes */
 
   /* statistic numbers for hash tables updated at the end of gp_parse and gp_free_tree: */
   int all_searches, all_collisions;
@@ -106,6 +109,9 @@ struct grammar {    /* major structure which stores information about grammar: *
   vlo_t actions_vlo; /* container for set actions  */
 
   struct action_desc *empty_action_map; /* no actions for each terminal */
+
+  vlo_t all_nodes;       /* all parse tree nodes */
+  bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
 
   hash_table_t nodes_htab;       /* internal htab for parse nodes to minimize number of allocated nodes */
   struct gp_tree_node temp_node; /* used for insertion of node into the table */
@@ -962,6 +968,23 @@ static void error_func_for_allocate (void *g) { /* Process allocation errors. */
 
 static void *default_attr_merge (void *attr1, void *attr2 GP_UNUSED) { return attr1; }
 
+static void *parse_alloc_default (int nmemb) {
+  assert (nmemb > 0);
+  void *result = malloc (nmemb);
+  if (result == NULL) exit (1);
+  return result;
+}
+
+static void parse_free_default (void *mem) { free (mem); }
+
+static void syntax_error_default (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
+                                  const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+  if (stop_tok_repr == NULL)
+    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
+  else
+    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
+}
+
 struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
   gp_allocator_t *allocator;
 
@@ -977,12 +1000,15 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   g->alloc = allocator;
   gp_alloc_seterr (allocator, error_func_for_allocate, g);
   if (setjmp (g->error_longjump_buff) != 0) {
-    gp_free_grammar (g);
+    gp_fin (g);
     return NULL;
   }
   g->undefined_p = true;
   g->error_code = 0;
   *g->error_message = '\0';
+  g->parse_alloc = parse_alloc_default;
+  g->parse_free = parse_free_default;
+  g->syntax_error = syntax_error_default;
   g->debug_level = 0;
   g->error_recovery_p = true;
   g->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
@@ -993,7 +1019,10 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   g->term_sets = term_set_init (g);
   g->rules = rule_init (g);
   g->attr_merge = default_attr_merge;
+  VLO_CREATE (g->caller_anode_names, g->alloc, 0);
   VLO_CREATE (g->temp_vlo, g->alloc, 0);
+  VLO_CREATE (g->all_nodes, g->alloc, 0);
+  bitmap_create (&g->marked_nodes, g->alloc);
   return g;
 }
 
@@ -1278,6 +1307,28 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
 }
 
 #include "sgramm.c"
+
+gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_alloc_func_t fn) {
+  assert (g != NULL);
+  if (fn == NULL) gp_error (g, GP_WRONG_ARG, "null parse_alloc func");
+  gp_parse_alloc_func_t old = g->parse_alloc;
+  g->parse_alloc = fn;
+  return old;
+}
+
+gp_parse_free_func_t gp_set_parse_free (struct grammar *g, gp_parse_free_func_t fn) {
+  assert (g != NULL);
+  gp_parse_free_func_t old = g->parse_free;
+  g->parse_free = fn;
+  return old;
+}
+
+gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_error_func_t fn) {
+  assert (g != NULL);
+  gp_syntax_error_func_t old = g->syntax_error;
+  g->syntax_error = fn;
+  return old;
+}
 
 int gp_set_debug_level (struct grammar *g, int level) {
   assert (g != NULL);
@@ -1845,6 +1896,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int c
   *term_node = *node;
   *entry = term_node;
   term_node->num = g->n_parse_nodes++;
+  VLO_ADD_MEMORY (g->all_nodes, &term_node, sizeof (struct parse_tree_node *));
   return term_node;
 }
 
@@ -1872,6 +1924,7 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   anode->val.anode.children = g->parse_alloc (children_num * sizeof (struct gp_tree_node *));
   memcpy (anode->val.anode.children, children, children_num * sizeof (struct gp_tree_node *));
   *entry = anode;
+  VLO_ADD_MEMORY (g->all_nodes, &anode, sizeof (struct parse_tree_node *));
   return anode;
 }
 
@@ -1891,6 +1944,7 @@ static struct gp_tree_node *get_alt_node (struct grammar *g, struct gp_tree_node
   *alt_node = *node;
   alt_node->num = g->n_parse_nodes++;
   *entry = alt_node;
+  VLO_ADD_MEMORY (g->all_nodes, &alt_node, sizeof (struct parse_tree_node *));
   return alt_node;
 }
 
@@ -1910,6 +1964,7 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, in
   assert (rule->anode != NULL);
   if (rule->caller_anode == NULL) {
     rule->caller_anode = ((char *) (*g->parse_alloc) (strlen (rule->anode) + 1));
+    VLO_ADD_MEMORY (g->caller_anode_names, &rule->caller_anode, sizeof (rule->caller_anode));
     strcpy (rule->caller_anode, rule->anode);
   }
   VLO_NULLIFY (g->temp_nodes_vlo);
@@ -2312,6 +2367,99 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
   return recovery_stop (g, one_stack_p, error_term, error_attr);
 }
 
+static void gc_mark_anode (struct grammar *g, struct gp_tree_node *anode) {
+  if (!bitmap_set_bit_p (&g->marked_nodes, anode->num) || (anode->type != GP_ANODE && anode->type != GP_ALT))
+    return;
+  VLO_ADD_MEMORY (g->temp_vlo, &anode, sizeof (struct gp_tree_node *));
+}
+
+static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
+  if (!bitmap_set_bit_p (&g->marked_nodes, anode->num) || (anode->type != GP_ANODE && anode->type != GP_ALT))
+    return;
+  VLO_ADD_MEMORY (g->temp_vlo, &anode, sizeof (struct gp_tree_node *));
+  while (VLO_LENGTH (g->temp_vlo) != 0) {
+    anode = ((struct gp_tree_node **) VLO_BOUND (g->temp_vlo))[-1];
+    VLO_SHORTEN (g->temp_vlo, sizeof (struct gp_tree_node *));
+    if (anode->type == GP_ANODE) {
+      for (int i = anode->val.anode.children_num - 1; i >= 0; i--)
+        gc_mark_anode (g, anode->val.anode.children[i]);
+    } else {
+      assert (anode->type == GP_ALT);
+      gc_mark_anode (g, anode->val.alt.first);
+      gc_mark_anode (g, anode->val.alt.second);
+    }
+  }
+}
+
+static void gc_mark_stack (struct grammar *g, struct stack *stack) {
+  for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++) {
+    stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
+    if (!el->attr_p && el->anode_attr != NULL) gc_mark_parse_tree (g, el->anode_attr);
+  }
+}
+
+static void gc (struct grammar *g, vlo_t *stacks) {
+  assert (g->parse_free != NULL);
+#ifndef NO_GP_DEBUG_PRINT
+  if (g->debug_level > 2) fprintf (stderr, "++++GG start\n");
+#endif
+  /* Mark: */
+  bitmap_clear (&g->marked_nodes);
+  for (int i = 0; i < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); i++) {
+    struct stack *stack = ((struct stack **) VLO_BEGIN (*stacks))[i];
+    gc_mark_stack (g, stack);
+  }
+  /* Sweep */
+  int last = 0;
+#ifndef NO_GP_DEBUG_PRINT
+  int n = 0, removed = 0;
+  if (g->debug_level > 3) fprintf (stderr, "GC: Removed nodes:\n");
+#endif
+  int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
+  for (int i = 0; i < nodes_num; i++) {
+    struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
+    if (bitmap_bit_p (&g->marked_nodes, node->num)) {
+      ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[last++] = node;
+    } else {
+#ifndef NO_GP_DEBUG_PRINT
+      removed++;
+      if (g->debug_level > 3) {
+        fprintf (stderr, " n%d", node->num);
+        n++;
+        if (n >= 20) {
+          fprintf (stderr, "\n");
+          n = 0;
+        }
+      }
+#endif
+      remove_element_from_hash_table_entry (g->nodes_htab, node);
+      g->parse_free (node);
+    }
+  }
+  VLO_SHORTEN (g->all_nodes, VLO_LENGTH (g->all_nodes) - last * sizeof (struct gp_parse_node *));
+  if (hash_table_size (g->nodes_htab) > 4 * (size_t) last) { /* decrease nodes htab size */
+#ifndef NO_GP_DEBUG_PRINT
+    if (g->debug_level > 2)
+      fprintf (stderr, "++++GC node htab rebuilding: before size=%u, nodes %d\n",
+               (unsigned) hash_table_size (g->nodes_htab), last);
+#endif
+    delete_htab_update_statistics (g, g->nodes_htab);
+    g->nodes_htab = create_hash_table (g->alloc, 3 * last / 2, node_hash, node_eq_p);
+    for (int i = 0; i < last; i++) {
+      struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
+      hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
+      assert (*entry == NULL);
+      *entry = node;
+    }
+  }
+#ifndef NO_GP_DEBUG_PRINT
+  if (g->debug_level > 3 && n != 0) fprintf (stderr, "\n");
+  if (g->debug_level > 2)
+    fprintf (stderr, "++++GC finish: before nodes %d, kept %d, removed %d; node htab size = %u\n", nodes_num,
+             last, removed, (unsigned) hash_table_size (g->nodes_htab));
+#endif
+}
+
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **transl) {
   g->n_parse_nodes = 0;
@@ -2425,6 +2573,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
       single_stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
       VLO_NULLIFY (g->curr_stacks);
     }
+    if (g->parse_free != NULL && VLO_LENGTH (g->all_nodes) >= 1000) gc (g, &g->curr_stacks);
     code = token_read (g, &attr);
     term_symb = term_find_by_code (g, code);
     term = term_symb->u.term.term_num;
@@ -2510,34 +2659,15 @@ void gp_print_translation (struct grammar *g, FILE *f, struct gp_tree_node *root
 
 #endif
 
-static void *parse_alloc_default (int nmemb) {
-  assert (nmemb > 0);
-  void *result = malloc (nmemb);
-  if (result == NULL) exit (1);
-  return result;
-}
-
-static void parse_free_default (void *mem) { free (mem); }
-
 /* Parse input according read grammar. For unambiguous grammar the flag does not affect the result.
    D_LEVEL says what debugging information to output (it works only if we compiled without defined
    macro NO_GP_DEBUG_PRINT). The function returns the error code (which will be also in error_code).
    The function sets up *AMBIGUOUS_P if we found that the grammar is ambigous (it works even we
    asked only one parse tree without alternatives). */
-int gp_parse (struct grammar *g, int (*read) (void **attr),
-              void (*error) (const char *err_tok_repr, void *err_tok_attr, const char *stop_tok_repr,
-                             void *stop_tok_attr),
-              void *(*alloc) (int nmemb), struct gp_tree_node **root, bool *ambiguous_p) {
-  /* Set up parse allocation */
-  if (alloc == NULL) { /* Set up defaults */
-    alloc = parse_alloc_default;
-  }
-
+int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node **root, bool *ambiguous_p) {
   g->all_searches = g->all_collisions = 0;
   assert (g != NULL);
   g->read_token = read;
-  g->syntax_error = error;
-  g->parse_alloc = alloc;
   *root = NULL;
   *ambiguous_p = false;
   int code;
@@ -2589,10 +2719,19 @@ int gp_parse (struct grammar *g, int (*read) (void **attr),
   return ok_p ? 0 : 1; /* !!! change in the future */
 }
 
-void gp_free_grammar (struct grammar *g) { /* Free memory allocated for the grammar. */
+void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
+    g->parse_free (g->empty_node);
+    g->parse_free (g->error_node);
     gp_allocator_t *allocator = g->alloc;
+    bitmap_destroy (&g->marked_nodes);
+    VLO_DELETE (g->all_nodes);
     VLO_DELETE (g->temp_vlo);
+    for (int i = 0; i < (int) (VLO_LENGTH (g->caller_anode_names) / sizeof (char *)); i++) {
+      char *name = ((char **) VLO_BEGIN (g->caller_anode_names))[i];
+      gp_free (allocator, name);
+    }
+    VLO_DELETE (g->caller_anode_names);
     rule_fin (g, g->rules);
     term_set_fin (g, g->term_sets);
     symb_fin (g, g->symbs);
@@ -2634,54 +2773,43 @@ static void free_tree_reduce (struct gp_tree_node *node) {
   }
 }
 
-static void free_tree_sweep (struct gp_tree_node *node, void (*parse_free_fn) (void *),
+static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node,
                              void (*termcb) (struct gp_term *)) {
   if (node == NULL) return;
   assert (node->type & GP_VISITED);
   enum gp_tree_node_type type = (enum gp_tree_node_type) (node->type & ~GP_VISITED);
   switch (type) {
   case GP_NIL:
-  case GP_ERROR: break;
+  case GP_ERROR: break; /* we don't free empty and error node yet */
   case GP_TERM:
     if (termcb != NULL) termcb (&node->val.term);
     break;
   case GP_ANODE:
     for (int i = 0; i < node->val.anode.children_num; i++)
-      if (node->val.anode.children[i] != NULL)
-        free_tree_sweep (node->val.anode.children[i], parse_free_fn, termcb);
+      if (node->val.anode.children[i] != NULL) free_tree_sweep (g, node->val.anode.children[i], termcb);
+    g->parse_free (node->val.anode.children);
     break;
   case GP_ALT:
-    free_tree_sweep (node->val.alt.first, parse_free_fn, termcb);
-    free_tree_sweep (node->val.alt.second, parse_free_fn, termcb);
+    free_tree_sweep (g, node->val.alt.first, termcb);
+    free_tree_sweep (g, node->val.alt.second, termcb);
     break;
   default: assert ("This should not happen" == NULL);
   }
-  parse_free_fn (node);
+  g->parse_free (node);
 }
 
-void gp_free_tree (struct gp_tree_node *root, void (*parse_free_fn) (void *),
-                   void (*termcb) (struct gp_term *)) {
-  if (root == NULL) return;
-  if (parse_free_fn == NULL) parse_free_fn = parse_free_default;
+void gp_free_tree (struct grammar *g, struct gp_tree_node *root, void (*termcb) (struct gp_term *)) {
+  if (root == NULL || g->parse_free == NULL) return;
   /* Since the parse tree is actually a DAG, we must carefully avoid double free errors.
      Therefore, we walk the parse tree twice. On the first walk, we reduce the DAG to an actual
      tree. On the second walk, we recursively free the tree nodes. */
   free_tree_reduce (root);
-  free_tree_sweep (root, parse_free_fn, termcb);
+  free_tree_sweep (g, root, termcb);
 }
 
 /* This page contains a test code for Gecko. To use it, define macro GP_TEST during compilation. */
 
 #ifdef GP_TEST
-
-static os_t mem_os; /* All parse_alloc memory is contained here. */
-
-static void *test_parse_alloc (int size) {
-  OS_TOP_EXPAND (mem_os, size);
-  void *result = OS_TOP_BEGIN (mem_os);
-  OS_TOP_FINISH (mem_os);
-  return result;
-}
 
 static int nterm; /* the current number of next input grammar terminal */
 
@@ -2766,15 +2894,6 @@ static int test_read_token (void **attr) {
   return -1;
 }
 
-/* Printing syntax error. */
-static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
-                               const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
-  if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
-  else
-    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
-}
-
 /* The following two functions calls Gecko with two different ways of forming grammars. */
 static void use_functions (int argc, char **argv) {
   struct grammar *g;
@@ -2787,7 +2906,6 @@ static void use_functions (int argc, char **argv) {
     fprintf (stderr, "No memory\n");
     exit (1);
   }
-  OS_CREATE (mem_os, g->alloc, 0);
   if (argc > 1)
     gp_set_debug_level (g, atoi (argv[2]));
   else
@@ -2795,14 +2913,13 @@ static void use_functions (int argc, char **argv) {
   if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
   if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
-    OS_DELETE (mem_os);
     exit (1);
   }
   ntok = 0;
-  if (gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, &root, &ambiguous_p))
+  if (gp_parse (g, test_read_token, &root, &ambiguous_p))
     fprintf (stderr, "gecko: %s\n", gp_error_message (g));
-  OS_DELETE (mem_os);
-  gp_free_grammar (g);
+  gp_free_tree (g, root, NULL);
+  gp_fin (g);
 }
 
 static const char *description
@@ -2828,7 +2945,6 @@ static void use_description (int argc, char **argv) {
     fprintf (stderr, "gp_create_grammar: No memory\n");
     exit (1);
   }
-  OS_CREATE (mem_os, g->alloc, 0);
   if (argc > 2)
     gp_set_debug_level (g, atoi (argv[2]));
   else
@@ -2836,13 +2952,12 @@ static void use_description (int argc, char **argv) {
   if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
   if (gp_parse_grammar (g, true, description) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
-    OS_DELETE (mem_os);
     exit (1);
   }
-  if (gp_parse (g, test_read_token, test_syntax_error, test_parse_alloc, &root, &ambiguous_p))
+  if (gp_parse (g, test_read_token, &root, &ambiguous_p))
     fprintf (stderr, "gecko: %s\n", gp_error_message (g));
-  OS_DELETE (mem_os);
-  gp_free_grammar (g);
+  gp_free_tree (g, root, NULL);
+  gp_fin (g);
 }
 
 int main (int argc, char **argv) {

@@ -73,10 +73,9 @@ static void parse (void)
       fprintf (stderr, "%s\n", gp_error_message (g));
       exit (1);
     }
-  if (gp_parse (g, read_token_func, syntax_error_func, parse_alloc_func,
-                &root, &ambiguous_p))
+  if (gp_parse (g, read_token_func, &root, &ambiguous_p))
     fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
-  gp_free_grammar (g);
+  gp_fin (g);
 }
 ```
 
@@ -173,9 +172,9 @@ static void parse (void)
   
 |                      | Time            |Memory (parse only) MB|
 |----------------------|----------------:|---------------------:|
-|ElkHound              |  9.42           |  9.6                 |
-|YAEP                  |  5.49           |  154                 |
-|Gecko                 |  0.17           |  200                 |
+|ElkHound              |  9.50           |  9.6                 |
+|YAEP                  |  5.53           |  154                 |
+|Gecko                 |  1.11           |  242                 |
 
 
 ## ------------------------------------

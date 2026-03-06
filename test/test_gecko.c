@@ -920,9 +920,10 @@ int main (int argc, char **argv) {
 #else
   bool ambiguous_p;
   struct gp_tree_node *root;
-  parser_res = gp_parse (g, test_read_token, test_syntax_error, NULL, &root, &ambiguous_p);
+  gp_set_syntax_error (g, test_syntax_error);
+  parser_res = gp_parse (g, test_read_token, &root, &ambiguous_p);
   if (parser_res) fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
-  gp_free_grammar (g);
+  gp_fin (g);
 #endif
   if (parser_res) {
     OS_DELETE (mem_os);

@@ -36,8 +36,8 @@
 #define read_grammar gp_read_grammar
 #define set_recovery_match gp_set_recovery_match
 #define parse_grammar gp_parse_grammar
-#define parse(g, read, error, alloc, free, root, amb) gp_parse (g, read, error, alloc, root, amb)
-#define free_grammar gp_free_grammar
+#define parse(g, read, error, alloc, free, root, amb) gp_parse (g, read, root, amb)
+#define free_grammar gp_fin
 #define error_message gp_error_message
 #endif
 
@@ -103,6 +103,9 @@ static void test_standard_parse (void) {
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
+#ifndef YAEP
+  gp_set_syntax_error (g, test_syntax_error);
+#endif
   if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
@@ -130,6 +133,9 @@ static void test_standard_read (
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
+#ifndef YAEP
+  gp_set_syntax_error (g, test_syntax_error);
+#endif
   if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
@@ -169,6 +175,9 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
+#ifndef YAEP
+  gp_set_syntax_error (g, test_syntax_error);
+#endif
   if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
