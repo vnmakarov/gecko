@@ -148,10 +148,10 @@ more-tests:
 	$(SRC_DIR)/test/test.sh
 
 bench: $(BUILD_DIR)/libgecko.$(LIBSUFF)
-	$(SRC_DIR)/test/compare.sh
-
-bench-all: $(BUILD_DIR)/libgecko.$(LIBSUFF)
 	$(SRC_DIR)/test/compare.sh --all
+
+bench-gecko: $(BUILD_DIR)/libgecko.$(LIBSUFF)
+	$(SRC_DIR)/test/compare.sh --gecko
 
 # ------------------ miscellaneous ----------------------
 
