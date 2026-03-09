@@ -2071,12 +2071,12 @@ static void print_stack_els (FILE *f, struct stack *stack) {
     struct symb *symb = el->set->symb;
     fprintf (f, " [%d]s%d:%s", el->ntoks, el->set->num, symb->repr);
     if (el->anode_attr == NULL) continue;
-    if (el->attr_p) {
-      assert (symb->term_p);
-      fprintf (f, ":a%llx", (long long) el->anode_attr);
-    } else {
+    if (!el->attr_p) {
       struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
       fprintf (f, ":n%u", anode->num);
+    } else if (strcmp (symb->repr, END_MARKER_NAME) != 0) {
+      assert (symb->term_p);
+      fprintf (f, ":a%llx", (long long) el->anode_attr);
     }
   }
   fprintf (f, "\n");
