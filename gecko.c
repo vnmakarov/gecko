@@ -68,6 +68,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   gp_attr_merge_func_t attr_merge; /* function for merging stack elements attributes */
 
+  int read_tokens;                     /* read tokens so far */
   int (*read_token) (void **attr);     /* function for reading tokens */
   gp_parse_alloc_func_t parse_alloc;   /* function to allocate parse tree nodes */
   gp_parse_free_func_t parse_free;     /* function to free parse tree nodes */
@@ -1804,6 +1805,7 @@ static void token_buff_add (struct grammar *g, int code, void *attr) {
 
 /* Read a token and save it int the buffer. */
 static int token_buff_read (struct grammar *g, void **attr) {
+  g->read_tokens++;
   int code = g->read_token (attr);
   token_buff_add (g, code, *attr);
   return code;
@@ -1835,6 +1837,7 @@ static int token_read (struct grammar *g, void **attr) {
       return el->code;
     }
   }
+  g->read_tokens++;
   return g->read_token (attr);
 }
 
@@ -1874,14 +1877,16 @@ static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
 }
 
 static FORCE_INLINE struct set *stack_shift (struct grammar *g, struct stack *stack, struct set *set,
-                                             void *attr, int ntoks) {
+                                             void *attr) {
   assert (set->symb->term_p);
   VLO_EXPAND (stack->els, sizeof (stack_el_t));
   stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
   el->set = set;
   el->attr_p = true;
-  el->ntoks = ntoks;
+  el->ntoks = g->read_tokens - 1;
   el->anode_attr = attr;
+  int diff = g->curr_buff_token_ind - VLO_LENGTH (g->token_buff) / sizeof (struct token_buff_el);
+  if (UNLIKELY (diff < 0)) el->ntoks += diff + 1;
 #ifndef NO_GP_DEBUG_PRINT
   g->n_curr_stack_els++;
   if (g->n_peak_stack_els < g->n_curr_stack_els) g->n_peak_stack_els = g->n_curr_stack_els;
@@ -2002,7 +2007,7 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
   assert (rhs_len < stack_len);
   stack_el_t *stack_addr = (stack_el_t *) VLO_BEGIN (stack->els);
   struct set *set = stack_addr[stack_len - 1 - rhs_len].set;
-  int ntoks = stack_addr[stack_len - 1].ntoks;
+  int ntoks = rhs_len == 0 ? g->read_tokens - 1 : stack_addr[stack_len - rhs_len].ntoks;
   VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rhs_len);
   void *anode_attr = g->empty_node;
   if (rule->anode != NULL || rule->trans_len != 0) anode_attr = get_transl (g, stack_addr, stack_len, rule);
@@ -2011,7 +2016,7 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
   stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
   el->set = goto_set;
   el->attr_p = false;
-  el->ntoks = ntoks; /* ??? */
+  el->ntoks = ntoks;
   el->anode_attr = anode_attr;
 #ifndef NO_GP_DEBUG_PRINT
   g->n_curr_stack_els += (1 - rhs_len);
@@ -2117,12 +2122,11 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
     print_stack (stderr, start_stack);
   }
 #endif
-  while (VLO_LENGTH (g->curr_stacks) > len) {
+  while ((long) VLO_LENGTH (g->curr_stacks) > len) {
     struct stack *curr_stack = ((struct stack **) VLO_BOUND (g->curr_stacks))[-1];
     VLO_SHORTEN (g->curr_stacks, sizeof (struct stack *));
     stack_el_t *el = &((stack_el_t *) VLO_BOUND (curr_stack->els))[-1];
     struct set *set = el->set;
-    int ntoks = el->ntoks;
     int actions_num;
     struct action *actions = set_get_actions (g, set, term, &actions_num);
     if (actions_num == 0) {
@@ -2147,7 +2151,7 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
       } else { /* shift */
         struct set *shifted_set = action->u.set;
         assert (shifted_set != NULL);
-        stack_shift (g, stack, shifted_set, attr, ntoks + 1);
+        stack_shift (g, stack, shifted_set, attr);
         VLO_ADD_MEMORY (g->new_stacks, &stack, sizeof (stack));
         shift_p = true;
         if (stack->recovery != NULL) {
@@ -2473,6 +2477,7 @@ static void gc (struct grammar *g, vlo_t *stacks) {
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **transl) {
+  g->read_tokens = 0;
   g->n_parse_nodes = 0;
   g->empty_node = (struct gp_tree_node *) g->parse_alloc (sizeof (struct gp_tree_node));
   g->empty_node->type = GP_NIL;
@@ -2497,6 +2502,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   g->n_single_stack_actions = g->n_multi_stack_actions = 0;
 #endif
   void *attr;
+  g->read_tokens++;
   int code = g->read_token (&attr);
   struct symb *term_symb = term_find_by_code (g, code);
   int term = term_symb->u.term.term_num;
@@ -2504,14 +2510,13 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   if (UNLIKELY (g->debug_level > 2)) print_read (g, stderr, term_symb, 1);
 #endif
   bool one_stack_p;
-  size_t gc_nodes_threshold = GC_START_NODES_THRESHOLD;
+  long gc_nodes_threshold = GC_START_NODES_THRESHOLD;
   VLO_CREATE (g->failed_stacks, g->alloc, 0);
   VLO_CREATE (g->delayed_stacks, g->alloc, 0);
   for (;;) {
     if (single_stack != NULL) {
       stack_el_t *el = &((stack_el_t *) VLO_BOUND (single_stack->els))[-1];
       struct set *set = el->set;
-      int ntoks = el->ntoks;
       for (;;) {
         int actions_num;
         struct action *actions = set_get_actions (g, set, term, &actions_num);
@@ -2532,7 +2537,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
         } else { /* shift */
           struct set *shifted_set = actions[0].u.set;
           assert (shifted_set != NULL);
-          set = stack_shift (g, single_stack, shifted_set, attr, ntoks + 1);
+          set = stack_shift (g, single_stack, shifted_set, attr);
 #ifndef NO_GP_DEBUG_PRINT
           if (UNLIKELY (g->debug_level > 4)) print_single_stack (g, stderr, single_stack, &actions[0]);
 #endif
