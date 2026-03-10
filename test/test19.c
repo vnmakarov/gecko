@@ -83,6 +83,6 @@ const char *read_rule (const char ***rhs, const char **anode, int **transl) {
 static const char *input = "a+a*(a*a+a)";
 
 int main (void) {
-  test_standard_read (read_terminal, read_rule);
+  test_standard_read (false, read_terminal, read_rule);
   exit (0);
 }

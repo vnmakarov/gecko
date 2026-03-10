@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -22,7 +23,6 @@
 #define set_recovery_match yaep_set_recovery_match
 #define create_grammar yaep_create_grammar
 #define parse_grammar yaep_parse_grammar
-#define parse yaep_parse
 #define free_grammar yaep_free_grammar
 #define error_message yaep_error_message
 #else
@@ -36,7 +36,6 @@
 #define read_grammar gp_read_grammar
 #define set_recovery_match gp_set_recovery_match
 #define parse_grammar gp_parse_grammar
-#define parse(g, read, error, alloc, free, root, amb) gp_parse (g, read, root, amb)
 #define free_grammar gp_fin
 #define error_message gp_error_message
 #endif
@@ -68,10 +67,10 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
 static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
                                const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
   if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error on token %s (pos=%d)\n", err_tok_repr, (int) err_tok_attr);
+    fprintf (stderr, "Syntax error on token %s (pos=%d)\n", err_tok_repr, (int) (ptrdiff_t) err_tok_attr);
   else
     fprintf (stderr, "Syntax error on token %s (pos=%d) and stopping on token %s (pos=%d)\n", err_tok_repr,
-             (int) err_tok_attr, stop_tok_repr, (int) stop_tok_attr);
+             (int) (ptrdiff_t) err_tok_attr, stop_tok_repr, (int) (ptrdiff_t) stop_tok_attr);
 }
 #endif
 
@@ -82,7 +81,7 @@ static const char *description;
 static int test_read_token (void **attr) {
   static int ntok = 0;
 
-  *attr = (void *) ntok;
+  *attr = (void *) (ptrdiff_t) ntok;
   if (input[ntok]) {
     return input[ntok++];
   } else {
@@ -103,23 +102,29 @@ static void test_standard_parse (void) {
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
-#ifndef YAEP
+#ifdef YAEP
+  bool fail = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
+                          &ambiguous_p);
+#else
+  gp_set_parse_alloc (g, test_parse_alloc);
+  gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguous_p);
 #endif
-  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
+  if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
   free_grammar (g);
 }
 
-static void test_standard_read (
+static bool test_standard_read (bool print_transl,
 #ifdef YAEP
-  const char *(*read_terminal) (int *),
-  const char *(*read_rule) (const char ***, const char **, int *, int **) ) {
+                                const char *(*read_terminal) (int *),
+                                const char *(*read_rule) (const char ***, const char **, int *, int **) ) {
 #else
-  const char *(*read_terminal) (int *, int *, enum gp_assoc *),
-  const char *(*read_rule) (const char ***, const char **, int **) ) {
+                                const char *(*read_terminal) (int *, int *, enum gp_assoc *),
+                                const char *(*read_rule) (const char ***, const char **, int **) ) {
 #endif
   struct grammar *g;
   struct tree_node *root;
@@ -133,14 +138,24 @@ static void test_standard_read (
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
-#ifndef YAEP
+#ifdef YAEP
+  bool fail = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
+                          &ambiguous_p);
+#else
+  gp_set_parse_alloc (g, test_parse_alloc);
+  gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguous_p);
 #endif
-  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
+  if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
+#ifndef YAEP
+  if (print_transl) gp_print_translation (g, stderr, root);
+#endif
   free_grammar (g);
+  return ambiguous_p;
 }
 
 #ifdef __GNUC__
@@ -175,10 +190,16 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
     fprintf (stderr, "%s\n", error_message (g));
     exit (1);
   }
-#ifndef YAEP
+#ifdef YAEP
+  bool fail = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
+                          &ambiguous_p);
+#else
+  gp_set_parse_alloc (g, test_parse_alloc);
+  gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguous_p);
 #endif
-  if (parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root, &ambiguous_p)) {
+  if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
