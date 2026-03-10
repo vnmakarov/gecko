@@ -2170,8 +2170,9 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
   return shift_p;
 }
 
-/* Stack can not be matched: add derived stack to delayed_stacks.  Delayed stacks is oredered by
-   their decreasing cost.  Added delayed stack will be the first between one with the same cost.  */
+/* Stack can not be matched: add derived stack (stack whose the top stack element is poped) to delayed_stacks.
+   Delayed stacks is oredered by their decreasing cost.  Added delayed stack will be the first between one
+   with the same cost.  */
 static void add_delayed_recovery_stack (struct grammar *g, struct stack *stack) {
   assert (VLO_LENGTH (stack->els) != 0);
   if ((size_t) VLO_LENGTH (stack->els) <= sizeof (struct stack_el)) return;
@@ -2192,7 +2193,8 @@ static void add_delayed_recovery_stack (struct grammar *g, struct stack *stack) 
   ((struct stack **) VLO_BEGIN (g->delayed_stacks))[i + 1] = delayed_stack;
 }
 
-/* Finish error recovery modifying new_stacks and returning final single_stack. */
+/* Finish error recovery: Keep new stacks only with minimal cost (or only one stack if ONE_STACK_P).
+   Return the single stack if ONE_STACK_P, otherwise return NULL.  Report the syntax error. */
 static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct symb *error_term,
                                     void *error_attr) {
   for (int i = 0; i < (int) (VLO_LENGTH (g->delayed_stacks) / sizeof (struct stack *)); i++) {
@@ -2278,7 +2280,18 @@ static void print_read (struct grammar *g, FILE *f, struct symb *term, int stack
    It is just to avoid in recovery and recovery stack explosion.  */
 #define MAX_RECOVERY_TOKEN_MATCH 20
 
-/* Make error recovery and set up final new_stacks and return final single_stack. */
+/* Make syntax error recovery and set up final new_stacks and return the final single_stack if ONE_STACK_P.
+
+   Error recovery algorithm in brief:  we keep pull of stacks and stacks (called delayed stacks) derived by
+   popping up the top element (LR-state).  We repeatedly add more and more expensive delayed stacks to the
+   pool of stacks.  For each failed stack, we reject current stack token and add the delayed stack dreived
+   from the stack.  We stop error recovery when we have a stack which is a minimal cost stack which
+   successfully consumed recovery_token_matches tokens without a gap or which is a final stack which
+   consumed EOF.  The minimal cost stacks (or one minimal cost stack if we have one stack before the error
+   recovery) are start stacks after the recovery.
+
+   The error recovery algorithm guarantees that Gecko always produces parse trees corresponding to
+   syntactically correct inputs.  Simply some tokens before and after error token are ignored. */
 static struct stack *recovery (struct grammar *g, int code, void *attr, bool one_stack_p) {
   assert (VLO_LENGTH (g->failed_stacks) != 0 && VLO_LENGTH (g->new_stacks) == 0
           && VLO_LENGTH (g->curr_stacks) == 0);
@@ -2313,7 +2326,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
       VLO_ADD_MEMORY (g->new_stacks, &stack, sizeof (stack));
 #ifndef NO_GP_DEBUG_PRINT
       if (UNLIKELY (g->debug_level > 3)) {
-        fprintf (stderr, " Move delayed stack:");
+        fprintf (stderr, " Add delayed stacks with cost <= %d:", skipped);
         print_stack (stderr, stack);
       }
 #endif
