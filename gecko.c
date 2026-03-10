@@ -1975,8 +1975,8 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, in
       if (el->attr_p) return get_stack_term_node (g, el);
       return el->anode_attr;
     }
+    return g->empty_node;
   }
-  assert (rule->anode != NULL);
   if (rule->caller_anode == NULL) {
     rule->caller_anode = ((char *) (*g->parse_alloc) (strlen (rule->anode) + 1));
     VLO_ADD_MEMORY (g->caller_anode_names, &rule->caller_anode, sizeof (rule->caller_anode));
