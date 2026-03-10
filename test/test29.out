@@ -1,0 +1,9 @@
+Syntax error on token '+' (pos=7) and stopping on token 'a' (pos=8)
+      8: ABSTRACT: plus ( 1 7 )
+      1: TERMINAL: code=97, repr='a'
+      7: ABSTRACT: mult ( 2 6 )
+      2: TERMINAL: code=97, repr='a'
+      6: ABSTRACT: mult ( 4 5 )
+      4: TERMINAL: code=97, repr='a'
+      5: TERMINAL: code=97, repr='a'
+

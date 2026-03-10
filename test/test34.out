@@ -1,0 +1,6 @@
+      4: ABSTRACT: prog ( 3 )
+      3: ABSTRACT: print ( 2 )
+      2: ABSTRACT: string ( 1 0 )
+      1: TERMINAL: code=99, repr='c'
+      0: EMPTY
+
