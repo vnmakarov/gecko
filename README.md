@@ -174,11 +174,13 @@ static void parse (void)
 |----------------------|----------------:|---------------------:|
 |ElkHound              |  9.50           |  9.6                 |
 |YAEP                  |  5.53           |  154                 |
-|Gecko                 |  1.12           |  119                 |
+|Gecko                 |  1.10           |  119                 |
 
 
 ## ------------------------------------
 
 ## Gecko internals
+
+GC of parse tree nodes.
 
 ### Syntax error reporting
