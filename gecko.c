@@ -120,8 +120,8 @@ struct grammar {    /* major structure which stores information about grammar: *
   /* Statistic numbers: tokens, all parse tree nodes, terminal nodes, abstract and alternative nodes: */
   int toks_num, n_parse_nodes, n_parse_term_nodes;
   int n_parse_abstract_nodes, n_parse_alt_nodes;
-  /* Parse tree nodes representing empty and error nodes.  They exist in one examplar. */
-  struct gp_tree_node *empty_node, *error_node;
+  /* Parse tree node representing empty node.  It exists in one examplar. */
+  struct gp_tree_node *empty_node;
 
   /* internal data used for error recovery */
   os_t recovery_infos;                       /* container for recovery_info structures */
@@ -1984,7 +1984,6 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, in
   VLO_EXPAND (g->temp_nodes_vlo, sizeof (struct gp_tree_node *) * rule->trans_len);
   struct gp_tree_node **children = VLO_BEGIN (g->temp_nodes_vlo);
   for (int i = 0; i < rule->trans_len; i++) children[i] = g->empty_node;
-  bool err_p = true;
   for (int i = 0, start = stack_len - rhs_len; i < rhs_len; i++) {
     int disp = rule->order[i];
     if (disp < 0) continue;
@@ -1994,9 +1993,7 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, in
       anode = get_stack_term_node (g, el);
     }
     children[disp] = anode;
-    if (anode != g->error_node) err_p = false;
   }
-  if (err_p) return g->error_node; /* all children are error node */
   return get_anode (g, rule->caller_anode, rule->trans_len, children);
 }
 
@@ -2482,9 +2479,6 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   g->empty_node = (struct gp_tree_node *) g->parse_alloc (sizeof (struct gp_tree_node));
   g->empty_node->type = GP_NIL;
   g->empty_node->num = g->n_parse_nodes++;
-  g->error_node = (struct gp_tree_node *) g->parse_alloc (sizeof (struct gp_tree_node));
-  g->error_node->type = GP_ERROR;
-  g->error_node->num = g->n_parse_nodes++;
   VLO_CREATE (g->symb_sits, g->alloc, 16);
   VLO_CREATE (g->actions_vlo, g->alloc, 16);
   VLO_CREATE (g->temp_nodes_vlo, g->alloc, 16);
@@ -2643,7 +2637,6 @@ static void print_node (struct grammar *g, FILE *f, struct gp_tree_node *node) {
   fprintf (f, "%7d: ", node->num);
   switch (node->type) {
   case GP_NIL: fprintf (f, "EMPTY\n"); break;
-  case GP_ERROR: fprintf (f, "ERROR\n"); break;
   case GP_TERM:
     fprintf (f, "TERMINAL: code=%d, repr=%s\n", node->val.term.code,
              term_find_by_code (g, node->val.term.code)->repr);
@@ -2742,7 +2735,6 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
 void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
     g->parse_free (g->empty_node);
-    g->parse_free (g->error_node);
     gp_allocator_t *allocator = g->alloc;
     bitmap_destroy (&g->marked_nodes);
     VLO_DELETE (g->all_nodes);
@@ -2767,7 +2759,6 @@ static void free_tree_reduce (struct gp_tree_node *node) {
   node->type = (enum gp_tree_node_type) (node->type | GP_VISITED);
   switch (type) {
   case GP_NIL:
-  case GP_ERROR:
   case GP_TERM: break;
   case GP_ANODE:
     if (node->val.anode.name[0] == '\0') /* We have already seen the node name */
@@ -2799,8 +2790,7 @@ static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node,
   assert (node->type & GP_VISITED);
   enum gp_tree_node_type type = (enum gp_tree_node_type) (node->type & ~GP_VISITED);
   switch (type) {
-  case GP_NIL:
-  case GP_ERROR: break; /* we don't free empty and error node yet */
+  case GP_NIL: break; /* we don't free empty and error node yet */
   case GP_TERM:
     if (termcb != NULL) termcb (&node->val.term);
     break;

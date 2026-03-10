@@ -51,7 +51,6 @@ enum gp_assoc { GP_NON_ASSOC, GP_LEFT_ASSOC, GP_RIGHT_ASSOC };
 
 enum gp_tree_node_type { /* the parse tree node: */
                          GP_NIL,
-                         GP_ERROR,
                          GP_TERM,
                          GP_ANODE,
                          GP_ALT,

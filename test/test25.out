@@ -1,9 +1,9 @@
-Syntax error on token '*' (pos=4) and stopping on token '*' (pos=4)
-      8: ABSTRACT: plus ( 2 7 )
+Syntax error on token '*' (pos=4) and stopping on token '(' (pos=5)
+      7: ABSTRACT: plus ( 1 6 )
+      1: TERMINAL: code=97, repr='a'
+      6: ABSTRACT: mult ( 2 5 )
       2: TERMINAL: code=97, repr='a'
-      7: ABSTRACT: mult ( 3 6 )
+      5: ABSTRACT: plus ( 3 4 )
       3: TERMINAL: code=97, repr='a'
-      6: ABSTRACT: plus ( 4 5 )
       4: TERMINAL: code=97, repr='a'
-      5: TERMINAL: code=97, repr='a'
 

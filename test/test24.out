@@ -1,10 +1,10 @@
-     10: ABSTRACT: plus ( 2 9 )
+      9: ABSTRACT: plus ( 1 8 )
+      1: TERMINAL: code=97, repr='a'
+      8: ABSTRACT: mult ( 2 7 )
       2: TERMINAL: code=97, repr='a'
-      9: ABSTRACT: mult ( 3 8 )
+      7: ABSTRACT: plus ( 5 6 )
+      5: ABSTRACT: mult ( 3 4 )
       3: TERMINAL: code=97, repr='a'
-      8: ABSTRACT: plus ( 6 7 )
-      6: ABSTRACT: mult ( 4 5 )
       4: TERMINAL: code=97, repr='a'
-      5: TERMINAL: code=97, repr='a'
-      7: TERMINAL: code=97, repr='a'
+      6: TERMINAL: code=97, repr='a'
 
