@@ -177,13 +177,27 @@ static void parse (void)
 |Gecko                 |  1.10           |  119                 |
 
 
-## ------------------------------------
+## Gecko internals overview
 
-## Gecko internals
+* Gecko uses custom allocators, hash tables, variable-length objects, and object stacks from accompanying header-only libraries
+* Gecko makes grammar analysis computes symbol properties (empty, accessible, derives terminals), detects loops, and builds FIRST/FOLLOW
+  sets via fixed-point iteration
+* Before starting parsing, Gecko constructs SLR-0 sets of the grammar
+  * LR items (situations) are memoized -- each unique (rule, position) pair exists once
+  * Each SLR set has a goto map (nonterminal → set) and action map (terminal → shift/reduce actions)
+  * Priority/associativity conflict resolution is applied the same way for the action map as in YACC
+* Parsing
+  * **Single-stack fast path**: when one stack has exactly one action, a tight inner loop
+    runs without extra allocations -- this makes unambiguous grammars nearly as fast as YACC
+  * **Multi-stack path**: multiple stacks are maintained when ambiguity or conflicts arise;
+    each stack independently processes shifts and reduces
+  * **Stack merging**: stacks with identical sets sequences are merged, combining parse nodes
+    via a user callback -- this prevents exponential blowup on ambiguous grammars
+  * Parse tree nodes are **hash-consed** (structurally identical nodes are shared)
+  * **Garbage collection** of unreachable parse tree nodes runs periodically during parsing (mark-sweep using a bitmap,
+    with adaptive threshold)
 
-GC of parse tree nodes.
-
-### Syntax error reporting
+## Syntax error reporting
 
 * Gecko implements automatic **minimal-cost error recovery** that requires
   no grammar modifications — unlike YACC/Bison/YAEP, you don't need to add
@@ -192,15 +206,16 @@ GC of parse tree nodes.
 * As Gecko can deal with numerous parsing stacks, this permits implementing a high quality syntax recovery algorithm
 
 * The syntax error reovery guarantees that Gecko always produces parse trees corresponding to
-  syntactically correct inputs -- simply, some tokens before and after error the error token  are ignored
+  syntactically correct inputs -- simply, some tokens before and after the error token are ignored
 
 * Error recovery algorithm in brief:                                                                                                    
-  * We keep a pool of the current stacks and stacks (called **delayed stacks*) derived from the current stacks
+  * We keep a pool of the current stacks and stacks (called *delayed stacks*) derived from the current stacks
     by popping the top element (LR-state)
   * We repeatedly move more and more expensive delayed stacks to the pool of the current stacks
   * For each failed stack, we add the delayed stack derived from the stack and
-    keep the current stack ignoring the current stack token and advance the stack input to the next input token 
+    keep the failed stack which skips the current stack token and advance the stack input to the next input token
   * We stop error recovery when we have a minimal cost stack that successfully consumed given number (defined by
     `gp_set_recovery_match`) of tokens without a gap or when we have a final stack that consumed `EOF`
   * The minimal cost stacks (or one minimal cost stack if we have one stack before the error recovery)
     become the start stacks after the recovery
+
