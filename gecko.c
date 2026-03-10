@@ -1943,8 +1943,8 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   return anode;
 }
 
-static struct gp_tree_node *get_alt_node (struct grammar *g, struct gp_tree_node *first,
-                                          struct gp_tree_node *second) {
+static GP_UNUSED struct gp_tree_node *get_alt_node (struct grammar *g, struct gp_tree_node *first,
+                                                    struct gp_tree_node *second) {
   struct gp_tree_node *node = &g->temp_node;
   node->type = GP_ALT;
   node->val.alt.first = first;
@@ -2111,7 +2111,7 @@ static void print_stacks (FILE *f, const char *title, vlo_t *stacks, int start) 
 
 static bool process_term_for_stack (struct grammar *g, struct stack *start_stack, int term, void *attr) {
   bool shift_p = false;
-  int len = VLO_LENGTH (g->curr_stacks);
+  long len = VLO_LENGTH (g->curr_stacks);
   int new_els_num = VLO_LENGTH (g->new_stacks) / sizeof (struct stack *);
   VLO_ADD_MEMORY (g->curr_stacks, &start_stack, sizeof (start_stack));
 #ifndef NO_GP_DEBUG_PRINT
@@ -2201,20 +2201,17 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   }
   VLO_NULLIFY (g->delayed_stacks);
   int min_cost = -1, buff_token_ind = -1;
-  struct stack *eof_stack = NULL;
+  bool eof_stack_p = false;
   for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
     struct set *set = stack_get_top_set (stack);
     struct symb *symb = set->symb;
-    if (symb == g->end_marker) {
-      eof_stack = stack;
-      buff_token_ind = stack->recovery->u.token_info.buff_token_ind;
-      break;
-    }
-    if (stack->recovery->u.token_info.n_matched_toks >= g->recovery_token_matches
+    bool eof_p = symb == g->end_marker;
+    if ((eof_p || stack->recovery->u.token_info.n_matched_toks >= g->recovery_token_matches)
         && (min_cost < 0 || stack->recovery->u.token_info.cost < min_cost)) {
       min_cost = stack->recovery->u.token_info.cost;
       buff_token_ind = stack->recovery->u.token_info.buff_token_ind;
+      eof_stack_p = eof_p;
     }
   }
 #ifndef NO_GP_DEBUG_PRINT
@@ -2225,12 +2222,12 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   struct stack *single_stack = NULL;
   for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
-    if (stack == eof_stack) {
-      stack_free_recovery (g, stack);
-      ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
-    } else if (eof_stack != NULL || stack->recovery->u.token_info.n_matched_toks < g->recovery_token_matches
-               || stack->recovery->u.token_info.buff_token_ind != buff_token_ind
-               || stack->recovery->u.token_info.cost > min_cost) {
+    struct set *set = stack_get_top_set (stack);
+    struct symb *symb = set->symb;
+    int cost = stack->recovery->u.token_info.cost;
+    bool eof_p = symb == g->end_marker;
+    if (stack->recovery->u.token_info.buff_token_ind != buff_token_ind || cost != min_cost
+        || eof_p != eof_stack_p) {
       stack_free (g, stack);
     } else if (one_stack_p && single_stack == NULL) {
       single_stack = stack;
@@ -2277,6 +2274,10 @@ static void print_read (struct grammar *g, FILE *f, struct symb *term, int stack
 }
 #endif
 
+/* Thershold used to stop recovery even if the stack is not minimal cost stack.
+   It is just to avoid in recovery and recovery stack explosion.  */
+#define MAX_RECOVERY_TOKEN_MATCH 20
+
 /* Make error recovery and set up final new_stacks and return final single_stack. */
 static struct stack *recovery (struct grammar *g, int code, void *attr, bool one_stack_p) {
   assert (VLO_LENGTH (g->failed_stacks) != 0 && VLO_LENGTH (g->new_stacks) == 0
@@ -2297,7 +2298,6 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
   }
   VLO_NULLIFY (g->failed_stacks);
   int skipped = 0;
-  bool stop_p = false;
   for (;;) {
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 3))
@@ -2357,12 +2357,25 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 3)) print_stacks (stderr, "   New recovery stacks", &g->new_stacks, 0);
 #endif
+    struct stack *min_cost_stack = NULL;
+    /* True when eof was reached or a minimal cost stack matched at least recovery_token_matches or
+       stack matched at least MAX_RECOVERY_TOKEN_MATCH tokens.  */
+    bool stop_p = false;
     for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
       struct stack_el *el = &((struct stack_el *) VLO_BOUND (stack->els))[-1];
+      int n_matched_toks = stack->recovery->u.token_info.n_matched_toks;
       if (el->set->symb == g->end_marker
-          || stack->recovery->u.token_info.n_matched_toks >= g->recovery_token_matches)
+          || (g->recovery_token_matches < MAX_RECOVERY_TOKEN_MATCH
+              && n_matched_toks >= MAX_RECOVERY_TOKEN_MATCH)) {
         stop_p = true;
+        break;
+      }
+      if (min_cost_stack == NULL
+          || stack->recovery->u.token_info.cost < min_cost_stack->recovery->u.token_info.cost) {
+        min_cost_stack = stack;
+        stop_p = stack->recovery->u.token_info.n_matched_toks >= g->recovery_token_matches;
+      }
     }
     if (stop_p) break;
     if (token_buff_len (g) <= max_buff_ind) {
@@ -2586,9 +2599,9 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
       single_stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
       VLO_NULLIFY (g->curr_stacks);
     }
-    if (g->parse_free != NULL && VLO_LENGTH (g->all_nodes) >= gc_nodes_threshold) {
+    if (g->parse_free != NULL && (long) VLO_LENGTH (g->all_nodes) >= gc_nodes_threshold) {
       gc (g, &g->curr_stacks);
-      gc_nodes_threshold = 2 * VLO_LENGTH (g->all_nodes);
+      gc_nodes_threshold = 2 * (long) VLO_LENGTH (g->all_nodes);
     }
     code = token_read (g, &attr);
     term_symb = term_find_by_code (g, code);
