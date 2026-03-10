@@ -58,7 +58,6 @@ struct grammar {    /* major structure which stores information about grammar: *
   int recovery_token_matches; /* number of subsequent tokens should be successfuly shifted to finish
                                  error recovery */
   int debug_level;
-  bool error_recovery_p;       /* true if we need to make error recovery. */
   struct symbs *symbs;         /* vocabulary used for this grammar */
   struct rules *rules;         /* rules used for this grammar */
   struct term_sets *term_sets; /* terminal sets used for this grammar */
@@ -967,7 +966,7 @@ static void error_func_for_allocate (void *g) { /* Process allocation errors. */
   gp_error (g, GP_NO_MEMORY, "no memory");
 }
 
-static void *default_attr_merge (void *attr1, void *attr2 GP_UNUSED) { return attr1; }
+static void *default_node_merge (void *node1, void *node2 GP_UNUSED) { return node1; }
 
 static void *parse_alloc_default (int nmemb) {
   assert (nmemb > 0);
@@ -1011,7 +1010,6 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   g->parse_free = parse_free_default;
   g->syntax_error = syntax_error_default;
   g->debug_level = 0;
-  g->error_recovery_p = true;
   g->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
   g->symbs = NULL;
   g->term_sets = NULL;
@@ -1019,7 +1017,7 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   g->symbs = symb_init (g);
   g->term_sets = term_set_init (g);
   g->rules = rule_init (g);
-  g->attr_merge = default_attr_merge;
+  g->attr_merge = default_node_merge;
   VLO_CREATE (g->caller_anode_names, g->alloc, 0);
   VLO_CREATE (g->temp_vlo, g->alloc, 0);
   VLO_CREATE (g->all_nodes, g->alloc, 0);
@@ -1340,13 +1338,6 @@ int gp_set_debug_level (struct grammar *g, int level) {
   return old;
 }
 
-bool gp_set_error_recovery_flag (struct grammar *g, bool flag) {
-  assert (g != NULL);
-  bool old = g->error_recovery_p;
-  g->error_recovery_p = flag;
-  return old;
-}
-
 int gp_set_recovery_match (struct grammar *g, int n_toks) {
   assert (g != NULL);
   int old = g->recovery_token_matches;
@@ -1360,9 +1351,9 @@ static void gp_parse_init (struct grammar *g) { /* initialize all internal data 
   for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
 }
 
-gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *g, gp_attr_merge_func_t func) {
+gp_attr_merge_func_t gp_set_node_merge_func (struct grammar *g, gp_attr_merge_func_t func) {
   gp_attr_merge_func_t res = g->attr_merge;
-  g->attr_merge = func == NULL ? default_attr_merge : func;
+  g->attr_merge = func == NULL ? default_node_merge : func;
   return res;
 }
 
@@ -2948,7 +2939,6 @@ static void use_functions (int argc, char **argv) {
     gp_set_debug_level (g, atoi (argv[2]));
   else
     gp_set_debug_level (g, 3);
-  if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
   if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     exit (1);
@@ -2987,7 +2977,6 @@ static void use_description (int argc, char **argv) {
     gp_set_debug_level (g, atoi (argv[2]));
   else
     gp_set_debug_level (g, 3);
-  if (argc > 3) gp_set_error_recovery_flag (g, atoi (argv[3]));
   if (gp_parse_grammar (g, true, description) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     exit (1);

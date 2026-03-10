@@ -901,7 +901,6 @@ int main (int argc, char **argv) {
     gp_set_debug_level (g, atoi (argv[1]));
   else
     gp_set_debug_level (g, 3);
-  if (argc > 2) gp_set_error_recovery_flag (g, atoi (argv[2]));
   int parser_res = gp_parse_grammar (g, 1, description);
   if (parser_res != 0) fprintf (stderr, "%s\n", gp_error_message (g));
 #endif

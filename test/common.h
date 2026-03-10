@@ -181,7 +181,9 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
     set_debug_level (g, atoi (argv[1]));
   else
     set_debug_level (g, 3);
+#ifdef YAEP
   if (argc > 2) set_error_recovery_flag (g, atoi (argv[2]));
+#endif
   if (recovery_match) set_recovery_match (g, recovery_match);
 #ifdef YAEP
   yaep_set_one_parse_flag (g, false);

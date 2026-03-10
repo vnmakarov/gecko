@@ -61,10 +61,6 @@ enum gp_tree_node_type { /* the parse tree node: */
 struct gp_nil { /* The node exists in one exemplar. See comment to read_rule. */
 };
 
-/* The following node exists in one example.  It is used as translation of terminal `error': */
-struct gp_error { /* The node exists in one exemplar. The translation of terminal `error': */
-};
-
 struct gp_term { /* the terminal node: */
   int code;      /* the terminal code */
   void *attr;    /* the terminal attributes */
@@ -86,7 +82,6 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
   unsigned num;                /* node number */
   union {                      /* the node itself */
     struct gp_nil nil;
-    struct gp_error error;
     struct gp_term term;
     struct gp_anode anode;
     struct gp_alt alt; /* alternative */
@@ -145,8 +140,7 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
 
    * syntax error function is used to prints error message about syntax error which occurred on token with
      representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next two
-     parameters describes recovery stop token.  If the error recovery is not made (see comments for function
-     `gp_set_error_recovery_flag'), the 3rd and 4th parameters will be NULL.  The default function prints only
+     parameters describes recovery stop token.  The default function prints only
      the token representations.  You should set up the new function to print positions which can be passed
      through the token attributes.
 
@@ -158,21 +152,16 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      * 2 results in additional print of the result translation
      * 3 results in printing read token, actions (conflicts marked by '!') for dynamically generated
        SLR sets, and high-level erorr recovery info
-     * 4 means printing rules, first/follows nonterminal sets, dynamically generated SLR sets,
-       and reshapping translation for ambiguous parsing
+     * 4 means printing rules, first/follows nonterminal sets, dynamically generated SLR sets
      * 5 results in printing stacks during parsing and stack merging
      * 6 results in even more detail info about processing stacks during parsing
-
-   * error_recovery_flag means making error recovery if syntax error occurred.  Otherwise, syntax
-     error results in finishing parsing (although syntax_error is called once).  The default value
-     is true.
 
    * recovery_match means how much subsequent tokens should be successfully shifted to finish error
      recovery.  The default value is 3.
 
-   * gp_set_attr_merge_func is used during merging stacks.  It gets two attributes of a symbol
-     (terminal or nonterminal) from stacks being merged and returns the result attribute.  Null FUNC
-     sets up the default function which returns always the first attr.  The default function is set
+   * gp_set_node_merge_func is used during merging stacks.  It gets two parse tree nodes of a symbol
+     (terminal or nonterminal) from stacks being merged and returns the result node.  Null FUNC
+     sets up the default function which returns always the first node.  The default function is set
      up in GP_CREATE_GRAMMAR.  Using the default function results in returning only one translation
      by GP_PARSE. */
 
@@ -187,16 +176,14 @@ typedef void (*gp_syntax_error_func_t) (const char *err_tok_repr, void *err_tok_
 extern gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_error_func_t fn);
 
 extern int gp_set_debug_level (struct grammar *grammar, int level);
-extern bool gp_set_error_recovery_flag (struct grammar *grammar, bool flag);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
 typedef void *(*gp_attr_merge_func_t) (void *attr1, void *attr2);
 extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar, gp_attr_merge_func_t func);
 
 /* Parse input according the read grammar. Returns the error code (which will be also in
-   gp_error_code). If the code is zero, also put parse result into *root (*root will be NULL only if
-   syntax error was occurred and error recovery was switched off).  Set up *AMBIGOUS_P if we found
-   that the grammar is ambiguous.
+   gp_error_code). If the code is zero, also put parse result into *root (it never will be NULL).
+   Set up *AMBIGOUS_P if we found that the grammar is ambiguous on the input.
 
    The function READ_TOKEN provides input tokens.  It returns code the next input token and its
    attribute.  If the function returns negative value we've read all tokens. */
