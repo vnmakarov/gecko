@@ -184,3 +184,23 @@ static void parse (void)
 GC of parse tree nodes.
 
 ### Syntax error reporting
+
+* Gecko implements automatic **minimal-cost error recovery** that requires
+  no grammar modifications — unlike YACC/Bison/YAEP, you don't need to add
+  `error` rules to your grammar
+
+* As Gecko can deal with numerous parsing stacks, this permits implementing a high quality syntax recovery algorithm
+
+* The syntax error reovery guarantees that Gecko always produces parse trees corresponding to
+  syntactically correct inputs -- simply, some tokens before and after error the error token  are ignored
+
+* Error recovery algorithm in brief:                                                                                                    
+  * We keep a pool of the current stacks and stacks (called **delayed stacks*) derived from the current stacks
+    by popping the top element (LR-state)
+  * We repeatedly move more and more expensive delayed stacks to the pool of the current stacks
+  * For each failed stack, we add the delayed stack derived from the stack and
+    keep the current stack ignoring the current stack token and advance the stack input to the next input token 
+  * We stop error recovery when we have a minimal cost stack that successfully consumed given number (defined by
+    `gp_set_recovery_match`) of tokens without a gap or when we have a final stack that consumed `EOF`
+  * The minimal cost stacks (or one minimal cost stack if we have one stack before the error recovery)
+    become the start stacks after the recovery
