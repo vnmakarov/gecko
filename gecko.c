@@ -1209,6 +1209,8 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   enum gp_assoc assoc;
   while ((name = (*read_terminal) (&code, &priority, &assoc)) != NULL) {
     if (code < 0) gp_error (g, GP_NEGATIVE_TERM_CODE, "term `%s' has negative code", name);
+    if (assoc != GP_NON_ASSOC && assoc != GP_LEFT_ASSOC && assoc != GP_RIGHT_ASSOC)
+      gp_error (g, GP_WRONG_TERM_ASSOC, "term `%s' has wrong associativity %d", name, assoc);
     symb = symb_find_by_repr (g, name);
     if (symb != NULL) gp_error (g, GP_REPEATED_TERM_DECL, "repeated declaration of term `%s'", name);
     if (term_tab_find_by_code (g, code) != NULL)
