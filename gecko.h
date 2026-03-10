@@ -107,9 +107,11 @@ extern const char *gp_error_message (struct grammar *g);
    Returns zero if it is all ok. Otherwise, return error code occurred (its code
    will be in gp_error_code and message in gp_error_message).
 
-   READ_TERMINAL is function for reading terminals.  This function is called before function
-   read_rule.  The function should return the name and the code of the next terminal.  If all
-   terminals have been read the function returns NULL.  The return code should be nonnegative.
+   READ_TERMINAL is function for reading terminals.  This function is called before function read_rule.
+   The function should return the name and the code of the next terminal.  If all terminals have been
+   read the function returns NULL.  The return code should be nonnegative.  Priority and associativity
+   of the terminal are passed through the rest of args.  They are used to resolve conflicts in LR-sets
+   as for YACC.  If you don't want to resolve the conflicts, use GP_NON_ASSOC.
 
    READ_RULE is function called to read the next rule.  This function is called after function
    read_terminal.  The function should return the name of LHS rule and array of names of symbols in
