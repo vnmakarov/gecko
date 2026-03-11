@@ -36,7 +36,7 @@
 |-----------------------------------------|---------|---------|----------|----------|----------|
 |Library                                  | No      | No      | No       | No       | Yes      |
 |CFG grammar                              | LALR(1) | LALR(1)*| ambiguous| ambiguous| ambiguous|
-|Operator grammar (priority/associativity)| Yes    | Yes     | Yes      | Yes      | Yes      |
+|Operator grammar (priority/associativity)| Yes     | Yes     | Yes      | Yes      | Yes      |
 |Speed independence on grammar size       | Yes     | Yes     | Yes      | No       | Yes      |
 |Syntax error recovery                    | Yes     | Yes     | No       | No       | Yes      |
 |Automatic error recovery                 | No      | No      | -        | No       | Yes      |
@@ -50,7 +50,7 @@
 \** All alternatives can be generated through the corresponding ElkHound/Gecko merge functions.
    But to generate abstract node trees for alternatives analogous to YAEP, additional non-trivial work needs to be done.
 
-* Additional differences between Gecko and YAEP
+* Additional differences between Gecko and YAEP:
   * Gecko is faster on unambiguous and moderately ambiguous grammars
   * Gecko requires less memory for parsing
   * Gecko memory consumption does not depend on input length (or slightly depends for ambiguous grammars)
@@ -62,8 +62,8 @@
 # Gecko usage example:
 
 * The following is a small example of how to use Gecko to parse expressions.  We have omitted the functions
-  `read_token`, `syntax_error_func`, and `parse_alloc_func` which are needed to provide tokens, print syntax
-  error messages, and allocate memory for the parser.
+  `read_token`, `syntax_error_func`, `parse_alloc_func`, and `parse_free_func` which are needed to provide tokens,
+  print syntax error messages, and allocate memory for the parser.
 
 ```
 static const char *description =
@@ -187,7 +187,7 @@ static void parse (void)
   * GCC and Clang have a slightly different test as other parsers can not take
     C extensions in the original test.
 
-* Highly ambiguous grammar (E=E+E|a) with abstract tree generation
+* Highly ambiguous grammar (E=E+E|a) with abstract tree generation (only for Gecko and YAEP)
   * Input is `a(+a){200}`.  In other words, 200 operators `+` are used:
   
 |                      | Time            |Memory (parse only) MB|
