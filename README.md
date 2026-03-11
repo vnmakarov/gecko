@@ -104,15 +104,19 @@ static void parse (void)
   * ``make``
     * requires GCC, YACC, AR
   * ``make test`` (optional)
-    * requires Flxe and GCC with ASAN and UBSAN support
+    * requires Flex and GCC with ASAN and UBSAN support
   * ``make bench`` (optional)
-    * requires YACC/BISON, GCC, Clang, installed YAEP and build Elkhound (use `make bench ELKHOUND_DIR=<path>` to run Elkhound benchmarks)
+    * requires YACC/BISON, GCC, Clang, installed YAEP and built Elkhound (use `make bench ELKHOUND_DIR=<path>` to run Elkhound benchmarks)
   * ``make install``
     * `gecko.h` && `libgecko.a` will be installed in `/usr/local/include` and `/usr/local/lib`
     * You can change installation path `/usr/local` by using makefile arg `PREFIX`, e.g. `make PREFIX=/usr install`
     
 ## Speed comparison with YACC, ElkHound, YAEP, and GCC/Clang parsers
 
+* Test machines:
+  * AMD Ryzen 9900X with 64GB memory under Fedora Core 43.
+  * Apple M4 with 8GB memory under Fedora Core 41.
+  * Intel 285K with 32GB memory under Fedora Core 42.
 * Tested parsers:
   * Berkeley YACC 1.9
   * GCC-15.2.1 for AMD9900X and Intel 285K and GCC-14.2.1 for Apple M4
@@ -153,10 +157,6 @@ static void parse (void)
   * Memory is peak allocated memory for AMD9900X, the results are close to ones on other 64-bit targets
   * For GCC and Clang, memory was instead measured as max resident memory reported by ``/usr/bin/time``.
 * How to reproduce: please use `make bench`.
-* Test machines:
-  * AMD Ryzen 9900X with 64GB memory under Fedora Core 43.
-  * Apple M4 Ryzen 9900X with 8GB memory under Fedora Core 41.
-  * Intel 285K with 32GB memory under Fedora Core 42.
 
 ## Benchmark Results
 
