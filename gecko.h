@@ -196,11 +196,8 @@ extern void gp_print_translation (struct grammar *grammar, FILE *f, struct gp_tr
 #endif
 
 /* Free memory allocated for the parse tree. ROOT must be the root of the parse tree as returned by
-   gp_parse(). If ROOT is a null pointer, no operation is performed.  If TERMCB is not a null pointer,
-   it will be called exactly once for each term node in the parse tree. The TERMCB callback can be used
-   by the caller to free the term attributes. The term node itself must not be freed by TERMCB. */
-extern void gp_free_tree (struct grammar *grammar, struct gp_tree_node *root,
-                          void (*termcb) (struct gp_term *term));
+   gp_parse(). If ROOT is a null pointer, no operation is performed. */
+extern void gp_free_tree (struct grammar *grammar, struct gp_tree_node *root);
 
 /* Finish work with the grammar.  It should be called the last. */
 extern void gp_fin (struct grammar *grammar);

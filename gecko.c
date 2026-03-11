@@ -2803,37 +2803,34 @@ static void free_tree_reduce (struct gp_tree_node *node) {
   }
 }
 
-static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node,
-                             void (*termcb) (struct gp_term *)) {
+static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node) {
   if (node == NULL) return;
   assert (node->type & GP_VISITED);
   enum gp_tree_node_type type = (enum gp_tree_node_type) (node->type & ~GP_VISITED);
   switch (type) {
-  case GP_NIL: break; /* we don't free empty and error node yet */
-  case GP_TERM:
-    if (termcb != NULL) termcb (&node->val.term);
-    break;
+  case GP_NIL: return; /* we don't free empty node yet */
+  case GP_TERM: break;
   case GP_ANODE:
     for (int i = 0; i < node->val.anode.children_num; i++)
-      if (node->val.anode.children[i] != NULL) free_tree_sweep (g, node->val.anode.children[i], termcb);
+      if (node->val.anode.children[i] != NULL) free_tree_sweep (g, node->val.anode.children[i]);
     g->parse_free (node->val.anode.children);
     break;
   case GP_ALT:
-    free_tree_sweep (g, node->val.alt.first, termcb);
-    free_tree_sweep (g, node->val.alt.second, termcb);
+    free_tree_sweep (g, node->val.alt.first);
+    free_tree_sweep (g, node->val.alt.second);
     break;
   default: assert ("This should not happen" == NULL);
   }
   g->parse_free (node);
 }
 
-void gp_free_tree (struct grammar *g, struct gp_tree_node *root, void (*termcb) (struct gp_term *)) {
+void gp_free_tree (struct grammar *g, struct gp_tree_node *root) {
   if (root == NULL || g->parse_free == NULL) return;
   /* Since the parse tree is actually a DAG, we must carefully avoid double free errors.
      Therefore, we walk the parse tree twice. On the first walk, we reduce the DAG to an actual
      tree. On the second walk, we recursively free the tree nodes. */
   free_tree_reduce (root);
-  free_tree_sweep (g, root, termcb);
+  free_tree_sweep (g, root);
 }
 
 /* This page contains a test code for Gecko. To use it, define macro GP_TEST during compilation. */
@@ -2946,7 +2943,7 @@ static void use_functions (int argc, char **argv) {
   ntok = 0;
   if (gp_parse (g, test_read_token, &root, &ambiguous_p))
     fprintf (stderr, "gecko: %s\n", gp_error_message (g));
-  gp_free_tree (g, root, NULL);
+  gp_free_tree (g, root);
   gp_fin (g);
 }
 
@@ -2983,7 +2980,7 @@ static void use_description (int argc, char **argv) {
   }
   if (gp_parse (g, test_read_token, &root, &ambiguous_p))
     fprintf (stderr, "gecko: %s\n", gp_error_message (g));
-  gp_free_tree (g, root, NULL);
+  gp_free_tree (g, root);
   gp_fin (g);
 }
 
