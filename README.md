@@ -111,7 +111,7 @@ static void parse (void)
   * We prepare all tokens beforehand in order to exclude scanning time from our benchmark.
   * For YACC, at the scanning stage we do not yet distinguish identifiers and typenames. 
 * Tests:
-  * The first test is 10000K sieve functions, so the resulting file size was 1.5M C lines.
+  * The first test is 100K sieve functions, so the resulting file size was 1.5M C lines.
   * The second test is a pre-release version of gcc-4.0 for i686 with all the source
     code combined into one file
     ([source](http://people.csail.mit.edu/smcc/projects/single-file-programs/)).
