@@ -15,9 +15,11 @@
 * Fast
   * Close to YACC/Bison speed on unambiguous grammars (about 5-10% slower)
   * Processes 2M C lines per second on AMD9900X
-  * 2 times faster than YAEP (the fastest Earley parser) on unambiguous and moderately ambiguous grammars
-  * 2.5 times faster than ElkHound (a famous GLR parser) on unambiguous and moderately ambiguous grammars
-  * 50 times faster than ElkHound on highly ambiguous grammars
+  * 2 times faster than [YAEP](https://github.com/vnmakarov/yaep) (the fastest Earley parser I know)
+    on unambiguous and moderately ambiguous grammars
+  * 2.5 times faster than [ElkHound](https://github.com/WeiDUorg/elkhound) (a famous GLR parser)
+    on unambiguous and moderately ambiguous grammars
+  * about 10 times faster than ElkHound on highly ambiguous grammars
 * Operator grammar support
   * Descriptions of operator priority and associativity analogous to YACC/Bison
 * Simple syntax-directed translation
@@ -28,19 +30,35 @@
     a YACC-like description syntax
   * Very **fast startup** after reading grammar from file or string
 
-# Differences between Gecko and [YAEP](https://github.com/vnmakarov/yaep) (the fastest Earley Parser implementation I know):
+# Comparison of major features of compiler-compilers
+
+|                                        | YACC    | Bison   | ElkHound | YAEP     | Gecko    |
+|----------------------------------------|---------|---------|----------|----------|----------|
+|Library                                 | No      | No      | No       | No       | Yes      |
+|CFG grammar                             | LALR(1) | LALR(1)*| ambiguous| ambiguous| ambiguous|
+|Operator grammar (priority/associativity)| Yes    | Yes     | Yes      | Yes      | Yes      |
+|Speed independence on grammar size      | Yes     | Yes     | Yes      | No       | Yes      |
+|Syntax error recovery                   | Yes     | Yes     | No       | No       | Yes      |
+|Automatic error recovery                | No      | No      | -        | No       | Yes      |
+|Actions                                 | Yes     | Yes     | Yes      | No       | No       |
+|Simple syntax-directed translation      | No      | No      | No       | Yes      | Yes      |
+|Generation of all translations          | -       | -       | Yes      | Yes**    | Yes**    |
+|Generation of minimal cost translation  | -       | -       | No       | Yes      | No       |
+
+\* Bison is claimed to be a GLR parser but I did not manage to use **ambiguous** C grammar (see speed comparison) for it
+\** All alternatives can be generated through the corresponding ElkHound/Gecko merge functions.
+   But to generate abstract node trees for alternatives analogous to YAEP, additional non-trivial work needs to be done.
+
+* Additional differences between Gecko and YAEP
   * Gecko is faster on unambiguous and moderately ambiguous grammars
-  * Gecko's speed practically does not depend on grammar size
   * Gecko requires less memory for parsing
   * Gecko memory consumption does not depend on input length (or slightly depends for ambiguous grammars)
-  * Gecko does not require modifying the grammar for syntax error recovery and reporting
   * Gecko permits shorter grammars by supporting operator grammars (operator associativity
     and precedence) analogously to YACC/Bison
-  * YAEP permits describing rules with costs and finding minimal cost translation for ambiguous grammars
   * YAEP is faster on highly ambiguous grammars when all possible translations or minimal cost translation
     are required.  It also generates much smaller DAG for all possible translations for highly ambiguous grammars
 
-# Usage example:
+# Gecko usage example:
 
 * The following is a small example of how to use Gecko to parse expressions.  We have omitted the functions
   `read_token`, `syntax_error_func`, and `parse_alloc_func` which are needed to provide tokens, print syntax
@@ -183,7 +201,7 @@ static void parse (void)
 * Gecko uses custom allocators, hash tables, variable-length objects, and object stacks from accompanying header-only libraries
 * Grammar analysis computes symbol properties (empty, accessible, derives terminals), detects loops, and builds FIRST/FOLLOW
   sets via fixed-point iteration
-* Before starting parsing, Gecko constructs SLR-0 sets of the grammar
+* Before starting parsing, Gecko constructs SLR(1) sets of the grammar
   * LR items (situations) are memoized -- each unique (rule, position) pair exists once
   * Each SLR set has a goto map (nonterminal → set) and action map (terminal → shift/reduce actions)
   * Priority/associativity conflict resolution is applied the same way for the action map as in YACC
