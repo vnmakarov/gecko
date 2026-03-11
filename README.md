@@ -3,7 +3,7 @@
 # Gecko: A standalone GLR parser library
   * Gecko is licensed under the MIT license
 
-# Features
+## Features
 
 * Parse inputs described by **unambiguous and ambiguous grammars**
 * Small and simple
@@ -30,22 +30,23 @@
     a YACC-like description syntax
   * Very **fast startup** after reading grammar from file or string
 
-# Comparison of major features of compiler-compilers
+## Comparison of major features of compiler-compilers
 
-|                                        | YACC    | Bison   | ElkHound | YAEP     | Gecko    |
-|----------------------------------------|---------|---------|----------|----------|----------|
-|Library                                 | No      | No      | No       | No       | Yes      |
-|CFG grammar                             | LALR(1) | LALR(1)*| ambiguous| ambiguous| ambiguous|
+|                                         | YACC    | Bison   | ElkHound | YAEP     | Gecko    |
+|-----------------------------------------|---------|---------|----------|----------|----------|
+|Library                                  | No      | No      | No       | No       | Yes      |
+|CFG grammar                              | LALR(1) | LALR(1)*| ambiguous| ambiguous| ambiguous|
 |Operator grammar (priority/associativity)| Yes    | Yes     | Yes      | Yes      | Yes      |
-|Speed independence on grammar size      | Yes     | Yes     | Yes      | No       | Yes      |
-|Syntax error recovery                   | Yes     | Yes     | No       | No       | Yes      |
-|Automatic error recovery                | No      | No      | -        | No       | Yes      |
-|Actions                                 | Yes     | Yes     | Yes      | No       | No       |
-|Simple syntax-directed translation      | No      | No      | No       | Yes      | Yes      |
-|Generation of all translations          | -       | -       | Yes      | Yes**    | Yes**    |
-|Generation of minimal cost translation  | -       | -       | No       | Yes      | No       |
+|Speed independence on grammar size       | Yes     | Yes     | Yes      | No       | Yes      |
+|Syntax error recovery                    | Yes     | Yes     | No       | No       | Yes      |
+|Automatic error recovery                 | No      | No      | -        | No       | Yes      |
+|Actions                                  | Yes     | Yes     | Yes      | No       | No       |
+|Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
+|Generation of all translations           | -       | -       | Yes      | Yes**    | Yes**    |
+|Generation of minimal cost translation   | -       | -       | No       | Yes      | No       |
 
 \* Bison is claimed to be a GLR parser but I did not manage to use **ambiguous** C grammar (see speed comparison) for it
+
 \** All alternatives can be generated through the corresponding ElkHound/Gecko merge functions.
    But to generate abstract node trees for alternatives analogous to YAEP, additional non-trivial work needs to be done.
 
@@ -98,14 +99,14 @@ static void parse (void)
 }
 ```
 
-# Installing:
+## Installing
   * ``cd <srcdir>``
   * ``make``
   * ``make test`` (optional) 
   * ``make bench`` (optional) 
   * ``make install``
 
-# Speed comparison with YACC, ElkHound, YAEP, and GCC/Clang parsers:
+## Speed comparison with YACC, ElkHound, YAEP, and GCC/Clang parsers
 
 * Tested parsers:
   * Berkeley YACC 1.9
@@ -149,7 +150,7 @@ static void parse (void)
 * How to reproduce: please use `make bench`.
 * Test machine is AMD Ryzen 9900X with 64GB memory under Fedora Core 43.
 
-# Benchmark Results
+## Benchmark Results
 
 * C grammar
   * First file (**1500K** lines) consisting of 100K sieve functions:
