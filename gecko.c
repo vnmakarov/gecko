@@ -65,7 +65,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   jmp_buf error_longjump_buff; /* jump buffer for processing errors */
 
-  gp_attr_merge_func_t attr_merge; /* function for merging stack elements attributes */
+  gp_node_merge_func_t node_merge; /* function for merging stack elements attributes */
 
   int read_tokens;                     /* read tokens so far */
   int (*read_token) (void **attr);     /* function for reading tokens */
@@ -1017,7 +1017,7 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   g->symbs = symb_init (g);
   g->term_sets = term_set_init (g);
   g->rules = rule_init (g);
-  g->attr_merge = default_node_merge;
+  g->node_merge = default_node_merge;
   VLO_CREATE (g->caller_anode_names, g->alloc, 0);
   VLO_CREATE (g->temp_vlo, g->alloc, 0);
   VLO_CREATE (g->all_nodes, g->alloc, 0);
@@ -1351,9 +1351,9 @@ static void gp_parse_init (struct grammar *g) { /* initialize all internal data 
   for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
 }
 
-gp_attr_merge_func_t gp_set_node_merge_func (struct grammar *g, gp_attr_merge_func_t func) {
-  gp_attr_merge_func_t res = g->attr_merge;
-  g->attr_merge = func == NULL ? default_node_merge : func;
+gp_node_merge_func_t gp_set_node_merge_func (struct grammar *g, gp_node_merge_func_t func) {
+  gp_node_merge_func_t res = g->node_merge;
+  g->node_merge = func == NULL ? default_node_merge : func;
   return res;
 }
 
@@ -1934,8 +1934,8 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   return anode;
 }
 
-static GP_UNUSED struct gp_tree_node *get_alt_node (struct grammar *g, struct gp_tree_node *first,
-                                                    struct gp_tree_node *second) {
+struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
+                                      struct gp_tree_node *second) {
   struct gp_tree_node *node = &g->temp_node;
   node->type = GP_ALT;
   node->val.alt.first = first;
@@ -2048,7 +2048,7 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
         stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (curr2->els);
         for (int k = (int) (VLO_LENGTH (curr->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
           stack_el_t *el1 = &stack_addr1[k], *el2 = &stack_addr2[k];
-          el1->anode_attr = g->attr_merge (el1->anode_attr, el2->anode_attr);
+          el1->anode_attr = g->node_merge (el1->anode_attr, el2->anode_attr);
         }
       }
       stack_free (g, curr2);

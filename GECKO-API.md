@@ -367,11 +367,11 @@ int gp_set_recovery_match(struct grammar *grammar, int n_toks);
 
 Set how many subsequent tokens must be successfully shifted to confirm that error recovery is complete. Default is 3.
 
-#### `gp_set_attr_merge_func`
+#### `gp_set_node_merge_func`
 
 ```c
-gp_attr_merge_func_t gp_set_attr_merge_func(struct grammar *grammar,
-                                            gp_attr_merge_func_t func);
+gp_node_merge_func_t gp_set_node_merge_func(struct grammar *grammar,
+                                            gp_node_merge_func_t func);
 ```
 
 Set the parse node merge function used when merging stacks during GLR parsing. The function receives two nodes
@@ -400,6 +400,15 @@ if the grammar is found ambiguous on the input.
   A negative return value signals end of input.
 - `root` -- output: the root of the parse tree. It never returns NULL.
 - `ambiguous_p` -- output: whether the grammar was found to be ambiguous
+
+#### `gp_get_alt_node`
+
+```c
+struct gp_tree_node *get_get_alt_node (struct grammar *g, struct gp_tree_node *first, struct gp_tree_node *second);
+```
+
+Return `GP_ALT` node with given `first` and `second`.  The function can be used in node merge function if you want keep all
+possible alternative during stack merging.
 
 ### Parse Tree Operations
 

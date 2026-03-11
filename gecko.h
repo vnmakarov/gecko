@@ -178,8 +178,8 @@ extern gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_
 extern int gp_set_debug_level (struct grammar *grammar, int level);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
-typedef void *(*gp_attr_merge_func_t) (void *attr1, void *attr2);
-extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar, gp_attr_merge_func_t func);
+typedef void *(*gp_node_merge_func_t) (void *attr1, void *attr2);
+extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_node_merge_func_t func);
 
 /* Parse input according the read grammar. Returns the error code (which will be also in
    gp_error_code). If the code is zero, also put parse result into *root (it never will be NULL).
@@ -189,6 +189,11 @@ extern gp_attr_merge_func_t gp_set_attr_merge_func (struct grammar *grammar, gp_
    attribute.  If the function returns negative value we've read all tokens. */
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr), struct gp_tree_node **root,
                      bool *ambiguous_p);
+
+/* Return GP_ALT node with given FIRST and SECODN.  Use it in node merge function if you want keep all
+   possible alternative during stack merging. */
+extern struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
+                                             struct gp_tree_node *second);
 
 #ifndef NO_GP_DEBUG_PRINT
 /* Print translation of ROOT parsed for GRAMMAR. */
