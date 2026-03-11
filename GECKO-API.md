@@ -415,11 +415,7 @@ Print the translation of the parse tree rooted at `root` to file `f`. Only avail
 #### `gp_free_tree`
 
 ```c
-void gp_free_tree(struct grammar *grammar, struct gp_tree_node *root,
-                  void (*termcb)(struct gp_term *term));
+void gp_free_tree(struct grammar *grammar, struct gp_tree_node *root);
 ```
 
 Free memory allocated for the parse tree. `root` must be the root returned by `gp_parse`. If `root` is `NULL`, no operation is performed.
-
-If `termcb` is not `NULL`, it is called exactly once for each terminal node in the parse tree. The callback can be used to free
-terminal attributes. The terminal node itself must not be freed by the callback.
