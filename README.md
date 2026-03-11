@@ -217,7 +217,7 @@ static void parse (void)
   * **Garbage collection** of unreachable parse tree nodes runs periodically during parsing (mark-sweep using a bitmap,
     with adaptive threshold)
 
-## Syntax error reporting
+## Syntax error recovery
 
 * Gecko implements automatic **minimal-cost error recovery** that requires
   no grammar modifications — unlike YACC/Bison/YAEP, you don't need to add
