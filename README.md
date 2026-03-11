@@ -34,11 +34,11 @@
 
 |                                         | YACC    | Bison   | ElkHound | YAEP     | Gecko    |
 |-----------------------------------------|---------|---------|----------|----------|----------|
-|Library                                  | No      | No      | No       | No       | Yes      |
+|Library                                  | No      | No      | No       | Yes      | Yes      |
 |CFG grammar                              | LALR(1) | LALR(1)*| ambiguous| ambiguous| ambiguous|
-|Operator grammar (priority/associativity)| Yes     | Yes     | Yes      | Yes      | Yes      |
+|Operator grammar (priority/associativity)| Yes     | Yes     | Yes      | No       | Yes      |
 |Speed independence on grammar size       | Yes     | Yes     | Yes      | No       | Yes      |
-|Syntax error recovery                    | Yes     | Yes     | No       | No       | Yes      |
+|Syntax error recovery                    | Yes     | Yes     | No       | Yes      | Yes      |
 |Automatic error recovery                 | No      | No      | -        | No       | Yes      |
 |Actions                                  | Yes     | Yes     | Yes      | No       | No       |
 |Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
