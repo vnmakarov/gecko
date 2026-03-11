@@ -105,7 +105,9 @@ static void parse (void)
   * ``make test`` (optional) 
   * ``make bench`` (optional) 
   * ``make install``
-
+    * `gecko.h` && `libgecko.a` will be installed in `/usr/local/include` and `/usr/local/lib`
+    * You can change installation path `/usr/local` by using makefile arg `PREFIX`, e.g. `make PREFIX=/usr`
+    
 ## Speed comparison with YACC, ElkHound, YAEP, and GCC/Clang parsers
 
 * Tested parsers:
