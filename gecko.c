@@ -2633,6 +2633,7 @@ finish:
   *ambiguous_p = final_stack->ambigous_p;
   gc (g, &g->curr_stacks); /* free all unused nodes */
   VLO_NULLIFY (g->all_nodes);
+  empty_hash_table (g->nodes_htab);
   VLO_DELETE (g->delayed_stacks);
   VLO_DELETE (g->failed_stacks);
   stack_vlo_free (g, &g->curr_stacks);
