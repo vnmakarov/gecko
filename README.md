@@ -117,10 +117,11 @@ static void parse (void)
   * AMD Ryzen 9900X with 64GB memory under Fedora Core 43.
   * Apple M4 with 8GB memory under Fedora Core 41.
   * Intel 285K with 32GB memory under Fedora Core 42.
+  * IBM Power10 with 2TB memory under RHEL10.
 * Tested parsers:
   * Berkeley YACC 1.9
-  * GCC-15.2.1 for AMD9900X and Intel 285K and GCC-14.2.1 for Apple M4
-  * Clang-21.1.8 for AMD9900X, Clang-20.0.8 for Intel 285K, and Clang-19.1.5 for Apple M4
+  * GCC-15.2.1 for AMD9900X and Intel 285K, GCC-14.2.1 for Apple M4, and GCC-11.5.0 for Power10
+  * Clang-21.1.8 for AMD9900X, Clang-20.0.8 for Intel 285K, Clang-19.1.5 for Apple M4, Clang-20.1.8 for Power10
   * YAEP as of Oct. 2015.
   * [ElkHound](https://github.com/WeiDUorg/elkhound) as of 2019-02-17 (a GLR parser)
 * Bison is claimed to be a GLR parser but I did not manage to use **ambiguous**
@@ -163,16 +164,16 @@ static void parse (void)
 * C grammar
   * First file (**1500K** lines) consisting of 100K sieve functions:
 
-|                      | AMD9900X (sec)  | Apple M4 (sec)  | Intel 285K (sec)| Max Memory MB        |
-|----------------------|----------------:|----------------:|----------------:|---------------------:|
-|gcc -fsyntax-only     |   2.93          |   2.73          |  2.58           |   1144               |
-|gcc -O0               |  43.66          |  49.48          | 45.66           |   6200               |
-|clang -fsyntax-only   |   1.95          |   3.37          |  2.96           |    529               |
-|clang -O0             |   6.45          |  17.52          |  9.13           |   2176               |
-|YACC                  |   0.68          |   0.56          |  0.58           |    339               |
-|ElkHound              |   1.27          |   1.45          |  1.14           |    127               |
-|YAEP                  |   0.62          |   0.77          |  0.92           |   1152               |
-|Gecko                 |   0.71          |   0.69          |  0.74           |    340               |
+|                      | AMD9900X(sec) | Apple M4(sec)  | Intel 285K(sec) | Power10(sec) | Max Memory MB  |
+|----------------------|--------------:|---------------:|----------------:|-------------:|---------------:|
+|gcc -fsyntax-only     |   2.93        |   2.73         |  2.58           |  7.07        |   1144         |
+|gcc -O0               |  43.66        |  49.48         | 45.66           |112.73        |   6200         |
+|clang -fsyntax-only   |   1.95        |   3.37         |  2.96           | 15.22        |    529         |
+|clang -O0             |   6.45        |  17.52         |  9.13           | 39.07        |   2176         |
+|YACC                  |   0.68        |   0.56         |  0.58           |  1.24        |    339         |
+|ElkHound              |   1.27        |   1.45         |  1.14           |  2.75        |    127         |
+|YAEP                  |   0.62        |   0.77         |  0.92           |  1.90        |   1152         |
+|Gecko                 |   0.71        |   0.69         |  0.74           |  1.77        |    340         |
 
 
   * YAEP has very good results as it uses dynamic programming to speedup Earley's parser
@@ -181,16 +182,16 @@ static void parse (void)
       
   * Second file (~**500K** lines) -- a whole old gcc:
 
-|                      |  AMD9900X (sec) |  Apple M4 (sec) | Intel 285K (sec)| Max Memory MB        |
-|----------------------|----------------:|----------------:|----------------:|---------------------:|
-|gcc -fsyntax-only     |   0.73          |   0.97          |   0.78          |    283               |
-|gcc -O0               |   8.52          |   8.98          |   8.44          |    881               |
-|clang -fsyntax-only   |   0.69          |   1.03          |   0.94          |    223               |
-|clang -O0             |   2.08          |   4.07          |   2.78          |    470               |
-|YACC                  |   0.26          |   0.29          |   0.26          |    123               |
-|ElkHound              |   0.73          |   0.84          |   0.71          |    127               |
-|YAEP                  |   0.66          |   1.03          |   0.71          |    471               |
-|Gecko                 |   0.29          |   0.30          |   0.31          |    124               |
+|                      |  AMD9900X(sec) |  Apple M4(sec) | Intel 285K(sec)| Power10(sec)| Max Memory MB  |
+|----------------------|---------------:|---------------:|---------------:|------------:|---------------:|
+|gcc -fsyntax-only     |   0.73         |   0.97         |   0.78         |   1.81      |    283         |
+|gcc -O0               |   8.52         |   8.98         |   8.44         |  19.06      |    881         |
+|clang -fsyntax-only   |   0.69         |   1.03         |   0.94         |   4.14      |    223         |
+|clang -O0             |   2.08         |   4.07         |   2.78         |  10.49      |    470         |
+|YACC                  |   0.26         |   0.29         |   0.26         |   0.59      |    123         |
+|ElkHound              |   0.73         |   0.84         |   0.71         |   1.73      |    127         |
+|YAEP                  |   0.66         |   1.03         |   0.71         |   1.33      |    471         |
+|Gecko                 |   0.29         |   0.30         |   0.31         |   0.68      |    124         |
 
   * GCC and Clang have a slightly different test as other parsers can not take
     C extensions in the original test.
@@ -198,11 +199,11 @@ static void parse (void)
 * Highly ambiguous grammar (E=E+E|a) with abstract tree generation (only for Gecko and YAEP)
   * Input is `a(+a){200}`.  In other words, 200 operators `+` are used:
   
-|                      | AMD9900X (sec) | Apple M4 (sec) | Intel 285K (sec) |Memory (parse only) MB|
-|----------------------|---------------:|---------------:|-----------------:|---------------------:|
-|ElkHound              |  9.50          |  15.65         |  10.82           |  9.6                 |
-|YAEP                  |  5.53          |   7.67         |   5.77           |  154                 |
-|Gecko                 |  1.10          |   1.16         |   1.09           |  119                 |
+|                      | AMD9900X(sec) | Apple M4(sec) | Intel 285K(sec) | Power10(sec) |Memory (parse only) MB|
+|----------------------|--------------:|--------------:|----------------:|-------------:|---------------------:|
+|ElkHound              |  9.50         |  15.65        |  10.82          |  13.82       |  9.6                 |
+|YAEP                  |  5.53         |   7.67        |   5.77          |  13.40       |  154                 |
+|Gecko                 |  1.10         |   1.16        |   1.09          |   1.81       |  119                 |
 
 
 ## Gecko internals overview
