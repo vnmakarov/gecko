@@ -376,21 +376,6 @@ static void symb_finish_adding_terms (struct grammar *g) {
   }
 }
 
-static void symb_empty (struct grammar *g, struct symbs *symbs) { /* free memory for symbols */
-  if (symbs == NULL) return;
-  if (g->symbs->term_code_trans_vect != NULL) {
-    gp_free (g->alloc, g->symbs->term_code_trans_vect);
-    g->symbs->term_code_trans_vect = NULL;
-  }
-  empty_hash_table (symbs->repr_to_symb_tab);
-  empty_hash_table (symbs->code_to_term_tab);
-  VLO_NULLIFY (symbs->nonterms_vlo);
-  VLO_NULLIFY (symbs->terms_vlo);
-  VLO_NULLIFY (symbs->symbs_vlo);
-  OS_EMPTY (symbs->symbs_os);
-  symbs->n_nonterms = symbs->n_terms = 0;
-}
-
 static void symb_fin (struct grammar *g, struct symbs *symbs) { /* Finalize work with symbols. */
   if (symbs == NULL) return;
   if (g->symbs->term_code_trans_vect != NULL) gp_free (g->alloc, g->symbs->term_code_trans_vect);
@@ -503,13 +488,6 @@ static void term_set_print (struct grammar *g, FILE *f,
     }
 }
 #endif
-
-static void term_set_empty (struct term_sets *term_sets) { /* free memory for terminal sets */
-  if (term_sets == NULL) return;
-  VLO_NULLIFY (term_sets->tab_term_set_vlo);
-  OS_EMPTY (term_sets->term_set_os);
-  term_sets->n_term_sets = term_sets->n_term_sets_size = 0;
-}
 
 static void term_set_fin (struct grammar *g,
                           struct term_sets *term_sets) { /* finalize work with terminal sets */
@@ -678,14 +656,6 @@ static void rule_dot_print (FILE *f, struct rule *rule, int pos) {
 }
 
 #endif /* #ifndef NO_GP_DEBUG_PRINT */
-
-static void rule_empty (struct rules *rules) { /* Free memory for rules. */
-  if (rules == NULL) return;
-  VLO_NULLIFY (rules->rules_vlo);
-  OS_EMPTY (rules->rules_os);
-  rules->first_rule = rules->curr_rule = NULL;
-  rules->n_rules = rules->n_rhs_lens = 0;
-}
 
 static void rule_fin (struct grammar *g, struct rules *rules) { /* Finalize work with rules. */
   if (rules == NULL) return;
@@ -1141,19 +1111,13 @@ static void check_grammar (struct grammar *g, int strict_p) {
   create_first_follow_sets (g);
 }
 
-static void empty_grammar (struct grammar *g) { /* Make grammar empty. */
-  if (g != NULL) {
-    rule_empty (g->rules);
-    term_set_empty (g->term_sets);
-    symb_empty (g, g->symbs);
-  }
-}
-
 /* Names of additional symbols. Don't use them in grammars. */
 #define AXIOM_NAME "$S"
 #define END_MARKER_NAME "$eof"
 
 #define END_MARKER_CODE (-1) /* Should be negative. */
+
+static void empty_grammar (struct grammar *g);
 
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p,
@@ -1665,7 +1629,7 @@ static void stack_vlo_free (struct grammar *g, vlo_t *stack_vlo) {
   VLO_ADD_MEMORY (g->free_stacks, VLO_BEGIN (*stack_vlo), VLO_LENGTH (*stack_vlo));
 }
 
-static void stack_reset (struct grammar *g) {}
+static void stack_reset (struct grammar *g GP_UNUSED) {}
 
 static void stack_finish (struct grammar *g) {
   for (int i = 0; i < (int) (VLO_LENGTH (g->free_stacks) / sizeof (struct stack *)); i++) {
@@ -2651,9 +2615,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   *root = NULL;
   *ambiguous_p = false;
   int code;
-  if ((code = setjmp (g->error_longjump_buff)) != 0) {
-    return code;
-  }
+  if ((code = setjmp (g->error_longjump_buff)) != 0) return code;
   if (g->undefined_p) error (g, GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
   for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
   struct gp_tree_node *result;
@@ -2695,24 +2657,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   return ok_p ? 0 : 1; /* !!! change in the future */
 }
 
-struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
-  gp_allocator_t *allocator;
-
-  allocator = gp_alloc_new (NULL, NULL, NULL, NULL);
-  if (allocator == NULL) {
-    return NULL;
-  }
-  struct grammar *g = (struct grammar *) gp_malloc (allocator, sizeof (struct grammar));
-  if (g == NULL) {
-    gp_alloc_del (allocator);
-    return NULL;
-  }
-  g->alloc = allocator;
-  gp_alloc_seterr (allocator, error_func_for_allocate, g);
-  if (setjmp (g->error_longjump_buff) != 0) {
-    gp_fin (g);
-    return NULL;
-  }
+static void grammar_init (struct grammar *g) {
   g->undefined_p = true;
   g->error_code = 0;
   *g->error_message = '\0';
@@ -2745,44 +2690,72 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   VLO_CREATE (g->new_stacks, g->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (g->failed_stacks, g->alloc, 0);
   VLO_CREATE (g->delayed_stacks, g->alloc, 0);
+}
+
+struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
+  gp_allocator_t *allocator;
+
+  allocator = gp_alloc_new (NULL, NULL, NULL, NULL);
+  if (allocator == NULL) {
+    return NULL;
+  }
+  struct grammar *g = (struct grammar *) gp_malloc (allocator, sizeof (struct grammar));
+  if (g == NULL) {
+    gp_alloc_del (allocator);
+    return NULL;
+  }
+  g->alloc = allocator;
+  gp_alloc_seterr (allocator, error_func_for_allocate, g);
+  if (setjmp (g->error_longjump_buff) != 0) return NULL;
+  grammar_init (g);
   return g;
+}
+
+static void grammar_finish (struct grammar *g) { /* Free memory allocated for the grammar data */
+  gp_allocator_t *allocator = g->alloc;
+  bitmap_destroy (&g->marked_nodes);
+  int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
+  for (int i = 0; i < nodes_num; i++) {  // exists in case of an error
+    struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
+    g->parse_free (node);
+  }
+  VLO_DELETE (g->all_nodes);
+  VLO_DELETE (g->temp_vlo);
+  for (int i = 0; i < (int) (VLO_LENGTH (g->caller_anode_names) / sizeof (char *)); i++) {
+    char *name = ((char **) VLO_BEGIN (g->caller_anode_names))[i];
+    gp_free (allocator, name);
+  }
+  VLO_DELETE (g->caller_anode_names);
+  rule_fin (g, g->rules);
+  term_set_fin (g, g->term_sets);
+  symb_fin (g, g->symbs);
+  set_fin (g);
+  sit_fin (g);
+  VLO_DELETE (g->symb_sits);
+  VLO_DELETE (g->actions_vlo);
+  VLO_DELETE (g->temp_nodes_vlo);
+  VLO_DELETE (g->delayed_stacks);
+  VLO_DELETE (g->failed_stacks);
+  stack_vlo_free (g, &g->curr_stacks);
+  VLO_DELETE (g->new_stacks);
+  VLO_DELETE (g->curr_stacks);
+  stack_finish (g);
+  token_buff_finish (g);
+  tree_nodes_finish (g);
 }
 
 void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
+    grammar_finish (g);
     gp_allocator_t *allocator = g->alloc;
-    bitmap_destroy (&g->marked_nodes);
-    int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
-    for (int i = 0; i < nodes_num; i++) {  // exists in case of an error
-      struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
-      g->parse_free (node);
-    }
-    VLO_DELETE (g->all_nodes);
-    VLO_DELETE (g->temp_vlo);
-    for (int i = 0; i < (int) (VLO_LENGTH (g->caller_anode_names) / sizeof (char *)); i++) {
-      char *name = ((char **) VLO_BEGIN (g->caller_anode_names))[i];
-      gp_free (allocator, name);
-    }
-    VLO_DELETE (g->caller_anode_names);
-    rule_fin (g, g->rules);
-    term_set_fin (g, g->term_sets);
-    symb_fin (g, g->symbs);
-    set_fin (g);
-    sit_fin (g);
-    VLO_DELETE (g->symb_sits);
-    VLO_DELETE (g->actions_vlo);
-    VLO_DELETE (g->temp_nodes_vlo);
-    VLO_DELETE (g->delayed_stacks);
-    VLO_DELETE (g->failed_stacks);
-    stack_vlo_free (g, &g->curr_stacks);
-    VLO_DELETE (g->new_stacks);
-    VLO_DELETE (g->curr_stacks);
-    stack_finish (g);
-    token_buff_finish (g);
-    tree_nodes_finish (g);
     gp_free (allocator, g);
     gp_alloc_del (allocator);
   }
+}
+
+static void empty_grammar (struct grammar *g) { /* Make grammar empty. */
+  grammar_finish (g);
+  grammar_init (g);
 }
 
 static void free_tree_reduce (struct gp_tree_node *node) {
@@ -3002,6 +2975,10 @@ static void use_description (int argc, char **argv, int (*read_fn) (void **)) {
     gp_set_debug_level (g, 3);
   if (gp_parse_grammar (g, true, description) != 0) {
     fprintf (stderr, "%s\n", gp_error_message (g));
+    exit (1);
+  }
+  if (gp_parse_grammar (g, true, description) != 0) {
+    fprintf (stderr, "2nd grammar read%s\n", gp_error_message (g));
     exit (1);
   }
   ntok = 0;
