@@ -155,7 +155,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 };
 
 /* Forward decrlarations: */
-static void gp_error (struct grammar *g, int code, const char *format, ...);
+static void error (struct grammar *g, int code, const char *format, ...);
 
 /* The default number of tokens sucessfully matched to stop error recovery alternative (state). */
 #define DEFAULT_RECOVERY_TOKEN_MATCHES 3
@@ -258,7 +258,7 @@ static FORCE_INLINE struct symb *term_find_by_code (struct grammar *g, int code)
   assert (symbs->term_code_trans_vect != NULL);
   if (code < symbs->term_code_trans_vect_start || code >= symbs->term_code_trans_vect_end
       || (symb = symbs->term_code_trans_vect[code - symbs->term_code_trans_vect_start]) == NULL) {
-    gp_error (g, GP_INVALID_TOKEN_CODE, "invalid token code %d", code);
+    error (g, GP_INVALID_TOKEN_CODE, "invalid token code %d", code);
     return NULL;
   }
   return symb;
@@ -363,7 +363,7 @@ static void symb_finish_adding_terms (struct grammar *g) {
   }
   assert (i != 0);
   if (max_code - min_code >= TERM_CODE_TRANS_VECT_SIZE) {
-    gp_error (g, GP_TOO_WIDE_TERM_RANGE_CODE, "term code range is more %d", TERM_CODE_TRANS_VECT_SIZE);
+    error (g, GP_TOO_WIDE_TERM_RANGE_CODE, "term code range is more %d", TERM_CODE_TRANS_VECT_SIZE);
   } else {
     g->symbs->term_code_trans_vect_start = min_code;
     g->symbs->term_code_trans_vect_end = max_code + 1;
@@ -951,7 +951,7 @@ static void set_fin (struct grammar *g) { /* finalize work with sets: */
 }
 
 /* Store error CODE and message. The function makes long jump after that. */
-static void gp_error (struct grammar *g, int code, const char *format, ...) {
+static void error (struct grammar *g, int code, const char *format, ...) {
   va_list arguments;
 
   g->error_code = code;
@@ -963,7 +963,7 @@ static void gp_error (struct grammar *g, int code, const char *format, ...) {
 }
 
 static void error_func_for_allocate (void *g) { /* Process allocation errors. */
-  gp_error (g, GP_NO_MEMORY, "no memory");
+  error (g, GP_NO_MEMORY, "no memory");
 }
 
 static void *default_node_merge (void *node1, void *node2 GP_UNUSED) { return node1; }
@@ -1174,15 +1174,15 @@ static void check_grammar (struct grammar *g, int strict_p) {
   if (strict_p) {
     for (int i = 0; (symb = nonterm_get (g, i)) != NULL; i++) {
       if (!symb->derivation_p)
-        gp_error (g, GP_NONTERM_DERIVATION, "nonterm `%s' does not derive any term string", symb->repr);
+        error (g, GP_NONTERM_DERIVATION, "nonterm `%s' does not derive any term string", symb->repr);
       else if (!symb->access_p)
-        gp_error (g, GP_UNACCESSIBLE_NONTERM, "nonterm `%s' is not accessible from axiom", symb->repr);
+        error (g, GP_UNACCESSIBLE_NONTERM, "nonterm `%s' is not accessible from axiom", symb->repr);
     }
   } else if (!g->axiom->derivation_p)
-    gp_error (g, GP_NONTERM_DERIVATION, "nonterm `%s' does not derive any term string", g->axiom->repr);
+    error (g, GP_NONTERM_DERIVATION, "nonterm `%s' does not derive any term string", g->axiom->repr);
   for (int i = 0; (symb = nonterm_get (g, i)) != NULL; i++)
     if (symb->u.nonterm.loop_p)
-      gp_error (g, GP_LOOP_NONTERM, "nonterm `%s' can derive only itself (grammar with loops)", symb->repr);
+      error (g, GP_LOOP_NONTERM, "nonterm `%s' can derive only itself (grammar with loops)", symb->repr);
   /* We should have correct flags empty_p here. */
   create_first_follow_sets (g);
 }
@@ -1206,13 +1206,13 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   int priority;
   enum gp_assoc assoc;
   while ((name = (*read_terminal) (&code, &priority, &assoc)) != NULL) {
-    if (code < 0) gp_error (g, GP_NEGATIVE_TERM_CODE, "term `%s' has negative code", name);
+    if (code < 0) error (g, GP_NEGATIVE_TERM_CODE, "term `%s' has negative code", name);
     if (assoc != GP_NON_ASSOC && assoc != GP_LEFT_ASSOC && assoc != GP_RIGHT_ASSOC)
-      gp_error (g, GP_WRONG_TERM_ASSOC, "term `%s' has wrong associativity %d", name, assoc);
+      error (g, GP_WRONG_TERM_ASSOC, "term `%s' has wrong associativity %d", name, assoc);
     symb = symb_find_by_repr (g, name);
-    if (symb != NULL) gp_error (g, GP_REPEATED_TERM_DECL, "repeated declaration of term `%s'", name);
+    if (symb != NULL) error (g, GP_REPEATED_TERM_DECL, "repeated declaration of term `%s'", name);
     if (term_tab_find_by_code (g, code) != NULL)
-      gp_error (g, GP_REPEATED_TERM_CODE, "repeated code %d in term `%s'", code, name);
+      error (g, GP_REPEATED_TERM_CODE, "repeated code %d in term `%s'", code, name);
     symb_add_term (g, name, code, priority, assoc);
   }
   g->axiom = g->end_marker = NULL;
@@ -1225,19 +1225,19 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
     if (symb == NULL)
       symb = symb_add_nonterm (g, lhs);
     else if (symb->term_p)
-      gp_error (g, GP_TERM_IN_RULE_LHS, "term `%s' in the left hand side of rule", lhs);
+      error (g, GP_TERM_IN_RULE_LHS, "term `%s' in the left hand side of rule", lhs);
     if (anode == NULL && transl != NULL && *transl >= 0 && transl[1] >= 0)
-      gp_error (g, GP_INCORRECT_TRANSLATION, "rule for `%s' has incorrect translation", lhs);
+      error (g, GP_INCORRECT_TRANSLATION, "rule for `%s' has incorrect translation", lhs);
     if (g->axiom == NULL) {
       /* We made this here becuase we want that the start rule has number 0. */
       /* Add axiom and end marker. */
       start = symb;
       g->axiom = symb_find_by_repr (g, AXIOM_NAME);
-      if (g->axiom != NULL) gp_error (g, GP_FIXED_NAME_USAGE, "do not use fixed name `%s'", AXIOM_NAME);
+      if (g->axiom != NULL) error (g, GP_FIXED_NAME_USAGE, "do not use fixed name `%s'", AXIOM_NAME);
       g->axiom = symb_add_nonterm (g, AXIOM_NAME);
       g->end_marker = symb_find_by_repr (g, END_MARKER_NAME);
       if (g->end_marker != NULL)
-        gp_error (g, GP_FIXED_NAME_USAGE, "do not use fixed name `%s'", END_MARKER_NAME);
+        error (g, GP_FIXED_NAME_USAGE, "do not use fixed name `%s'", END_MARKER_NAME);
       if (term_tab_find_by_code (g, END_MARKER_CODE) != NULL) abort ();
       g->end_marker = symb_add_term (g, END_MARKER_NAME, END_MARKER_CODE, -1, GP_NON_ASSOC);
       /* Add rules for start */
@@ -1261,13 +1261,13 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
       for (i = 0; (el = transl[i]) >= 0; i++)
         if (el >= rule->rhs_len) {
           if (el != GP_NIL_TRANSLATION_NUMBER)
-            gp_error (g, GP_INCORRECT_SYMBOL_NUMBER,
-                      "translation symbol number %d in rule for `%s' is out of range", el, lhs);
+            error (g, GP_INCORRECT_SYMBOL_NUMBER,
+                   "translation symbol number %d in rule for `%s' is out of range", el, lhs);
           else
             rule->trans_len++;
         } else if (rule->order[el] >= 0)
-          gp_error (g, GP_REPEATED_SYMBOL_NUMBER, "repeated translation symbol number %d in rule for `%s'",
-                    el, lhs);
+          error (g, GP_REPEATED_SYMBOL_NUMBER, "repeated translation symbol number %d in rule for `%s'", el,
+                 lhs);
         else {
           rule->order[el] = i;
           rule->trans_len++;
@@ -1275,7 +1275,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
       assert (i < rule->rhs_len || transl[i] < 0);
     }
   }
-  if (g->axiom == NULL) gp_error (g, GP_NO_RULES, "grammar does not contains rules");
+  if (g->axiom == NULL) error (g, GP_NO_RULES, "grammar does not contains rules");
   assert (start != NULL);
   check_grammar (g, strict_p);
   symb_finish_adding_terms (g);
@@ -1311,7 +1311,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
 
 gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_alloc_func_t fn) {
   assert (g != NULL);
-  if (fn == NULL) gp_error (g, GP_WRONG_ARG, "null parse_alloc func");
+  if (fn == NULL) error (g, GP_WRONG_ARG, "null parse_alloc func");
   gp_parse_alloc_func_t old = g->parse_alloc;
   g->parse_alloc = fn;
   return old;
@@ -2708,7 +2708,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
     if (parse_init_p) gp_parse_fin (g);
     return code;
   }
-  if (g->undefined_p) gp_error (g, GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
+  if (g->undefined_p) error (g, GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
   gp_parse_init (g);
   parse_init_p = true;
   struct gp_tree_node *result;

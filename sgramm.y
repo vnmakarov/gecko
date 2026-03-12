@@ -319,7 +319,7 @@ int yylex (void *g) {
 
 /* The following implements syntactic error diagnostic function yacc code. */
 int yyerror (void *g, const char *str GP_UNUSED) {
-  gp_error (g, GP_DESCRIPTION_SYNTAX_ERROR_CODE, "description syntax error on ln %d", ln);
+  error (g, GP_DESCRIPTION_SYNTAX_ERROR_CODE, "description syntax error on ln %d", ln);
   return 0;
 }
 
@@ -406,7 +406,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
 
       strncpy (str, prev->repr, sizeof (str));
       str[sizeof (str) - 1] = '\0';
-      gp_error (g,GP_REPEATED_TERM_CODE, "term %s described repeatedly with different code", str);
+      error (g, GP_REPEATED_TERM_CODE, "term %s described repeatedly with different code", str);
     } else if (prev->code != -1)
       prev->code = term->code;
   }
@@ -418,7 +418,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
     struct sassoc *assoc = ((struct sassoc **)VLO_BEGIN (assocs))[i];
     assoc->used_p = false;
     if (find_assoc (assoc->repr) != NULL) {
-      gp_error (g,GP_REPEATED_TERM_ASSOC, "term %s is repeteadly described in an associtivity clause", assoc->repr);
+      error (g, GP_REPEATED_TERM_ASSOC, "term %s is repeteadly described in an associtivity clause", assoc->repr);
     } else {
       insert_assoc (assoc);
     }
@@ -436,7 +436,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   for (i = 0; i < (int) (VLO_LENGTH (assocs) / sizeof (struct sassoc *)); i++) {
     struct sassoc *assoc = ((struct sassoc **) VLO_BEGIN (assocs))[i];
     if (!assoc->used_p)
-      gp_error (g,GP_UNDEFINED_TERM_ASSOC, "term %s described in associtivity clause is not defined", assoc->repr);
+      error (g, GP_UNDEFINED_TERM_ASSOC, "term %s described in associtivity clause is not defined", assoc->repr);
   }
   nsterm = nsrule = 0;
   return 0;
