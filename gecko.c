@@ -2620,21 +2620,19 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   }
 finish:
   bool res = false;
-  if (VLO_LENGTH (g->curr_stacks) == sizeof (struct stack *)) {
-    struct stack *stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
-    struct set *set = stack_get_top_set (stack);
-    struct symb *symb = set->symb;
-    if (strcmp (symb->repr, END_MARKER_NAME) == 0) {
-      assert (VLO_LENGTH (stack->els) == 3 * sizeof (stack_el_t));
-      stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[1];
-      assert (!el->attr_p);
-      *transl = (struct gp_tree_node *) el->anode_attr;
-      res = true;
-      *ambiguous_p = stack->ambigous_p;
-      gc (g, &g->curr_stacks); /* free all unused nodes */
-      VLO_NULLIFY (g->all_nodes);
-    }
-  }
+  assert (VLO_LENGTH (g->curr_stacks) == sizeof (struct stack *));
+  struct stack *final_stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
+  struct set *set = stack_get_top_set (final_stack);
+  struct symb *symb = set->symb;
+  assert (strcmp (symb->repr, END_MARKER_NAME) == 0);
+  assert (VLO_LENGTH (final_stack->els) == 3 * sizeof (stack_el_t));
+  stack_el_t *el = &((stack_el_t *) VLO_BEGIN (final_stack->els))[1];
+  assert (!el->attr_p);
+  *transl = (struct gp_tree_node *) el->anode_attr;
+  res = true;
+  *ambiguous_p = final_stack->ambigous_p;
+  gc (g, &g->curr_stacks); /* free all unused nodes */
+  VLO_NULLIFY (g->all_nodes);
   VLO_DELETE (g->delayed_stacks);
   VLO_DELETE (g->failed_stacks);
   stack_vlo_free (g, &g->curr_stacks);
