@@ -2588,7 +2588,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
       single_stack = recovery (g, code, attr, one_stack_p);
       code = token_buff_get (g, g->curr_buff_token_ind - 1, &attr); /* last read token */
     }
-    if (VLO_LENGTH (g->new_stacks) == 0) break;
+    assert (VLO_LENGTH (g->new_stacks) != 0);
     vlo_t temp_vlo;
     SWAP (g->curr_stacks, g->new_stacks, temp_vlo);
     if (merge_stacks (g, &g->curr_stacks)) {
