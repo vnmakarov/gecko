@@ -987,57 +987,6 @@ static void syntax_error_default (const char *err_tok_repr, void *err_tok_attr G
     fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
 }
 
-struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
-  gp_allocator_t *allocator;
-
-  allocator = gp_alloc_new (NULL, NULL, NULL, NULL);
-  if (allocator == NULL) {
-    return NULL;
-  }
-  struct grammar *g = (struct grammar *) gp_malloc (allocator, sizeof (struct grammar));
-  if (g == NULL) {
-    gp_alloc_del (allocator);
-    return NULL;
-  }
-  g->alloc = allocator;
-  gp_alloc_seterr (allocator, error_func_for_allocate, g);
-  if (setjmp (g->error_longjump_buff) != 0) {
-    gp_fin (g);
-    return NULL;
-  }
-  g->undefined_p = true;
-  g->error_code = 0;
-  *g->error_message = '\0';
-  g->parse_alloc = parse_alloc_default;
-  g->parse_free = parse_free_default;
-  g->syntax_error = syntax_error_default;
-  g->debug_level = 0;
-  g->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
-  g->symbs = NULL;
-  g->term_sets = NULL;
-  g->rules = NULL;
-  g->symbs = symb_init (g);
-  g->term_sets = term_set_init (g);
-  g->rules = rule_init (g);
-  g->node_merge = default_node_merge;
-  VLO_CREATE (g->caller_anode_names, g->alloc, 0);
-  VLO_CREATE (g->temp_vlo, g->alloc, 0);
-  VLO_CREATE (g->all_nodes, g->alloc, 0);
-  bitmap_create (&g->marked_nodes, g->alloc);
-  sit_init (g);
-  set_init (g);
-  g->start_set = NULL;
-  return g;
-}
-
-static void gp_empty_grammar (struct grammar *g) { /* Make grammar empty. */
-  if (g != NULL) {
-    rule_empty (g->rules);
-    term_set_empty (g->term_sets);
-    symb_empty (g, g->symbs);
-  }
-}
-
 int gp_error_code (struct grammar *g) { /* Return the last occurred error code for given grammar. */
   assert (g != NULL);
   return g->error_code;
@@ -1192,6 +1141,14 @@ static void check_grammar (struct grammar *g, int strict_p) {
   create_first_follow_sets (g);
 }
 
+static void empty_grammar (struct grammar *g) { /* Make grammar empty. */
+  if (g != NULL) {
+    rule_empty (g->rules);
+    term_set_empty (g->term_sets);
+    symb_empty (g, g->symbs);
+  }
+}
+
 /* Names of additional symbols. Don't use them in grammars. */
 #define AXIOM_NAME "$S"
 #define END_MARKER_NAME "$eof"
@@ -1206,7 +1163,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   assert (g != NULL);
   int code;
   if ((code = setjmp (g->error_longjump_buff)) != 0) return code;
-  if (!g->undefined_p) gp_empty_grammar (g);
+  if (!g->undefined_p) empty_grammar (g);
   const char *name;
   int priority;
   enum gp_assoc assoc;
@@ -1629,6 +1586,8 @@ static void tree_nodes_init (struct grammar *g) {
   g->nodes_htab = create_hash_table (g->alloc, 300, node_hash, node_eq_p);
 }
 
+static void tree_nodes_reset (struct grammar *g) { empty_hash_table (g->nodes_htab); }
+
 static void tree_nodes_finish (struct grammar *g) { delete_htab_update_statistics (g, g->nodes_htab); }
 
 #define SWAP(a, b, t) \
@@ -1705,6 +1664,8 @@ static void stack_init (struct grammar *g) {
 static void stack_vlo_free (struct grammar *g, vlo_t *stack_vlo) {
   VLO_ADD_MEMORY (g->free_stacks, VLO_BEGIN (*stack_vlo), VLO_LENGTH (*stack_vlo));
 }
+
+static void stack_reset (struct grammar *g) {}
 
 static void stack_finish (struct grammar *g) {
   for (int i = 0; i < (int) (VLO_LENGTH (g->free_stacks) / sizeof (struct stack *)); i++) {
@@ -1840,6 +1801,11 @@ static void token_buff_print (struct grammar *g, FILE *f) {
 static void token_buff_init (struct grammar *g) {
   g->curr_buff_token_ind = 0;
   VLO_CREATE (g->token_buff, g->alloc, 0);
+}
+
+static void token_buff_reset (struct grammar *g) {
+  g->curr_buff_token_ind = 0;
+  VLO_NULLIFY (g->token_buff);
 }
 
 static void token_buff_finish (struct grammar *g) { VLO_DELETE (g->token_buff); }
@@ -2494,17 +2460,10 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   g->empty_node->type = GP_NIL;
   g->empty_node->num = g->n_parse_nodes++;
   VLO_ADD_MEMORY (g->all_nodes, &g->empty_node, sizeof (struct parse_tree_node *));
-  VLO_CREATE (g->symb_sits, g->alloc, 16);
-  VLO_CREATE (g->actions_vlo, g->alloc, 16);
-  VLO_CREATE (g->temp_nodes_vlo, g->alloc, 16);
-  stack_init (g);
-  token_buff_init (g);
-  tree_nodes_init (g);
   if (g->start_set == NULL) g->start_set = build_sets (g);
   struct stack *single_stack = stack_create (g, NULL);
+  VLO_ADD_MEMORY (g->curr_stacks, &single_stack, sizeof (single_stack));
   push_init_set (g, single_stack, g->start_set);
-  VLO_CREATE (g->curr_stacks, g->alloc, 2 * sizeof (vlo_t));
-  VLO_CREATE (g->new_stacks, g->alloc, 2 * sizeof (vlo_t));
   g->toks_num = 0;
   g->n_parse_term_nodes = g->n_parse_abstract_nodes = g->n_parse_alt_nodes = 0;
 #ifndef NO_GP_DEBUG_PRINT
@@ -2520,8 +2479,6 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
 #endif
   bool one_stack_p;
   long gc_nodes_threshold = GC_START_NODES_THRESHOLD;
-  VLO_CREATE (g->failed_stacks, g->alloc, 0);
-  VLO_CREATE (g->delayed_stacks, g->alloc, 0);
   for (;;) {
     if (single_stack != NULL) {
       stack_el_t *el = &((stack_el_t *) VLO_BOUND (single_stack->els))[-1];
@@ -2530,9 +2487,8 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
         int actions_num;
         struct action *actions = set_get_actions (g, set, term, &actions_num);
         if (actions_num != 1) {
-          VLO_ADD_MEMORY (g->curr_stacks, &single_stack, sizeof (single_stack));
-          one_stack_p = actions_num == 0;
           single_stack = NULL;
+          one_stack_p = actions_num == 0;
           goto multi_stack;
         }
 #ifndef NO_GP_DEBUG_PRINT
@@ -2551,7 +2507,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
           if (UNLIKELY (g->debug_level > 4)) print_single_stack (g, stderr, single_stack, &actions[0]);
 #endif
           if (code == END_MARKER_CODE) {
-            VLO_ADD_MEMORY (g->curr_stacks, &single_stack, sizeof (single_stack));
+            single_stack = NULL;
             goto finish;
           }
           code = token_read (g, &attr);
@@ -2597,7 +2553,6 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
     if (VLO_LENGTH (g->curr_stacks) == sizeof (struct stack *)) {
       if (code == END_MARKER_CODE) break;
       single_stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
-      VLO_NULLIFY (g->curr_stacks);
     }
     if (g->parse_free != NULL && (long) VLO_LENGTH (g->all_nodes) >= gc_nodes_threshold) {
       gc (g, &g->curr_stacks);
@@ -2626,18 +2581,14 @@ finish:
   *ambiguous_p = final_stack->ambigous_p;
   gc (g, &g->curr_stacks); /* free all unused nodes */
   VLO_NULLIFY (g->all_nodes);
-  empty_hash_table (g->nodes_htab);
-  VLO_DELETE (g->delayed_stacks);
-  VLO_DELETE (g->failed_stacks);
+  VLO_NULLIFY (g->delayed_stacks);
+  VLO_NULLIFY (g->failed_stacks);
   stack_vlo_free (g, &g->curr_stacks);
-  VLO_DELETE (g->new_stacks);
-  VLO_DELETE (g->curr_stacks);
-  VLO_DELETE (g->symb_sits);
-  VLO_DELETE (g->actions_vlo);
-  VLO_DELETE (g->temp_nodes_vlo);
-  stack_finish (g);
-  token_buff_finish (g);
-  tree_nodes_finish (g);
+  VLO_NULLIFY (g->new_stacks);
+  VLO_NULLIFY (g->curr_stacks);
+  stack_reset (g);
+  token_buff_reset (g);
+  tree_nodes_reset (g);
   return res;
 }
 
@@ -2700,7 +2651,9 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   *root = NULL;
   *ambiguous_p = false;
   int code;
-  if ((code = setjmp (g->error_longjump_buff)) != 0) return code;
+  if ((code = setjmp (g->error_longjump_buff)) != 0) {
+    return code;
+  }
   if (g->undefined_p) error (g, GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
   for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
   struct gp_tree_node *result;
@@ -2742,10 +2695,68 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   return ok_p ? 0 : 1; /* !!! change in the future */
 }
 
+struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
+  gp_allocator_t *allocator;
+
+  allocator = gp_alloc_new (NULL, NULL, NULL, NULL);
+  if (allocator == NULL) {
+    return NULL;
+  }
+  struct grammar *g = (struct grammar *) gp_malloc (allocator, sizeof (struct grammar));
+  if (g == NULL) {
+    gp_alloc_del (allocator);
+    return NULL;
+  }
+  g->alloc = allocator;
+  gp_alloc_seterr (allocator, error_func_for_allocate, g);
+  if (setjmp (g->error_longjump_buff) != 0) {
+    gp_fin (g);
+    return NULL;
+  }
+  g->undefined_p = true;
+  g->error_code = 0;
+  *g->error_message = '\0';
+  g->parse_alloc = parse_alloc_default;
+  g->parse_free = parse_free_default;
+  g->syntax_error = syntax_error_default;
+  g->debug_level = 0;
+  g->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
+  g->symbs = NULL;
+  g->term_sets = NULL;
+  g->rules = NULL;
+  g->symbs = symb_init (g);
+  g->term_sets = term_set_init (g);
+  g->rules = rule_init (g);
+  g->node_merge = default_node_merge;
+  VLO_CREATE (g->caller_anode_names, g->alloc, 0);
+  VLO_CREATE (g->temp_vlo, g->alloc, 0);
+  VLO_CREATE (g->all_nodes, g->alloc, 0);
+  bitmap_create (&g->marked_nodes, g->alloc);
+  sit_init (g);
+  set_init (g);
+  VLO_CREATE (g->symb_sits, g->alloc, 16);
+  VLO_CREATE (g->actions_vlo, g->alloc, 16);
+  VLO_CREATE (g->temp_nodes_vlo, g->alloc, 16);
+  g->start_set = NULL;
+  stack_init (g);
+  token_buff_init (g);
+  tree_nodes_init (g);
+  VLO_CREATE (g->curr_stacks, g->alloc, 2 * sizeof (vlo_t));
+  VLO_CREATE (g->new_stacks, g->alloc, 2 * sizeof (vlo_t));
+  VLO_CREATE (g->failed_stacks, g->alloc, 0);
+  VLO_CREATE (g->delayed_stacks, g->alloc, 0);
+  return g;
+}
+
 void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
     gp_allocator_t *allocator = g->alloc;
     bitmap_destroy (&g->marked_nodes);
+    int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
+    for (int i = 0; i < nodes_num; i++) {  // exists in case of an error
+      struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
+      g->parse_free (node);
+    }
     VLO_DELETE (g->all_nodes);
     VLO_DELETE (g->temp_vlo);
     for (int i = 0; i < (int) (VLO_LENGTH (g->caller_anode_names) / sizeof (char *)); i++) {
@@ -2758,6 +2769,17 @@ void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
     symb_fin (g, g->symbs);
     set_fin (g);
     sit_fin (g);
+    VLO_DELETE (g->symb_sits);
+    VLO_DELETE (g->actions_vlo);
+    VLO_DELETE (g->temp_nodes_vlo);
+    VLO_DELETE (g->delayed_stacks);
+    VLO_DELETE (g->failed_stacks);
+    stack_vlo_free (g, &g->curr_stacks);
+    VLO_DELETE (g->new_stacks);
+    VLO_DELETE (g->curr_stacks);
+    stack_finish (g);
+    token_buff_finish (g);
+    tree_nodes_finish (g);
     gp_free (allocator, g);
     gp_alloc_del (allocator);
   }
@@ -2904,8 +2926,6 @@ static int ntok; /* the current number of next input token */
 /* The function imported by Gecko (see comments in the interface file). */
 static int test_read_token (void **attr) {
   const char input[] = "a+a*(a*a+a)";
-  // const char input[] = "a+a**(a*a+a)";
-  //  const char input[] = "a+a*";
   ntok++;
   *attr = NULL;
   if ((size_t) ntok < sizeof (input)) return input[ntok - 1];
@@ -2944,6 +2964,15 @@ static void use_functions (int argc, char **argv) {
   gp_fin (g);
 }
 
+/* The function imported by Gecko (see comments in the interface file). */
+static int test_read_wrong_token (void **attr) {
+  const char input[] = "b";
+  ntok++;
+  *attr = NULL;
+  if ((size_t) ntok < sizeof (input)) return input[ntok - 1];
+  return -1;
+}
+
 static const char *description
   = "\n"
     "TERM;\n"
@@ -2957,7 +2986,7 @@ static const char *description
     "  | '(' E ')' # 1\n"
     "  ;\n";
 
-static void use_description (int argc, char **argv) {
+static void use_description (int argc, char **argv, int (*read_fn) (void **)) {
   struct grammar *g;
   struct gp_tree_node *root1, *root2;
   bool ambiguous_p;
@@ -2976,22 +3005,26 @@ static void use_description (int argc, char **argv) {
     exit (1);
   }
   ntok = 0;
-  if (gp_parse (g, test_read_token, &root1, &ambiguous_p) != 0)
+  if (gp_parse (g, read_fn, &root1, &ambiguous_p) != 0) {
     fprintf (stderr, "gecko parse1: %s\n", gp_error_message (g));
-  ntok = 0;
-  gp_set_debug_level (g, 0);
-  if (gp_parse (g, test_read_token, &root2, &ambiguous_p) != 0)
-    fprintf (stderr, "gecko parse2: %s\n", gp_error_message (g));
-  gp_free_tree (g, root1);
-  gp_free_tree (g, root2);
+  } else {
+    ntok = 0;
+    gp_set_debug_level (g, 0);
+    if (gp_parse (g, read_fn, &root2, &ambiguous_p) != 0)
+      fprintf (stderr, "gecko parse2: %s\n", gp_error_message (g));
+    gp_free_tree (g, root2);
+    gp_free_tree (g, root1);
+  }
   gp_fin (g);
 }
 
 int main (int argc, char **argv) {
-  if (argc <= 1 || atoi (argv[1]))
-    use_description (argc, argv);
-  else
+  if (argc <= 1 || atoi (argv[1]) == 1)
+    use_description (argc, argv, test_read_token);
+  else if (atoi (argv[1]) == 0)
     use_functions (argc, argv);
+  else if (atoi (argv[1]) == 2)
+    use_description (argc, argv, test_read_wrong_token);
   exit (0);
 }
 
