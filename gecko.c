@@ -2460,7 +2460,7 @@ static void gc (struct grammar *g, vlo_t *stacks) {
         }
       }
 #endif
-      remove_element_from_hash_table_entry (g->nodes_htab, node);
+      if (node != g->empty_node) remove_element_from_hash_table_entry (g->nodes_htab, node);
       g->parse_free (node);
     }
   }
@@ -2475,9 +2475,11 @@ static void gc (struct grammar *g, vlo_t *stacks) {
     g->nodes_htab = create_hash_table (g->alloc, 3 * last / 2, node_hash, node_eq_p);
     for (int i = 0; i < last; i++) {
       struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
-      hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
-      assert (*entry == NULL);
-      *entry = node;
+      if (node != g->empty_node) {
+        hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
+        assert (*entry == NULL);
+        *entry = node;
+      }
     }
   }
 #ifndef NO_GP_DEBUG_PRINT
@@ -2498,6 +2500,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   g->empty_node = (struct gp_tree_node *) g->parse_alloc (sizeof (struct gp_tree_node));
   g->empty_node->type = GP_NIL;
   g->empty_node->num = g->n_parse_nodes++;
+  VLO_ADD_MEMORY (g->all_nodes, &g->empty_node, sizeof (struct parse_tree_node *));
   VLO_CREATE (g->symb_sits, g->alloc, 16);
   VLO_CREATE (g->actions_vlo, g->alloc, 16);
   VLO_CREATE (g->temp_nodes_vlo, g->alloc, 16);
@@ -2628,6 +2631,8 @@ finish:
       *transl = (struct gp_tree_node *) el->anode_attr;
       res = true;
       *ambiguous_p = stack->ambigous_p;
+      gc (g, &g->curr_stacks); /* free all unused nodes */
+      VLO_NULLIFY (g->all_nodes);
     }
   }
   VLO_DELETE (g->delayed_stacks);
@@ -2753,7 +2758,6 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
 
 void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
   if (g != NULL) {
-    g->parse_free (g->empty_node);
     gp_allocator_t *allocator = g->alloc;
     bitmap_destroy (&g->marked_nodes);
     VLO_DELETE (g->all_nodes);
@@ -2808,7 +2812,7 @@ static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node) {
   assert (node->type & GP_VISITED);
   enum gp_tree_node_type type = (enum gp_tree_node_type) (node->type & ~GP_VISITED);
   switch (type) {
-  case GP_NIL: return; /* we don't free empty node yet */
+  case GP_NIL:
   case GP_TERM: break;
   case GP_ANODE:
     for (int i = 0; i < node->val.anode.children_num; i++)
@@ -2923,7 +2927,7 @@ static int test_read_token (void **attr) {
 /* The following two functions calls Gecko with two different ways of forming grammars. */
 static void use_functions (int argc, char **argv) {
   struct grammar *g;
-  struct gp_tree_node *root;
+  struct gp_tree_node *root1, *root2;
   bool ambiguous_p;
 
   nterm = nrule = 0;
@@ -2941,9 +2945,14 @@ static void use_functions (int argc, char **argv) {
     exit (1);
   }
   ntok = 0;
-  if (gp_parse (g, test_read_token, &root, &ambiguous_p))
-    fprintf (stderr, "gecko: %s\n", gp_error_message (g));
-  gp_free_tree (g, root);
+  if (gp_parse (g, test_read_token, &root1, &ambiguous_p))
+    fprintf (stderr, "gecko parse1: %s\n", gp_error_message (g));
+  ntok = 0;
+  gp_set_debug_level (g, 0);
+  if (gp_parse (g, test_read_token, &root2, &ambiguous_p))
+    fprintf (stderr, "gecko parse2: %s\n", gp_error_message (g));
+  gp_free_tree (g, root1);
+  gp_free_tree (g, root2);
   gp_fin (g);
 }
 
@@ -2962,7 +2971,7 @@ static const char *description
 
 static void use_description (int argc, char **argv) {
   struct grammar *g;
-  struct gp_tree_node *root;
+  struct gp_tree_node *root1, *root2;
   bool ambiguous_p;
 
   fprintf (stderr, "Use description\n");
@@ -2978,9 +2987,15 @@ static void use_description (int argc, char **argv) {
     fprintf (stderr, "%s\n", gp_error_message (g));
     exit (1);
   }
-  if (gp_parse (g, test_read_token, &root, &ambiguous_p))
-    fprintf (stderr, "gecko: %s\n", gp_error_message (g));
-  gp_free_tree (g, root);
+  ntok = 0;
+  if (gp_parse (g, test_read_token, &root1, &ambiguous_p) != 0)
+    fprintf (stderr, "gecko parse1: %s\n", gp_error_message (g));
+  ntok = 0;
+  gp_set_debug_level (g, 0);
+  if (gp_parse (g, test_read_token, &root2, &ambiguous_p) != 0)
+    fprintf (stderr, "gecko parse2: %s\n", gp_error_message (g));
+  gp_free_tree (g, root1);
+  gp_free_tree (g, root2);
   gp_fin (g);
 }
 
