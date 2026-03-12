@@ -110,6 +110,8 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   struct action_desc *empty_action_map; /* no actions for each terminal */
 
+  struct set *start_set; /* start set of the grammar */
+
   vlo_t all_nodes;       /* all parse tree nodes */
   bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
 
@@ -1022,6 +1024,9 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
   VLO_CREATE (g->temp_vlo, g->alloc, 0);
   VLO_CREATE (g->all_nodes, g->alloc, 0);
   bitmap_create (&g->marked_nodes, g->alloc);
+  sit_init (g);
+  set_init (g);
+  g->start_set = NULL;
   return g;
 }
 
@@ -1345,22 +1350,10 @@ int gp_set_recovery_match (struct grammar *g, int n_toks) {
   return old;
 }
 
-static void gp_parse_init (struct grammar *g) { /* initialize all internal data for parser: */
-  sit_init (g);
-  set_init (g);
-  for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
-}
-
 gp_node_merge_func_t gp_set_node_merge_func (struct grammar *g, gp_node_merge_func_t func) {
   gp_node_merge_func_t res = g->node_merge;
   g->node_merge = func == NULL ? default_node_merge : func;
   return res;
-}
-
-/* The function should be called the last (it frees all allocated data for parser). */
-static void gp_parse_fin (struct grammar *g) {
-  set_fin (g);
-  sit_fin (g);
 }
 
 /* Add the rest (non-start) situations to the new set. */
@@ -2507,9 +2500,9 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   stack_init (g);
   token_buff_init (g);
   tree_nodes_init (g);
+  if (g->start_set == NULL) g->start_set = build_sets (g);
   struct stack *single_stack = stack_create (g, NULL);
-  struct set *start_set = build_sets (g);
-  push_init_set (g, single_stack, start_set);
+  push_init_set (g, single_stack, g->start_set);
   VLO_CREATE (g->curr_stacks, g->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (g->new_stacks, g->alloc, 2 * sizeof (vlo_t));
   g->toks_num = 0;
@@ -2707,14 +2700,9 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   *root = NULL;
   *ambiguous_p = false;
   int code;
-  bool parse_init_p = false;
-  if ((code = setjmp (g->error_longjump_buff)) != 0) {
-    if (parse_init_p) gp_parse_fin (g);
-    return code;
-  }
+  if ((code = setjmp (g->error_longjump_buff)) != 0) return code;
   if (g->undefined_p) error (g, GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
-  gp_parse_init (g);
-  parse_init_p = true;
+  for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
   struct gp_tree_node *result;
   bool ok_p = parse (g, ambiguous_p, &result);
   if (ok_p) *root = result;
@@ -2744,7 +2732,6 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
              g->n_parse_term_nodes + g->n_parse_abstract_nodes + g->n_parse_alt_nodes);
   }
 #endif
-  gp_parse_fin (g);
 #ifndef NO_GP_DEBUG_PRINT
   if (g->debug_level > 0) { /* do it after deleting hash tables */
     if (g->all_searches == 0) g->all_searches++;
@@ -2769,6 +2756,8 @@ void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
     rule_fin (g, g->rules);
     term_set_fin (g, g->term_sets);
     symb_fin (g, g->symbs);
+    set_fin (g);
+    sit_fin (g);
     gp_free (allocator, g);
     gp_alloc_del (allocator);
   }
