@@ -180,6 +180,12 @@ or an error code on failure (also available via `gp_error_code` and `gp_error_me
    not declared as a terminal is treated as a nonterminal. Also sets `*abs_node` (abstract node name) and `*transl`
    (array of RHS symbol indices for translation children, terminated by a negative value). Return `NULL` when all rules have been read.
 
+**Axiom requirement:**
+
+The grammar axiom (start symbol) must have exactly one rule. When using `gp_read_grammar`,
+you should provide an explicit start rule (e.g., `$S : E`) with a single alternative.
+When using `gp_parse_grammar`, such a rule is added automatically.
+
 **Translation rules:**
 
 - All indices in `*transl` must be distinct (a symbol's translation cannot appear twice)
