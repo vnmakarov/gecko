@@ -83,7 +83,7 @@ static void parse (void)
 {
   struct grammar *g;
   struct gp_tree_node *root;
-  bool ambiguous_p;
+  int ambiguity;
 
   if ((g = gp_create_grammar ()) == NULL) {
       fprintf (stderr, "gp_create_grammar: No memory\n");
@@ -93,7 +93,7 @@ static void parse (void)
       fprintf (stderr, "%s\n", gp_error_message (g));
       exit (1);
     }
-  if (gp_parse (g, read_token_func, &root, &ambiguous_p))
+  if (gp_parse (g, read_token_func, &root, &ambiguity))
     fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_fin (g);
 }
