@@ -44,11 +44,14 @@
 |Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
 |Generation of all translations           | -       | -       | Yes      | Yes**    | Yes**    |
 |Generation of minimal cost translation   | -       | -       | No       | Yes      | No       |
+|Reentrant (thread-safe)                  | Yes***  | Yes***  | Yes      | No       | Yes      |
 
 \* Bison is claimed to be a GLR parser but I did not manage to use **ambiguous** C grammar (see speed comparison) for it
 
 \** All alternatives can be generated through the corresponding ElkHound/Gecko merge functions.
    But to generate abstract node trees for alternatives analogous to YAEP, additional non-trivial work needs to be done.
+
+\*** Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
 
 * Additional differences between Gecko and YAEP:
   * Gecko is faster on unambiguous and moderately ambiguous grammars
@@ -71,8 +74,7 @@ static const char *description =
 "TERM NUMBER;\n"
 "LEFT '+';\n"
 "LEFT '*';\n"
-"E : E         # 0\n"
-"  | E '+' E   # plus (0 2)\n"
+"E : E '+' E   # plus (0 2)\n"
 "  | E '*' E   # mult (0 2)\n"
 "  | '(' E ')' # 1\n"
 "  | NUMBER    # 0\n"
