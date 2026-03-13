@@ -60,6 +60,7 @@ Type of a parse tree node.
 | `GP_TERM`  | Terminal node                              |
 | `GP_ANODE` | Abstract node                              |
 | `GP_ALT`   | Alternative translations (ambiguous parse) |
+| `GP_OPT`   | Context-dependent alternative (option node) |
 
 ## Parse Tree Data Structures
 
@@ -374,11 +375,19 @@ gp_node_merge_func_t gp_set_node_merge_func(struct grammar *grammar,
                                             gp_node_merge_func_t func);
 ```
 
-Set the parse node merge function used when merging stacks during GLR parsing. The function receives two nodes
-of a symbol from stacks being merged and returns the merged result. `NULL` sets the default function, which always
-returns the first node. Using the default function causes `gp_parse` to return only one translation.
+Set the parse node merge function used when merging stacks during GLR parsing. The function receives the grammar,
+two parse tree nodes of a symbol from stacks being merged, and a flag `opt_p` indicating whether the merge should
+produce a context-dependent alternative (option) node rather than a regular alternative node (see `gp_parse` for
+details). The function returns the result node. `NULL` sets the default function, which always returns the first
+node. Using the default function causes `gp_parse` to return only one translation.
 
-**Type:** `typedef void *(*gp_node_merge_func_t)(void *node1, void *node2);`
+**Type:**
+```c
+typedef void *(*gp_node_merge_func_t)(struct grammar *grammar,
+                                      struct gp_tree_node *node1,
+                                      struct gp_tree_node *node2,
+                                      bool opt_p);
+```
 
 ### Parsing
 
@@ -386,12 +395,11 @@ returns the first node. Using the default function causes `gp_parse` to return o
 
 ```c
 int gp_parse(struct grammar *grammar, int (*read_token)(void **attr),
-             struct gp_tree_node **root, bool *ambiguous_p);
+             struct gp_tree_node **root, int *ambiguity);
 ```
 
 Parse input according to the grammar. Returns an error code (also available via `gp_error_code`).
-On success (code zero), the parse tree root is stored in `*root`. Sets `*ambiguous_p` to `true`
-if the grammar is found ambiguous on the input.
+On success (code zero), the parse tree root is stored in `*root`.
 
 **Parameters:**
 
@@ -399,16 +407,39 @@ if the grammar is found ambiguous on the input.
 - `read_token` -- callback providing input tokens. Returns the token code and sets `*attr` to the token attribute.
   A negative return value signals end of input.
 - `root` -- output: the root of the parse tree. It never returns NULL.
-- `ambiguous_p` -- output: whether the grammar was found to be ambiguous
+- `ambiguity` -- output: ambiguity status of the parse:
+  - `0` -- no ambiguity found
+  - `1` -- the grammar is ambiguous on the input
+  - `2` -- the final stack was produced by merging stacks where two or more terminal attributes or abstract nodes
+    were different
+
+**Ambiguity level 2 and option nodes:**
+
+Consider merging two stacks with two different translations for two stack elements:
+`...a...b...` and `...c...d...`.  Using the result stack `...alt(a,b)...alt(c,d)...` with regular
+alternative nodes would imply 4 possible choices (ac, ad, bc, bd) instead of the two correct ones (ac, bd).
+Therefore for such cases the parser uses option (context-dependent alternative, `GP_OPT`) nodes for the merged
+stack: `...opt(a,b)...opt(c,d)...`.  The node merge function receives `opt_p = true` for these cases.
+It is possible to transform the parse tree to contain only alternative nodes, but this is a non-trivial task.
+Fortunately, this is a very rare case for programming language grammars.
 
 #### `gp_get_alt_node`
 
 ```c
-struct gp_tree_node *get_get_alt_node (struct grammar *g, struct gp_tree_node *first, struct gp_tree_node *second);
+struct gp_tree_node *gp_get_alt_node(struct grammar *g, struct gp_tree_node *first, struct gp_tree_node *second);
 ```
 
-Return `GP_ALT` node with given `first` and `second`.  The function can be used in node merge function if you want keep all
-possible alternative during stack merging.
+Return a `GP_ALT` node with given `first` and `second`.  The function can be used in the node merge function
+if you want to keep all possible alternatives during stack merging.
+
+#### `gp_get_opt_node`
+
+```c
+struct gp_tree_node *gp_get_opt_node(struct grammar *g, struct gp_tree_node *first, struct gp_tree_node *second);
+```
+
+Analogous to `gp_get_alt_node` but returns a `GP_OPT` (context-dependent alternative) node.  Use this in the node
+merge function when `opt_p` is true to preserve correct alternative semantics (see `gp_parse` for details).
 
 ### Parse Tree Operations
 

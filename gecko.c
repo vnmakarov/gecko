@@ -120,7 +120,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   /* Statistic numbers: tokens, all parse tree nodes, terminal nodes, abstract and alternative nodes: */
   int toks_num, n_parse_nodes, n_parse_term_nodes;
-  int n_parse_abstract_nodes, n_parse_alt_nodes;
+  int n_parse_abstract_nodes, n_parse_alt_nodes, n_parse_opt_nodes;
   /* Parse tree node representing empty node.  It exists in one examplar. */
   struct gp_tree_node *empty_node;
 
@@ -938,7 +938,10 @@ static void error_func_for_allocate (void *g) { /* Process allocation errors. */
   error (g, GP_NO_MEMORY, "no memory");
 }
 
-static void *default_node_merge (void *node1, void *node2 GP_UNUSED) { return node1; }
+static void *default_node_merge (struct grammar *g GP_UNUSED, struct gp_tree_node *node1,
+                                 struct gp_tree_node *node2 GP_UNUSED, bool opt_p GP_UNUSED) {
+  return node1;
+}
 
 static void *parse_alloc_default (int nmemb) {
   assert (nmemb > 0);
@@ -1523,6 +1526,10 @@ static uint64_t node_hash (hash_table_entry_t n) {
     h = hash64 ((uint64_t) node->val.alt.first, 4);
     h = hash64 ((uint64_t) node->val.alt.second, h);
     break;
+  case GP_OPT:
+    h = hash64 ((uint64_t) node->val.alt.first, 5);
+    h = hash64 ((uint64_t) node->val.alt.second, h);
+    break;
   default: assert (false); return 0; /* nil and error node exist in one exemplar */
   }
   return hash_finish (h);
@@ -1541,6 +1548,7 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
                     sizeof (struct gp_tree_node *) * node1->val.anode.children_num)
             == 0);
   case GP_ALT:
+  case GP_OPT:
     return (node1->val.alt.first == node2->val.alt.first && node1->val.alt.second == node2->val.alt.second);
   default: assert (false); /* nil and error node exist in one exemplar */
   }
@@ -1604,13 +1612,13 @@ static void recovery_info_finish (struct grammar *g) { OS_DELETE (g->recovery_in
 
 typedef struct stack_el {
   bool attr_p;
-  int ntoks; /* read tokens before the state: ??? setup */
+  int ntoks; /* read tokens before the state */
   struct set *set;
   void *anode_attr; /* abstract node or term attr if attr_p */
 } stack_el_t;
 
 struct stack {
-  bool ambigous_p;
+  int ambiguity;
   int num;
   struct recovery_info *recovery;
   vlo_t els;
@@ -1659,9 +1667,9 @@ static struct stack *stack_create (struct grammar *g, struct stack *base) {
     if (g->n_peak_stack_els < g->n_curr_stack_els) g->n_peak_stack_els = g->n_curr_stack_els;
   }
 #endif
-  stack->ambigous_p = false;
+  stack->ambiguity = 0;
   if (base != NULL) {
-    stack->ambigous_p = base->ambigous_p;
+    stack->ambiguity = base->ambiguity;
     VLO_ADD_MEMORY (stack->els, VLO_BEGIN (base->els), VLO_LENGTH (base->els));
   }
   if (base == NULL || base->recovery == NULL) {
@@ -1857,24 +1865,34 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   return anode;
 }
 
-struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
-                                      struct gp_tree_node *second) {
+static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
+                                                 struct gp_tree_node *second, bool opt_p) {
   struct gp_tree_node *node = &g->temp_node;
-  node->type = GP_ALT;
+  node->type = opt_p ? GP_OPT : GP_ALT;
   node->val.alt.first = first;
   node->val.alt.second = second;
   hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
-  struct gp_tree_node *alt_node = (struct gp_tree_node *) *entry;
-  if (alt_node != NULL) return alt_node;
+  struct gp_tree_node *res = (struct gp_tree_node *) *entry;
+  if (res != NULL) return res;
 #ifndef NO_GP_DEBUG_PRINT
-  g->n_parse_alt_nodes++;
+  opt_p ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
 #endif
-  alt_node = (*g->parse_alloc) (sizeof (struct gp_tree_node));
-  *alt_node = *node;
-  alt_node->num = g->n_parse_nodes++;
-  *entry = alt_node;
-  VLO_ADD_MEMORY (g->all_nodes, &alt_node, sizeof (struct parse_tree_node *));
-  return alt_node;
+  res = (*g->parse_alloc) (sizeof (struct gp_tree_node));
+  *res = *node;
+  res->num = g->n_parse_nodes++;
+  *entry = res;
+  VLO_ADD_MEMORY (g->all_nodes, &res, sizeof (struct parse_tree_node *));
+  return res;
+}
+
+struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
+                                      struct gp_tree_node *second) {
+  return gp_get_alt_opt_node (g, first, second, false);
+}
+
+struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
+                                      struct gp_tree_node *second) {
+  return gp_get_alt_opt_node (g, first, second, true);
 }
 
 static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, int stack_len,
@@ -1905,9 +1923,7 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, in
     if (disp < 0) continue;
     stack_el_t *el = &stack_addr[start + i];
     struct gp_tree_node *anode = (struct gp_tree_node *) el->anode_attr;
-    if (el->attr_p) {
-      anode = get_stack_term_node (g, el);
-    }
+    if (el->attr_p) anode = get_stack_term_node (g, el);
     children[disp] = anode;
   }
   return get_anode (g, rule->caller_anode, rule->trans_len, children);
@@ -1938,17 +1954,18 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
   return goto_set;
 }
 
-static bool stack_eq_p (struct stack *stack1, struct stack *stack2, bool *diff_attr_p) {
+static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_attr) {
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
   assert (stack1->recovery == NULL && stack2->recovery == NULL);
   stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (stack1->els);
   stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (stack2->els);
-  *diff_attr_p = false;
+  int n = 0;
   for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
     stack_el_t *el1 = &stack_addr1[i], *el2 = &stack_addr2[i];
     if (el1->set != el2->set) return false;
-    if (el1->anode_attr != el2->anode_attr) *diff_attr_p = true;
+    if (el1->anode_attr != el2->anode_attr) n++;
   }
+  *n_diff_attr = n;
   return true;
 }
 
@@ -1962,17 +1979,29 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
     for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
       if (curr2 == NULL) continue;
-      bool diff_attr_p;
-      if (!stack_eq_p (curr, curr2, &diff_attr_p)) continue;
-      curr->ambigous_p = merge_p = true;
+      int n_diff_attr;
+      if (!stack_eq_p (curr, curr2, &n_diff_attr)) continue;
+      if (curr->ambiguity == 0) curr->ambiguity = 1;
+      merge_p = true;
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
-      if (diff_attr_p) {
+      if (n_diff_attr > 0) {
+        bool opt_p = n_diff_attr > 1;
         stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (curr->els);
         stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (curr2->els);
         for (int k = (int) (VLO_LENGTH (curr->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
           stack_el_t *el1 = &stack_addr1[k], *el2 = &stack_addr2[k];
-          el1->anode_attr = g->node_merge (el1->anode_attr, el2->anode_attr);
+          if (el1->anode_attr == el2->anode_attr) continue;
+          if (el1->attr_p) {
+            el1->anode_attr = get_stack_term_node (g, el1);
+            el1->attr_p = false;
+          }
+          if (el2->attr_p) {
+            el2->anode_attr = get_stack_term_node (g, el2);
+            el2->attr_p = false;
+          }
+          el1->anode_attr = g->node_merge (g, el1->anode_attr, el2->anode_attr, opt_p);
         }
+        if (opt_p) curr->ambiguity = 2;
       }
       stack_free (g, curr2);
     }
@@ -2319,13 +2348,15 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
 }
 
 static FORCE_INLINE void gc_mark_anode (struct grammar *g, struct gp_tree_node *anode) {
-  if (!bitmap_set_bit_p (&g->marked_nodes, anode->num) || (anode->type != GP_ANODE && anode->type != GP_ALT))
+  if (!bitmap_set_bit_p (&g->marked_nodes, anode->num)
+      || (anode->type != GP_ANODE && anode->type != GP_ALT && anode->type != GP_OPT))
     return;
   VLO_ADD_MEMORY (g->temp_vlo, &anode, sizeof (struct gp_tree_node *));
 }
 
 static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
-  if (!bitmap_set_bit_p (&g->marked_nodes, anode->num) || (anode->type != GP_ANODE && anode->type != GP_ALT))
+  if (!bitmap_set_bit_p (&g->marked_nodes, anode->num)
+      || (anode->type != GP_ANODE && anode->type != GP_ALT && anode->type != GP_OPT))
     return;
   VLO_ADD_MEMORY (g->temp_vlo, &anode, sizeof (struct gp_tree_node *));
   while (VLO_LENGTH (g->temp_vlo) != 0) {
@@ -2335,7 +2366,7 @@ static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
       for (int i = anode->val.anode.children_num - 1; i >= 0; i--)
         gc_mark_anode (g, anode->val.anode.children[i]);
     } else {
-      assert (anode->type == GP_ALT);
+      assert (anode->type == GP_ALT || anode->type == GP_OPT);
       gc_mark_anode (g, anode->val.alt.first);
       gc_mark_anode (g, anode->val.alt.second);
     }
@@ -2417,7 +2448,7 @@ static void gc (struct grammar *g, vlo_t *stacks) {
 #define GC_START_NODES_THRESHOLD 1000
 
 /* Major function to make parsing. Return true if we parsed successfully. */
-static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **transl) {
+static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **transl) {
   g->read_tokens = 0;
   g->n_parse_nodes = 0;
   g->empty_node = (struct gp_tree_node *) g->parse_alloc (sizeof (struct gp_tree_node));
@@ -2429,7 +2460,7 @@ static bool parse (struct grammar *g, bool *ambiguous_p, struct gp_tree_node **t
   VLO_ADD_MEMORY (g->curr_stacks, &single_stack, sizeof (single_stack));
   push_init_set (g, single_stack, g->start_set);
   g->toks_num = 0;
-  g->n_parse_term_nodes = g->n_parse_abstract_nodes = g->n_parse_alt_nodes = 0;
+  g->n_parse_term_nodes = g->n_parse_abstract_nodes = g->n_parse_alt_nodes = g->n_parse_opt_nodes = 0;
 #ifndef NO_GP_DEBUG_PRINT
   g->n_single_stack_actions = g->n_multi_stack_actions = 0;
 #endif
@@ -2542,7 +2573,7 @@ finish:
   assert (!el->attr_p);
   *transl = (struct gp_tree_node *) el->anode_attr;
   res = true;
-  *ambiguous_p = final_stack->ambigous_p;
+  *ambiguity = final_stack->ambiguity;
   gc (g, &g->curr_stacks); /* free all unused nodes */
   VLO_NULLIFY (g->all_nodes);
   VLO_NULLIFY (g->delayed_stacks);
@@ -2580,10 +2611,12 @@ static void print_node (struct grammar *g, FILE *f, struct gp_tree_node *node) {
     break;
   case GP_ALT:
     fprintf (f, "ALTERNATIVE:");
+  alt:
     fprintf (f, "%d %d\n", node->val.alt.first->num, node->val.alt.second->num);
     print_node (g, f, node->val.alt.first);
     print_node (g, f, node->val.alt.second);
     break;
+  case GP_OPT: fprintf (f, "OPTION:"); goto alt;
   default: assert (false);
   }
 }
@@ -2603,23 +2636,18 @@ void gp_print_translation (struct grammar *g, FILE *f, struct gp_tree_node *root
 
 #endif
 
-/* Parse input according read grammar. For unambiguous grammar the flag does not affect the result.
-   D_LEVEL says what debugging information to output (it works only if we compiled without defined
-   macro NO_GP_DEBUG_PRINT). The function returns the error code (which will be also in error_code).
-   The function sets up *AMBIGUOUS_P if we found that the grammar is ambigous (it works even we
-   asked only one parse tree without alternatives). */
-int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node **root, bool *ambiguous_p) {
+int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node **root, int *ambiguity) {
   g->all_searches = g->all_collisions = 0;
   assert (g != NULL);
   g->read_token = read;
   *root = NULL;
-  *ambiguous_p = false;
+  *ambiguity = 0;
   int code;
   if ((code = setjmp (g->error_longjump_buff)) != 0) return code;
   if (g->undefined_p) error (g, GP_UNDEFINED_OR_BAD_GRAMMAR, "undefined or bad grammar");
   for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next) rule->caller_anode = NULL;
   struct gp_tree_node *result;
-  bool ok_p = parse (g, ambiguous_p, &result);
+  bool ok_p = parse (g, ambiguity, &result);
   if (ok_p) *root = result;
 #ifndef NO_GP_DEBUG_PRINT
   if (g->debug_level > 0) {
@@ -2627,7 +2655,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
       fprintf (stderr, "Translation:\n");
       print_parse (g, stderr, result);
     }
-    fprintf (stderr, "%sGrammar: #terms = %d, #nonterms = %d, ", *ambiguous_p ? "AMBIGUOUS " : "",
+    fprintf (stderr, "%sGrammar: #terms = %d, #nonterms = %d, ", *ambiguity != 0 ? "AMBIGUOUS " : "",
              g->symbs->n_terms, g->symbs->n_nonterms);
     fprintf (stderr, "#rules = %d, rules size = %d\n", g->rules->n_rules,
              g->rules->n_rhs_lens + g->rules->n_rules);
@@ -2643,8 +2671,9 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
              g->n_single_stack_actions, g->n_multi_stack_actions);
     fprintf (stderr, "       #term nodes = %d, #abstract nodes = %d\n", g->n_parse_term_nodes,
              g->n_parse_abstract_nodes);
-    fprintf (stderr, "       #alternative nodes = %d, #all nodes = %d\n", g->n_parse_alt_nodes,
-             g->n_parse_term_nodes + g->n_parse_abstract_nodes + g->n_parse_alt_nodes);
+    fprintf (stderr, "       #alternative nodes = %d, #option nodes = %d, #all nodes = %d\n",
+             g->n_parse_alt_nodes, g->n_parse_opt_nodes,
+             g->n_parse_term_nodes + g->n_parse_abstract_nodes + g->n_parse_alt_nodes + g->n_parse_opt_nodes);
   }
 #endif
 #ifndef NO_GP_DEBUG_PRINT
@@ -2777,6 +2806,7 @@ static void free_tree_reduce (struct gp_tree_node *node) {
       }
     break;
   case GP_ALT:
+  case GP_OPT:
     if (node->val.alt.first->type & GP_VISITED)
       node->val.alt.first = NULL;
     else
@@ -2803,6 +2833,7 @@ static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node) {
     g->parse_free (node->val.anode.children);
     break;
   case GP_ALT:
+  case GP_OPT:
     free_tree_sweep (g, node->val.alt.first);
     free_tree_sweep (g, node->val.alt.second);
     break;
@@ -2908,36 +2939,20 @@ static int test_read_token (void **attr) {
 /* The following two functions calls Gecko with two different ways of forming grammars. */
 static void use_functions (int argc, char **argv) {
   struct grammar *g;
-  struct gp_tree_node *root1, *root2;
-  bool ambiguous_p;
+  struct gp_tree_node *root;
+  int ambiguity;
 
   nterm = nrule = 0;
   fprintf (stderr, "Use functions\n");
-  if ((g = gp_create_grammar ()) == NULL) {
-    fprintf (stderr, "No memory\n");
-    exit (1);
-  }
-  if (argc > 1)
-    gp_set_debug_level (g, atoi (argv[2]));
-  else
-    gp_set_debug_level (g, 3);
-  if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) {
-    fprintf (stderr, "%s\n", gp_error_message (g));
-    exit (1);
-  }
+  if ((g = gp_create_grammar ()) == NULL) exit (1);
+  gp_set_debug_level (g, argc > 1 ? atoi (argv[2]) : 3);
+  if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) exit (1);
   ntok = 0;
-  if (gp_parse (g, test_read_token, &root1, &ambiguous_p))
-    fprintf (stderr, "gecko parse1: %s\n", gp_error_message (g));
-  ntok = 0;
-  gp_set_debug_level (g, 0);
-  if (gp_parse (g, test_read_token, &root2, &ambiguous_p))
-    fprintf (stderr, "gecko parse2: %s\n", gp_error_message (g));
-  gp_free_tree (g, root1);
-  gp_free_tree (g, root2);
+  if (gp_parse (g, test_read_token, &root, &ambiguity) != 0) exit (1);
+  gp_free_tree (g, root);
   gp_fin (g);
 }
 
-/* The function imported by Gecko (see comments in the interface file). */
 static int test_read_wrong_token (void **attr) {
   const char input[] = "b";
   ntok++;
@@ -2962,36 +2977,57 @@ static const char *description
 static void use_description (int argc, char **argv, int (*read_fn) (void **)) {
   struct grammar *g;
   struct gp_tree_node *root1, *root2;
-  bool ambiguous_p;
+  int ambiguity;
 
   fprintf (stderr, "Use description\n");
-  if ((g = gp_create_grammar ()) == NULL) {
-    fprintf (stderr, "gp_create_grammar: No memory\n");
-    exit (1);
-  }
-  if (argc > 2)
-    gp_set_debug_level (g, atoi (argv[2]));
-  else
-    gp_set_debug_level (g, 3);
-  if (gp_parse_grammar (g, true, description) != 0) {
-    fprintf (stderr, "%s\n", gp_error_message (g));
-    exit (1);
-  }
-  if (gp_parse_grammar (g, true, description) != 0) {
-    fprintf (stderr, "2nd grammar read%s\n", gp_error_message (g));
-    exit (1);
-  }
+  if ((g = gp_create_grammar ()) == NULL) exit (1);
+  gp_set_debug_level (g, argc > 2 ? atoi (argv[2]) : 3);
+  if (gp_parse_grammar (g, true, description) != 0) exit (1);
+  if (gp_parse_grammar (g, true, description) != 0) exit (1);
   ntok = 0;
-  if (gp_parse (g, read_fn, &root1, &ambiguous_p) != 0) {
-    fprintf (stderr, "gecko parse1: %s\n", gp_error_message (g));
-  } else {
+  if (gp_parse (g, read_fn, &root1, &ambiguity) == 0) {
     ntok = 0;
     gp_set_debug_level (g, 0);
-    if (gp_parse (g, read_fn, &root2, &ambiguous_p) != 0)
-      fprintf (stderr, "gecko parse2: %s\n", gp_error_message (g));
+    if (gp_parse (g, read_fn, &root2, &ambiguity) != 0) exit (1);
     gp_free_tree (g, root2);
     gp_free_tree (g, root1);
   }
+  gp_fin (g);
+}
+
+static int test_read_ambig (void **attr) {
+  const char input[] = "a+a+a+a";
+  ntok++;
+  *attr = NULL;  // (void *) (ptrdiff_t) ntok;
+  if ((size_t) ntok < sizeof (input)) return input[ntok - 1];
+  return -1;
+}
+
+static const char *ambig
+  = "\n"
+    "TERM;\n"
+    "E : E '+' E   # plus (0 2)\n"
+    "  | 'a'       # 0\n"
+    "  ;\n";
+
+static void *node_merge (struct grammar *g, struct gp_tree_node *node1, struct gp_tree_node *node2,
+                         bool opt_p) {
+  return (opt_p ? gp_get_opt_node : gp_get_alt_node) (g, node2, node1);
+}
+
+static void use_ambig (int argc, char **argv) {
+  struct grammar *g;
+  struct gp_tree_node *root;
+  int ambiguity;
+
+  fprintf (stderr, "Use ambig grammar\n");
+  if ((g = gp_create_grammar ()) == NULL) exit (1);
+  gp_set_debug_level (g, argc > 2 ? atoi (argv[2]) : 3);
+  if (gp_parse_grammar (g, true, ambig) != 0) exit (1);
+  ntok = 0;
+  gp_set_node_merge_func (g, node_merge);
+  if (gp_parse (g, test_read_ambig, &root, &ambiguity) != 0) exit (1);
+  gp_free_tree (g, root);
   gp_fin (g);
 }
 
@@ -3002,6 +3038,8 @@ int main (int argc, char **argv) {
     use_functions (argc, argv);
   else if (atoi (argv[1]) == 2)
     use_description (argc, argv, test_read_wrong_token);
+  else if (atoi (argv[1]) == 3)
+    use_ambig (argc, argv);
   exit (0);
 }
 

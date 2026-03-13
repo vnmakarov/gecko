@@ -54,7 +54,8 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_NIL,
                          GP_TERM,
                          GP_ANODE,
-                         GP_ALT,
+                         GP_ALT,            /* alternative */
+                         GP_OPT,            /* context-dependent alternative */
                          GP_VISITED = 0x80, /* for internal use only */
 };
 
@@ -84,7 +85,7 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
     struct gp_nil nil;
     struct gp_term term;
     struct gp_anode anode;
-    struct gp_alt alt; /* alternative */
+    struct gp_alt alt; /* alternative or context-dependent alternative */
   } val;
 };
 
@@ -178,21 +179,37 @@ extern gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_
 extern int gp_set_debug_level (struct grammar *grammar, int level);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
-typedef void *(*gp_node_merge_func_t) (void *attr1, void *attr2);
+typedef void *(*gp_node_merge_func_t) (struct grammar *grammar, struct gp_tree_node *node1,
+                                       struct gp_tree_node *node2, bool opt_p);
 extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_node_merge_func_t func);
 
 /* Parse input according the read grammar. Returns the error code (which will be also in
    gp_error_code). If the code is zero, also put parse result into *root (it never will be NULL).
-   Set up *AMBIGOUS_P if we found that the grammar is ambiguous on the input.
+   Set up *AMBIGUITY to 1 if we found that the grammar is ambiguous on the input.
+
+   *AMBIGUITY is set up to 2 if the final stack is produced by merging stacks and two or more
+   terminal attributes/abstract nodes were different.
+
+   Consider merging two stacks with two different translations for two stack elements:
+   `...a...b...` and `...c...d...`.  We could use the result stack `...alt(a,b)...alt(c,d)...`
+   but the alternative semantics means 4 possible choices for the translation: ac, ad, bc, bd instead
+   of two right ones: ac, bd.  Therefore for such case we should use option (or context-dependent alternative)
+   nodes for the merged stack: `...opt(a,b)...opt(c,d)...`.  To generate the alternative with the right
+   semantics, the merge function has argument opt_p.  It is possible to rid off option nodes by transforming
+   parse tree to contain only alternative nodes but it is not trivial task.  Fortunately, it is a very rare
+   case grammar for programming languages.
 
    The function READ_TOKEN provides input tokens.  It returns code the next input token and its
    attribute.  If the function returns negative value we've read all tokens. */
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr), struct gp_tree_node **root,
-                     bool *ambiguous_p);
+                     int *ambiguity);
 
-/* Return GP_ALT node with given FIRST and SECODN.  Use it in node merge function if you want keep all
+/* Return GP_ALT node with given FIRST and SECOND.  Use it in node merge function if you want keep all
    possible alternative during stack merging. */
 extern struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
+                                             struct gp_tree_node *second);
+/* Analogous to previous function but for GP_OPT node */
+extern struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
                                              struct gp_tree_node *second);
 
 #ifndef NO_GP_DEBUG_PRINT

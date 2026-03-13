@@ -13,7 +13,6 @@
 
 #ifdef YAEP
 #include "yaep.h"
-#define ambig_type int
 #define tree_node yaep_tree_node
 #define set_debug_level yaep_set_debug_level
 #define set_error_recovery_flag yaep_set_error_recovery_flag
@@ -27,7 +26,6 @@
 #define error_message yaep_error_message
 #else
 #include "gecko.h"
-#define ambig_type bool
 #define tree_node gp_tree_node
 #define set_debug_level gp_set_debug_level
 #define set_error_recovery_flag gp_set_error_recovery_flag
@@ -92,7 +90,7 @@ static int test_read_token (void **attr) {
 static void test_standard_parse (void) {
   struct grammar *g;
   struct tree_node *root;
-  ambig_type ambiguous_p;
+  int ambiguity;
 
   if ((g = create_grammar ()) == NULL) {
     fprintf (stderr, "create_grammar: No memory\n");
@@ -104,12 +102,12 @@ static void test_standard_parse (void) {
   }
 #ifdef YAEP
   bool fail = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
-                          &ambiguous_p);
+                          &ambiguity);
 #else
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  bool fail = gp_parse (g, test_read_token, &root, &ambiguous_p);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguity);
 #endif
   if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
@@ -128,7 +126,7 @@ static bool test_standard_read (bool print_transl,
 #endif
   struct grammar *g;
   struct tree_node *root;
-  ambig_type ambiguous_p;
+  int ambiguity;
 
   if ((g = create_grammar ()) == NULL) {
     fprintf (stderr, "create_grammar: No memory\n");
@@ -140,12 +138,12 @@ static bool test_standard_read (bool print_transl,
   }
 #ifdef YAEP
   bool fail = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
-                          &ambiguous_p);
+                          &ambiguity);
 #else
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  bool fail = gp_parse (g, test_read_token, &root, &ambiguous_p);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguity);
 #endif
   if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
@@ -155,7 +153,7 @@ static bool test_standard_read (bool print_transl,
   if (print_transl) gp_print_translation (g, stderr, root);
 #endif
   free_grammar (g);
-  return ambiguous_p;
+  return ambiguity != 0;
 }
 
 #ifdef __GNUC__
@@ -168,7 +166,7 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
                                 int argc, char **argv) {
   struct grammar *g;
   struct tree_node *root;
-  ambig_type ambiguous_p;
+  int ambiguity;
 
   if ((g = create_grammar ()) == NULL) {
     fprintf (stderr, "create_grammar: No memory\n");
@@ -194,18 +192,18 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
   }
 #ifdef YAEP
   bool fail = yaep_parse (g, test_read_token, test_syntax_error, test_parse_alloc, test_parse_free, &root,
-                          &ambiguous_p);
+                          &ambiguity);
 #else
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  bool fail = gp_parse (g, test_read_token, &root, &ambiguous_p);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguity);
 #endif
   if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
-  if (ambiguous != ambiguous_p) {
+  if (ambiguous != (ambiguity != 0)) {
     fprintf (stderr, "Grammar should be %sambiguous\n", ambiguous ? "" : "un");
     exit (1);
   }

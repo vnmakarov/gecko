@@ -144,7 +144,8 @@ simple-test:
 	$(CC) $(CFLAGS) $(SRC_DIR)/gecko.c -DGP_TEST -o $(BUILD_DIR)/gp-test$(EXE)
 	$(BUILD_DIR)/gp-test$(EXE) 1 2 && echo +++simple description test is OK
 	$(BUILD_DIR)/gp-test$(EXE) 0 2 && echo +++simple function test is OK
-	$(BUILD_DIR)/gp-test$(EXE) 2 2 && echo +++simple function test is OK
+	$(BUILD_DIR)/gp-test$(EXE) 2 2 && echo +++simple description with wrong input test is OK
+	$(BUILD_DIR)/gp-test$(EXE) 3 2 && echo +++simple ambig description is OK
 	$(RM) $(BUILD_DIR)/gp-test$(EXE)
 
 more-tests:

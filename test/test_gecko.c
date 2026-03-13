@@ -910,17 +910,16 @@ int main (int argc, char **argv) {
     exit (1);
   }
   t = create_ticker ();
+  int ambiguity;
 #ifdef YAEP
-  int ambiguous_p;
   struct yaep_tree_node *root;
-  parser_res = yaep_parse (g, test_read_token, test_syntax_error, NULL, NULL, &root, &ambiguous_p);
+  parser_res = yaep_parse (g, test_read_token, test_syntax_error, NULL, NULL, &root, &ambiguity);
   if (parser_res) fprintf (stderr, "yaep_parse: %s\n", yaep_error_message (g));
   yaep_free_grammar (g);
 #else
-  bool ambiguous_p;
   struct gp_tree_node *root;
   gp_set_syntax_error (g, test_syntax_error);
-  parser_res = gp_parse (g, test_read_token, &root, &ambiguous_p);
+  parser_res = gp_parse (g, test_read_token, &root, &ambiguity);
   if (parser_res) fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_fin (g);
 #endif
