@@ -55,7 +55,7 @@ struct grammar {    /* major structure which stores information about grammar: *
   char error_message[GP_MAX_ERROR_MESSAGE_LENGTH + 1]; /* the last error message */
   struct symb *axiom;         /* grammar axiom (there is only one rule with axiom in lhs) */
   struct symb *end_marker;    /* auxiliary symbol denoting EOF */
-  int recovery_token_matches; /* number of subsequent tokens should be successfuly shifted to finish
+  int recovery_token_matches; /* number of subsequent tokens should be successfully shifted to finish
                                  error recovery */
   int debug_level;
   struct symbs *symbs;         /* vocabulary used for this grammar */
@@ -86,7 +86,7 @@ struct grammar {    /* major structure which stores information about grammar: *
   os_t sits_os;           /* all situations are placed in the object */
   int n_all_sits;         /* current number of unique situations */
 
-  vlo_t sets_vlo; /* use to build sets */
+  vlo_t sets_vlo; /* used to build sets */
 
   /* The set being created. It is defined only when new_set_ready_p is true. */
   struct set *new_set;
@@ -122,7 +122,7 @@ struct grammar {    /* major structure which stores information about grammar: *
   /* Statistic numbers: tokens, all parse tree nodes, terminal nodes, abstract and alternative nodes: */
   int toks_num, n_parse_nodes, n_parse_term_nodes;
   int n_parse_abstract_nodes, n_parse_alt_nodes, n_parse_opt_nodes;
-  /* Parse tree node representing empty node.  It exists in one examplar. */
+  /* Parse tree node representing empty node.  It exists in one instance. */
   struct gp_tree_node *empty_node;
 
   /* internal data used for error recovery */
@@ -142,7 +142,7 @@ struct grammar {    /* major structure which stores information about grammar: *
   vlo_t token_buff;        /* container of token_buff_el structs */
 
   /* The current stacks and the stacks which will be current after reading and processing current
-     terminal, in order word stacks containing situation with position after the terminal.  */
+     terminal, in other words stacks containing situation with position after the terminal.  */
   vlo_t curr_stacks, new_stacks;
   /* Stacks used during error recovery.  They are ordered by decreasing cost.
      Delayed stacks are produced by removing symbol from the original stack.  */
@@ -157,10 +157,10 @@ struct grammar {    /* major structure which stores information about grammar: *
 #endif
 };
 
-/* Forward decrlarations: */
+/* Forward declarations: */
 static void error (struct grammar *g, int code, const char *format, ...);
 
-/* The default number of tokens sucessfully matched to stop error recovery alternative (state). */
+/* The default number of tokens successfully matched to stop error recovery alternative (state). */
 #define DEFAULT_RECOVERY_TOKEN_MATCHES 3
 
 /* This page is abstract data `grammar symbols'. */
@@ -181,13 +181,13 @@ struct symb {       /* symbol of the grammar: */
     struct {
       struct rule *rules;            /* all rules with the nonterminal in the rule LHS */
       int nonterm_num;               /* order number of the nonterminal */
-      bool loop_p;                   /* flag that nonterminal may derivate itself */
+      bool loop_p;                   /* flag that nonterminal may derive itself */
       term_set_el_t *first, *follow; /* FIRST and FOLLOW sets of the nonterminal */
     } nonterm;
   } u;
-  bool term_p;       /* true if it is nonterminal */
-  bool access_p;     /* true if the symbol is accessible (derivated) from the axiom */
-  bool derivation_p; /* true if it is a term or it is a nonterm which derivates a term string */
+  bool term_p;       /* true if it is a terminal */
+  bool access_p;     /* true if the symbol is accessible (derived) from the axiom */
+  bool derivation_p; /* true if it is a term or it is a nonterm which derives a term string */
   bool empty_p;      /* true if it is nonterminal which may derivate empty string */
   int num;           /* order number of the symbol */
 };
@@ -299,8 +299,8 @@ static struct symb *symb_add_term (struct grammar *g, const char *name, int code
   return result;
 }
 
-/* Create new nonterminal symbol and return reference for it. The symbol should be
-   not in the table. The function should create own copy of name for the new symbol. */
+/* Create new nonterminal symbol and return reference for it. The symbol should not be
+   in the table. The function should create own copy of name for the new symbol. */
 static struct symb *symb_add_nonterm (struct grammar *g, const char *name) {
   struct symb symb;
   symb.repr = name;
@@ -442,7 +442,7 @@ static inline void term_set_copy (struct grammar *g, term_set_el_t *dest, term_s
   while (dest < bound) *dest++ = *src++;
 }
 
-/* Add all terminals from set OP with to SET. Return true if SET has been changed. */
+/* Add all terminals from set OP to SET. Return true if SET has been changed. */
 static inline bool term_set_or (struct grammar *g, term_set_el_t *set, term_set_el_t *op) {
   term_set_el_t *bound;
   int size = (g->symbs->n_terms + TERM_SET_EL_BITS - 1) / (TERM_SET_EL_BITS);
@@ -518,7 +518,7 @@ struct rule {                 /* rule of the grammar: */
      translation is rejected, the corresponding element value is negative. */
   int *order;
   /* ???Size of all previous rule lengths + number of the previous rules. Imagine that all left hand
-     symbol and right hand size symbols of the rules are stored in array. Then the following member
+     symbol and right hand side symbols of the rules are stored in array. Then the following member
      is index of the rule lhs in the array. */
   int rule_start_offset;
   char *caller_anode; /* the same string as anode but memory allocated in parse_alloc */
@@ -528,7 +528,7 @@ struct rules {             /* container for the abstract data */
   int n_rules, n_rhs_lens; /* number of all rules and their summary rhs length */
   struct rule *first_rule; /* the first rule */
   struct rule *curr_rule;  /* rule being formed */
-  vlo_t rules_vlo;         /* all refereneces to rules are placed in this object: */
+  vlo_t rules_vlo;         /* all references to rules are placed in this object: */
   os_t rules_os;           /* all rules are placed in this object: */
 };
 
@@ -704,7 +704,7 @@ static bool sit_set_lookahead (struct grammar *g, struct sit *sit) {
   return true;
 }
 
-/* Return situations with given characteristics. Remember that sits are stored in one exemplar. */
+/* Return situations with given characteristics. Remember that sits are stored in one instance. */
 static inline struct sit *sit_create (struct grammar *g, struct rule *rule, int pos) {
   struct sit *sit;
   int diff = (char *) (g->sit_table + rule->rule_start_offset + pos) - (char *) VLO_BOUND (g->sit_table_vlo);
@@ -875,7 +875,7 @@ static inline void set_new_set_stop (struct grammar *g) { /* finish work with se
   OS_TOP_FINISH (g->set_sits_os);
 }
 
-static void *set_calloc (struct grammar *g, size_t size) { /* allocate and data data in set os */
+static void *set_calloc (struct grammar *g, size_t size) { /* allocate and store data in set os */
   OS_TOP_EXPAND (g->sets_os, size);
   void *res = (struct set *) OS_TOP_BEGIN (g->sets_os);
   OS_TOP_FINISH (g->sets_os);
@@ -966,7 +966,7 @@ int gp_error_code (struct grammar *g) { /* Return the last occurred error code f
   return g->error_code;
 }
 
-/* Return message containing error message corresponding to the last occurred error code.  */
+/* Return the error message corresponding to the last occurred error code.  */
 const char *gp_error_message (struct grammar *g) {
   assert (g != NULL);
   return g->error_message;
@@ -1055,7 +1055,7 @@ static void set_empty_access_derives (struct grammar *g) {
 
 static void set_loop_p (struct grammar *g) { /* set up flags loop_p for nonterminals: */
   struct symb *symb;
-  /* Initialize accoding to minimal criteria: There is a rule in which the nonterminal stands and
+  /* Initialize according to minimal criteria: There is a rule in which the nonterminal stands and
      all the rest symbols can derive empty strings. */
   for (struct rule *rule = g->rules->first_rule; rule != NULL; rule = rule->next)
     for (int i = 0; i < rule->rhs_len; i++)
@@ -1159,7 +1159,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
     if (anode == NULL && transl != NULL && *transl >= 0 && transl[1] >= 0)
       error (g, GP_INCORRECT_TRANSLATION, "rule for `%s' has incorrect translation", lhs);
     if (g->axiom == NULL) {
-      /* We made this here becuase we want that the start rule has number 0. */
+      /* We made this here because we want that the start rule has number 0. */
       /* Add axiom and end marker. */
       start = symb;
       g->axiom = symb_find_by_repr (g, AXIOM_NAME);
@@ -1205,7 +1205,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
       assert (i < rule->rhs_len || transl[i] < 0);
     }
   }
-  if (g->axiom == NULL) error (g, GP_NO_RULES, "grammar does not contains rules");
+  if (g->axiom == NULL) error (g, GP_NO_RULES, "grammar does not contain rules");
   assert (start != NULL);
   check_grammar (g, strict_p);
   symb_finish_adding_terms (g);
@@ -1520,7 +1520,7 @@ static uint64_t node_hash (hash_table_entry_t n) {
     break;
   case GP_ANODE:
     h = hash (node->val.anode.children, sizeof (struct gp_tree_node *) * node->val.anode.children_num, 3);
-    /* name exists in one exemplar */
+    /* name exists in one instance */
     h = hash_step (h, (uint64_t) node->val.anode.name);
     break;
   case GP_ALT:
@@ -1727,7 +1727,7 @@ static void token_buff_add (struct grammar *g, int code, void *attr) {
   el->attr = attr;
 }
 
-/* Read a token and save it int the buffer. */
+/* Read a token and save it in the buffer. */
 static int token_buff_read (struct grammar *g, void **attr) {
   g->read_tokens++;
   int code = g->read_token (attr);
@@ -2126,8 +2126,8 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
   return shift_p;
 }
 
-/* Stack can not be matched: add derived stack (stack whose the top stack element is poped) to delayed_stacks.
-   Delayed stacks is oredered by their decreasing cost.  Added delayed stack will be the first between one
+/* Stack cannot be matched: add derived stack (stack whose the top stack element is poped) to delayed_stacks.
+   Delayed stacks is ordered by their decreasing cost.  Added delayed stack will be the first between one
    with the same cost.  */
 static void add_delayed_recovery_stack (struct grammar *g, struct stack *stack) {
   assert (VLO_LENGTH (stack->els) != 0);
@@ -2232,15 +2232,15 @@ static void print_read (struct grammar *g, FILE *f, struct symb *term, int stack
 }
 #endif
 
-/* Thershold used to stop recovery even if the stack is not minimal cost stack.
+/* Threshold used to stop recovery even if the stack is not minimal cost stack.
    It is just to avoid in recovery and recovery stack explosion.  */
 #define MAX_RECOVERY_TOKEN_MATCH 20
 
 /* Make syntax error recovery and set up final new_stacks and return the final single_stack if ONE_STACK_P.
 
-   Error recovery algorithm in brief:  we keep pull of stacks and stacks (called delayed stacks) derived by
+   Error recovery algorithm in brief:  we keep a pool of stacks and stacks (called delayed stacks) derived by
    popping up the top element (LR-state).  We repeatedly add more and more expensive delayed stacks to the
-   pool of stacks.  For each failed stack, we reject current stack token and add the delayed stack dreived
+   pool of stacks.  For each failed stack, we reject current stack token and add the delayed stack derived
    from the stack.  We stop error recovery when we have a stack which is a minimal cost stack which
    successfully consumed recovery_token_matches tokens without a gap or which is a final stack which
    consumed EOF.  The minimal cost stacks (or one minimal cost stack if we have one stack before the error

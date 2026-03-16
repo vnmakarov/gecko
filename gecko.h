@@ -2,7 +2,7 @@
    Copyright (C) 2026 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 
-/* This is interface file of general (working on any CFG) syntax parser with minimal error recovery
+/* This is the interface file of a general (working on any CFG) syntax parser with minimal error recovery
    and syntax directed translation. The algorithm is described in doc directory.  The
    algorithm is sufficiently fast to be used in serious language processors. */
 
@@ -21,8 +21,8 @@
 /* The following is a forward declaration of grammar formed by function gp_read_grammar. */
 struct grammar;
 
-/* The following value is reserved to be designation of empty node for translation.  It should be
-   positive number which is not intersected with symbol numbers. */
+/* The following value is reserved as a designation of an empty node for translation.  It should be
+   a positive number that does not intersect with symbol numbers. */
 #define GP_NIL_TRANSLATION_NUMBER INT_MAX
 
 /* The following values are Gecko Parser error codes: */
@@ -59,7 +59,7 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_VISITED = 0x80, /* for internal use only */
 };
 
-struct gp_nil { /* The node exists in one exemplar. See comment to read_rule. */
+struct gp_nil { /* The node exists in one instance. See comment to read_rule. */
 };
 
 struct gp_term { /* the terminal node: */
@@ -70,7 +70,7 @@ struct gp_term { /* the terminal node: */
 struct gp_anode {   /* the abstract node: */
   int children_num; /* elements in the next array */
   const char *name; /* the abstract node name */
-  /* References for nodes for which the abstract node refers.  The array end marker is NULL. */
+  /* References to nodes to which the abstract node refers.  The array end marker is NULL. */
   struct gp_tree_node **children;
 };
 
@@ -96,34 +96,34 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
 };
 
 /* Create undefined grammar.  The function returns NULL if there is no memory.
-   The function should be called the first. */
+   This function should be called first. */
 extern struct grammar *gp_create_grammar (void);
 
 /* Return the last occurred error code for given grammar. */
 extern int gp_error_code (struct grammar *g);
 
-/* Return message containing error message corresponding to the last occurred error code. */
+/* Return the error message corresponding to the last occurred error code. */
 extern const char *gp_error_message (struct grammar *g);
 
-/* Read terminals/rules into grammar G and checks it depending on STRICT_P.
-   Returns zero if it is all ok. Otherwise, return error code occurred (its code
+/* Read terminals/rules into grammar G and check it depending on STRICT_P.
+   Returns zero if it is all ok. Otherwise, returns the error code (its code
    will be in gp_error_code and message in gp_error_message).
 
-   READ_TERMINAL is function for reading terminals.  This function is called before function read_rule.
+   READ_TERMINAL is a function for reading terminals.  This function is called before function read_rule.
    The function should return the name and the code of the next terminal.  If all terminals have been
    read the function returns NULL.  The return code should be nonnegative.  Priority and associativity
    of the terminal are passed through the rest of args.  They are used to resolve conflicts in LR-sets
    as for YACC.  If you don't want to resolve the conflicts, use GP_NON_ASSOC.
 
-   READ_RULE is function called to read the next rule.  This function is called after function
-   read_terminal.  The function should return the name of LHS rule and array of names of symbols in
-   RHS of the rule (the array end marker should be NULL).  If all rules have been read the function
-   returns NULL.  All symbol with name which was not provided the previous function are considered
+   READ_RULE is a function called to read the next rule.  This function is called after function
+   read_terminal.  The function should return the name of the LHS nonterminal and array of names of
+   symbols in RHS of the rule (the array end marker should be NULL).  If all rules have been read the
+   function returns NULL.  All symbols with names not provided by the previous function are considered
    to be nonterminal. The function also returns translation given by abstract node name and its
    fields which will be translation of symbols (with indexes given in array *TRANSL) in the RHS of
-   the rule.  All indexes in TRANSL should be different (so the translation of a symbol can not be
+   the rule.  All indexes in TRANSL should be different (so the translation of a symbol cannot be
    represented twice).  The end marker of the array should be a negative value.  There is a reserved
-   value of the translation symbol number denoting empty node.  It is value defined by macro
+   value of the translation symbol number denoting an empty node.  It is the value defined by macro
    GP_NIL_TRANSLATION_NUMBER.  If *TRANSL is NULL or contains only the end marker, translations of
    the rule will be nil node.  If ABS_NODE is NULL, abstract node is not created.  In this case
    *TRANSL should be NULL or contain at most one element which means that the translation of the
@@ -140,14 +140,14 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
    return the previous parameter value.
 
    * parse_alloc is used to allocate memory for parse tree representation.  By default it is malloc.
-     It should be always not NULL.
+     It should always be non-NULL.
 
    * parse_free is used to free memory for parse tree representation.  By default it is free.
-     NULL value means no any freeing.
+     NULL value means no freeing.
 
-   * syntax error function is used to prints error message about syntax error which occurred on token with
+   * syntax error function is used to print an error message about a syntax error which occurred on a token with
      representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next two
-     parameters describes recovery stop token.  The default function prints only
+     parameters describe the recovery stop token.  The default function prints only
      the token representations.  You should set up the new function to print positions which can be passed
      through the token attributes.
 
@@ -158,12 +158,12 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      * 1 results in printing statistics
      * 2 results in additional print of the result translation
      * 3 results in printing read token, actions (conflicts marked by '!') for dynamically generated
-       SLR sets, and high-level erorr recovery info
+       SLR sets, and high-level error recovery info
      * 4 means printing rules, first/follows nonterminal sets, dynamically generated SLR sets
      * 5 results in printing stacks during parsing and stack merging
-     * 6 results in even more detail info about processing stacks during parsing
+     * 6 results in even more detailed info about processing stacks during parsing
 
-   * recovery_match means how much subsequent tokens should be successfully shifted to finish error
+   * recovery_match means how many subsequent tokens should be successfully shifted to finish error
      recovery.  The default value is 3.
 
    * gp_set_node_merge_func is used during merging stacks.  It gets two parse tree nodes of a symbol
@@ -177,7 +177,7 @@ typedef void (*gp_parse_free_func_t) (void *);
 extern gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_alloc_func_t fn);
 extern gp_parse_free_func_t gp_set_parse_free (struct grammar *g, gp_parse_free_func_t fn);
 
-/* The function  */
+/* The syntax error reporting function type. */
 typedef void (*gp_syntax_error_func_t) (const char *err_tok_repr, void *err_tok_attr,
                                         const char *stop_tok_repr, void *stop_tok_attr);
 extern gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_error_func_t fn);
@@ -186,11 +186,11 @@ extern int gp_set_debug_level (struct grammar *grammar, int level);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
 typedef void *(*gp_node_merge_func_t) (struct grammar *grammar, struct gp_tree_node *node1,
-                                       struct gp_tree_node *node2, bool opt_p);
+                                       struct gp_tree_node *node2, int context_num);
 extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_node_merge_func_t func);
 
-/* Parse input according the read grammar. Returns the error code (which will be also in
-   gp_error_code). If the code is zero, also put parse result into *root (it never will be NULL).
+/* Parse input according to the read grammar. Returns the error code (which will be also in
+   gp_error_code). If the code is zero, also put parse result into *root (it will never be NULL).
    Set up *AMBIGUITY to 1 if we found that the grammar is ambiguous on the input.
 
    *AMBIGUITY is set up to 2 if the final stack is produced by merging stacks and two or more
@@ -213,8 +213,8 @@ extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr), struct gp_tree_node **root,
                      int *ambiguity);
 
-/* Return GP_ALT node with given FIRST and SECOND.  Use it in node merge function if you want keep all
-   possible alternative during stack merging. */
+/* Return GP_ALT node with given FIRST and SECOND.  Use it in the node merge function if you want to keep all
+   possible alternatives during stack merging. */
 extern struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
                                              struct gp_tree_node *second);
 /* Analogous to the previous function but for GP_OPT node. */
@@ -230,7 +230,7 @@ extern void gp_print_translation (struct grammar *grammar, FILE *f, struct gp_tr
    gp_parse(). If ROOT is a null pointer, no operation is performed. */
 extern void gp_free_tree (struct grammar *grammar, struct gp_tree_node *root);
 
-/* Finish work with the grammar.  It should be called the last. */
+/* Finish work with the grammar.  It should be called last. */
 extern void gp_fin (struct grammar *grammar);
 
 #endif /* #ifndef __GECKO__ */
