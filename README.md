@@ -222,8 +222,11 @@ static void parse (void)
     runs without extra allocations -- this makes unambiguous grammars nearly as fast as YACC
   * **Multi-stack path**: multiple stacks are maintained when ambiguity or conflicts arise;
     each stack independently processes shifts and reduces
-  * **Stack merging**: stacks with identical sets sequences are merged, combining parse nodes
-    via a user callback -- this prevents exponential blowup on ambiguous grammars
+  * **Stack merging**: stacks with identical sets sequences are merged, combining parse tree
+    nodes via a user callback `gp_node_merge_func_t(grammar, node1, node2, context_num)`.
+    A negative `context_num` indicates a context-independent alternative; a non-negative value
+    indicates correlated alternatives where `GP_OPT` nodes should be used instead of `GP_ALT`
+    to preserve the correct pairing. This prevents exponential blowup on ambiguous grammars
   * Parse tree nodes are **hash-consed** (structurally identical nodes are shared)
   * **Garbage collection** of unreachable parse tree nodes runs periodically during parsing (mark-sweep using a bitmap,
     with adaptive threshold)
