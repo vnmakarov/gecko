@@ -332,6 +332,8 @@ gp_parse_free_func_t gp_set_parse_free(struct grammar *g,
 ```
 
 Set the memory deallocation function for parse tree nodes. Default is `free`. `NULL` means no freeing.
+It is not safe to change `parse_alloc` and `parse_free` functions after `gp_parse` and before `gp_fin`,
+as some data allocated by `parse_alloc` in `gp_parse` can be freed in `gp_fin` and when reading a new grammar.
 
 **Type:** `typedef void (*gp_parse_free_func_t)(void *);`
 
@@ -474,6 +476,32 @@ void gp_print_translation(struct grammar *grammar, FILE *f,
 ```
 
 Print the translation of the parse tree rooted at `root` to file `f`. Only available if compiled without `NO_GP_DEBUG_PRINT`.
+
+#### `gp_traverse_tree`
+
+```c
+void gp_traverse_tree(struct grammar *grammar, struct gp_tree_node *root,
+                       gp_preorder_func_t preorder, gp_postorder_func_t postorder,
+                       void *arg);
+```
+
+Traverse the parse tree rooted at `root` without using recursion (the parse tree, which in the common
+case is a DAG, can be very unbalanced, so recursive traversal may cause stack overflow). Calls `preorder`
+and `postorder` functions (if non-NULL) before and after processing all children of each node,
+respectively. `arg` is passed through to both callback functions. If `preorder` returns `false` for a
+node, its children are not processed.
+
+**Types:**
+```c
+typedef bool (*gp_preorder_func_t)(struct gp_tree_node *node, struct gp_tree_node *father, void *arg);
+typedef void (*gp_postorder_func_t)(struct gp_tree_node *node, struct gp_tree_node *father, void *arg);
+```
+
+**Callback parameters:**
+
+- `node` -- the current node being visited
+- `father` -- the parent node (`NULL` for the root)
+- `arg` -- the user-provided argument passed to `gp_traverse_tree`
 
 #### `gp_free_tree`
 

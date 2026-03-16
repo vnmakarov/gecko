@@ -143,13 +143,15 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      It should always be non-NULL.
 
    * parse_free is used to free memory for parse tree representation.  By default it is free.
-     NULL value means no freeing.
+     NULL value means no freeing.   It is not safe to change parse_alloc and parse_free functions after
+     gp_parse and before gp_fin as some data allocated by parse_alloc in gp_parse can be freed in gp_fin
+     and reading a new grammar.
 
-   * syntax error function is used to print an error message about a syntax error which occurred on a token with
-     representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next two
-     parameters describe the recovery stop token.  The default function prints only
-     the token representations.  You should set up the new function to print positions which can be passed
-     through the token attributes.
+   * syntax error function is used to print an error message about a syntax error which occurred on a token
+   with representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next
+   two parameters describe the recovery stop token.  The default function prints only the token
+   representations.  You should set up the new function to print positions which can be passed through the
+   token attributes.
 
    * debug_level says what debugging information to output (it works only if we compiled without
      defined macro NO_GP_DEBUG_PRINT):
@@ -225,6 +227,15 @@ extern struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_n
 /* Print translation of ROOT parsed for GRAMMAR. */
 extern void gp_print_translation (struct grammar *grammar, FILE *f, struct gp_tree_node *root);
 #endif
+
+typedef bool (*gp_preorder_func_t) (struct gp_tree_node *node, struct gp_tree_node *father, void *arg);
+typedef void (*gp_postorder_func_t) (struct gp_tree_node *node, struct gp_tree_node *father, void *arg);
+
+/* Traverse the parse tree given by ROOT and call functions (if they are non-NULL) PREORDER and POSTORDER
+   respectively before and after processing all children.  Don't process children of node if PREORDER for
+   the node returns false.  ARG will be passed to PREORDER and POSTORDER.  */
+extern void gp_traverse_tree (struct grammar *grammar, struct gp_tree_node *root, gp_preorder_func_t preorder,
+                              gp_postorder_func_t postorder, void *arg);
 
 /* Free memory allocated for the parse tree. ROOT must be the root of the parse tree as returned by
    gp_parse(). If ROOT is a null pointer, no operation is performed. */

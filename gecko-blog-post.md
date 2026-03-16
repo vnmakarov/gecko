@@ -500,6 +500,9 @@ gp_set_parse_free(g, my_free);     // Custom deallocator (NULL = no freeing)
 
 By default Gecko uses `malloc` and `free`. You can provide custom
 allocators, for instance to use arena allocation for the parse tree.
+Note that it is not safe to change these functions after `gp_parse` and
+before `gp_fin`, as some data allocated by `parse_alloc` in `gp_parse`
+can be freed in `gp_fin` and when reading a new grammar.
 
 ### Syntax Error Reporting
 
@@ -613,6 +616,14 @@ Parse tree nodes are **hash-consed**: structurally identical subtrees share
 the same node in memory. This is transparent to the user but significantly
 reduces memory consumption, especially for ambiguous grammars where many
 partial parse trees share common prefixes and suffixes.
+
+The parse tree (which in the common case is a DAG) can be very unbalanced,
+so using recursive functions for traversal may cause stack overflow. Gecko
+provides `gp_traverse_tree`, which uses an explicit stack instead of
+recursion. It calls user-provided `preorder` and `postorder` functions
+before and after processing each node's children. If the `preorder` function
+returns `false`, the node's children are skipped. Both callbacks receive the
+current node, its parent, and a user-provided argument.
 
 You can free the parse tree explicitly with:
 

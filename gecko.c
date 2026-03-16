@@ -130,7 +130,8 @@ struct grammar {    /* major structure which stores information about grammar: *
   struct recovery_info *free_recovery_infos; /* infos already allocated and can be reused */
 
   vlo_t free_stacks;    /* pointers to stack structs already allocated and can be reused */
-  vlo_t temp_nodes_vlo; /* temp vlo containing pointers to parse tree nodes and used for translation */
+  vlo_t temp_nodes_vlo; /* temp vlo containing pointers to parse tree nodes and used for translation and
+                           freeing */
 
   int n_stacks; /* all allocated stacks */
 #ifndef NO_GP_DEBUG_PRINT
@@ -2605,13 +2606,17 @@ finish:
 
 #ifndef NO_GP_DEBUG_PRINT
 
-/* Prints NODE into file F and prints all its children. */
-static void print_node (struct grammar *g, FILE *f, struct gp_tree_node *node) {
-  int i;
+struct print_arg {
+  struct grammar *g;
+  FILE *f;
+};
 
+/* Prints NODE into file given in A. */
+static bool print_node (struct gp_tree_node *node, struct gp_tree_node *father GP_UNUSED, void *a) {
+  struct print_arg *arg = a;
+  struct grammar *g = arg->g;
+  FILE *f = arg->f;
   assert (node != NULL);
-  if (g->visits_p[node->num]) return;
-  g->visits_p[node->num] = true;
   fprintf (f, "%7d: ", node->num);
   switch (node->type) {
   case GP_NIL: fprintf (f, "EMPTY\n"); break;
@@ -2621,33 +2626,27 @@ static void print_node (struct grammar *g, FILE *f, struct gp_tree_node *node) {
     break;
   case GP_ANODE:
     fprintf (f, "ABSTRACT: %s (", node->val.anode.name);
-    for (i = 0; i < node->val.anode.children_num; i++) fprintf (f, " %d", node->val.anode.children[i]->num);
+    for (int i = 0; i < node->val.anode.children_num; i++)
+      fprintf (f, " %d", node->val.anode.children[i]->num);
     fprintf (f, " )\n");
-    for (i = 0; i < node->val.anode.children_num; i++) print_node (g, f, node->val.anode.children[i]);
     break;
   case GP_ALT:
     fprintf (f, "ALTERNATIVE:");
     fprintf (f, "%d %d\n", node->val.alt.first->num, node->val.alt.second->num);
-    print_node (g, f, node->val.alt.first);
-    print_node (g, f, node->val.alt.second);
     break;
   case GP_OPT:
     fprintf (f, "OPTION (%d):", node->val.opt.context_num);
     fprintf (f, "%d %d\n", node->val.opt.first->num, node->val.opt.second->num);
-    print_node (g, f, node->val.opt.first);
-    print_node (g, f, node->val.opt.second);
     break;
-
   default: assert (false);
   }
+  return true;
 }
 
 /* Print parse tree with ROOT. */
 static void print_parse (struct grammar *g, FILE *f, struct gp_tree_node *root) {
-  g->visits_p = (bool *) gp_malloc (g->alloc, g->n_parse_nodes * sizeof (bool));
-  memset (g->visits_p, 0, g->n_parse_nodes * sizeof (bool));
-  print_node (g, f, root);
-  gp_free (g->alloc, g->visits_p);
+  struct print_arg arg = {g, f};
+  gp_traverse_tree (g, root, print_node, NULL, &arg);
   fprintf (f, "\n");
 }
 
@@ -2707,6 +2706,61 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   return ok_p ? 0 : 1; /* !!! change in the future */
 }
 
+struct traverse_el { /* element of stack used for traversing */
+  bool post_p;       /* the element corresponds to node post-processing */
+  struct gp_tree_node *node, *father;
+};
+
+static FORCE_INLINE void consider_traverse (struct grammar *g, struct gp_tree_node *node,
+                                            struct gp_tree_node *father, bool post_p) {
+  if (!bitmap_set_bit_p (&g->marked_nodes, node->num)) return; /* already pushed */
+  struct traverse_el el;
+  el.node = node;
+  el.father = father;
+  if (post_p) {
+    el.post_p = true;
+    VLO_ADD_MEMORY (g->temp_vlo, &el, sizeof (el)); /* for postorder */
+  }
+  el.post_p = false;                              /* put it after the post element for the right traversal */
+  VLO_ADD_MEMORY (g->temp_vlo, &el, sizeof (el)); /* for preorder */
+}
+
+void gp_traverse_tree (struct grammar *g, struct gp_tree_node *root, gp_preorder_func_t preorder,
+                       gp_postorder_func_t postorder, void *arg) {
+  if (root == NULL) return;
+  bool pre_p = preorder != NULL, post_p = postorder != NULL;
+  if (!post_p && !pre_p) return;
+  VLO_NULLIFY (g->temp_vlo);
+  bitmap_clear (&g->marked_nodes);
+  consider_traverse (g, root, NULL, post_p);
+  while (VLO_LENGTH (g->temp_vlo) != 0) {
+    struct traverse_el el = ((struct traverse_el *) VLO_BOUND (g->temp_vlo))[-1];
+    VLO_SHORTEN (g->temp_vlo, sizeof (struct traverse_el));
+    if (el.post_p) {
+      postorder (el.node, el.father, arg);
+      continue;
+    }
+    if (preorder != NULL && !preorder (el.node, el.father, arg)) continue;
+    switch (el.node->type) {
+    case GP_NIL:
+    case GP_TERM: break;
+    case GP_ANODE:
+      for (int i = el.node->val.anode.children_num - 1; i >= 0; i--)
+        consider_traverse (g, el.node->val.anode.children[i], el.node, post_p);
+      break;
+    case GP_ALT:
+      consider_traverse (g, el.node->val.alt.second, el.node, post_p);
+      consider_traverse (g, el.node->val.alt.first, el.node, post_p);
+      break;
+    case GP_OPT:
+      consider_traverse (g, el.node->val.opt.second, el.node, post_p);
+      consider_traverse (g, el.node->val.opt.first, el.node, post_p);
+      break;
+    default: assert (false);
+    }
+  }
+}
+
 static void grammar_init (struct grammar *g) {
   g->undefined_p = true;
   g->error_code = 0;
@@ -2763,7 +2817,6 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
 }
 
 static void grammar_finish (struct grammar *g) { /* Free memory allocated for the grammar data */
-  gp_allocator_t *allocator = g->alloc;
   bitmap_destroy (&g->marked_nodes);
   int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
   for (int i = 0; i < nodes_num; i++) {  // exists in case of an error
@@ -2774,7 +2827,7 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   VLO_DELETE (g->temp_vlo);
   for (int i = 0; i < (int) (VLO_LENGTH (g->caller_anode_names) / sizeof (char *)); i++) {
     char *name = ((char **) VLO_BEGIN (g->caller_anode_names))[i];
-    gp_free (allocator, name);
+    g->parse_free (name);
   }
   VLO_DELETE (g->caller_anode_names);
   rule_fin (g, g->rules);
@@ -2809,80 +2862,22 @@ static void empty_grammar (struct grammar *g) { /* Make grammar empty. */
   grammar_init (g);
 }
 
-static void free_tree_reduce (struct gp_tree_node *node) {
-  assert (node != NULL);
-  assert ((node->type & GP_VISITED) == 0);
-  enum gp_tree_node_type type = node->type;
-  node->type = (enum gp_tree_node_type) (node->type | GP_VISITED);
-  switch (type) {
-  case GP_NIL:
-  case GP_TERM: break;
-  case GP_ANODE:
-    if (node->val.anode.name[0] == '\0') /* We have already seen the node name */
-      node->val.anode.name = NULL;
-    for (int i = 0; i < node->val.anode.children_num; i++)
-      if (node->val.anode.children[i]->type & GP_VISITED) {
-        node->val.anode.children[i] = NULL;
-      } else {
-        free_tree_reduce (node->val.anode.children[i]);
-      }
-    break;
-  case GP_ALT:
-    if (node->val.alt.first->type & GP_VISITED)
-      node->val.alt.first = NULL;
-    else
-      free_tree_reduce (node->val.alt.first);
-    if (node->val.alt.second->type & GP_VISITED)
-      node->val.alt.second = NULL;
-    else
-      free_tree_reduce (node->val.alt.second);
-    break;
-  case GP_OPT:
-    if (node->val.opt.first->type & GP_VISITED)
-      node->val.opt.first = NULL;
-    else
-      free_tree_reduce (node->val.opt.first);
-    if (node->val.opt.second->type & GP_VISITED)
-      node->val.opt.second = NULL;
-    else
-      free_tree_reduce (node->val.opt.second);
-    break;
-  default: assert ("This should not happen" == NULL);
-  }
-}
-
-static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node) {
-  if (node == NULL) return;
-  assert (node->type & GP_VISITED);
-  enum gp_tree_node_type type = (enum gp_tree_node_type) (node->type & ~GP_VISITED);
-  switch (type) {
-  case GP_NIL:
-  case GP_TERM: break;
-  case GP_ANODE:
-    for (int i = 0; i < node->val.anode.children_num; i++)
-      if (node->val.anode.children[i] != NULL) free_tree_sweep (g, node->val.anode.children[i]);
-    g->parse_free (node->val.anode.children);
-    break;
-  case GP_ALT:
-    free_tree_sweep (g, node->val.alt.first);
-    free_tree_sweep (g, node->val.alt.second);
-    break;
-  case GP_OPT:
-    free_tree_sweep (g, node->val.opt.first);
-    free_tree_sweep (g, node->val.opt.second);
-    break;
-  default: assert ("This should not happen" == NULL);
-  }
-  g->parse_free (node);
+static bool collect_nodes (struct gp_tree_node *node, struct gp_tree_node *father GP_UNUSED, void *arg) {
+  struct grammar *g = arg;
+  VLO_ADD_MEMORY (g->temp_nodes_vlo, &node, sizeof (node));
+  return true;
 }
 
 void gp_free_tree (struct grammar *g, struct gp_tree_node *root) {
-  if (root == NULL || g->parse_free == NULL) return;
-  /* Since the parse tree is actually a DAG, we must carefully avoid double free errors.
-     Therefore, we walk the parse tree twice. On the first walk, we reduce the DAG to an actual
-     tree. On the second walk, we recursively free the tree nodes. */
-  free_tree_reduce (root);
-  free_tree_sweep (g, root);
+  if (g->parse_free == NULL) return;
+  VLO_NULLIFY (g->temp_nodes_vlo);
+  gp_traverse_tree (g, root, collect_nodes, NULL, g);
+  while (VLO_LENGTH (g->temp_nodes_vlo) != 0) {
+    struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BOUND (g->temp_nodes_vlo))[-1];
+    VLO_SHORTEN (g->temp_nodes_vlo, sizeof (struct gp_tree_node *));
+    if (node->type == GP_ANODE) g->parse_free (node->val.anode.children);
+    g->parse_free (node);
+  }
 }
 
 /* This page contains a test code for Gecko. To use it, define macro GP_TEST during compilation. */

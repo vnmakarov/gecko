@@ -8,7 +8,7 @@
 * Parse inputs described by **unambiguous and ambiguous grammars**
 * Small and simple
   * x86-64 code size is only 80KB
-  * 3.5K C SLOC
+  * 3.7K C SLOC
 * Strong emphasis on good automatic syntax error recovery and error reporting, as this is a complicated feature in other compiler-compilers
   * Requires no grammar modifications
   * Simple interface for custom support of syntax error reporting
