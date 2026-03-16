@@ -112,6 +112,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   struct set *start_set; /* start set of the grammar */
 
+  int contexts_num;
   vlo_t all_nodes;       /* all parse tree nodes */
   bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
 
@@ -939,7 +940,7 @@ static void error_func_for_allocate (void *g) { /* Process allocation errors. */
 }
 
 static void *default_node_merge (struct grammar *g GP_UNUSED, struct gp_tree_node *node1,
-                                 struct gp_tree_node *node2 GP_UNUSED, bool opt_p GP_UNUSED) {
+                                 struct gp_tree_node *node2 GP_UNUSED, int context_num GP_UNUSED) {
   return node1;
 }
 
@@ -1527,10 +1528,11 @@ static uint64_t node_hash (hash_table_entry_t n) {
     h = hash64 ((uint64_t) node->val.alt.second, h);
     break;
   case GP_OPT:
-    h = hash64 ((uint64_t) node->val.alt.first, 5);
-    h = hash64 ((uint64_t) node->val.alt.second, h);
+    h = hash64 ((uint64_t) node->val.opt.context_num, 5);
+    h = hash64 ((uint64_t) node->val.opt.first, h);
+    h = hash64 ((uint64_t) node->val.opt.second, h);
     break;
-  default: assert (false); return 0; /* nil and error node exist in one exemplar */
+  default: assert (false); return 0; /* nil and error node exist in one instance */
   }
   return hash_finish (h);
 }
@@ -1543,14 +1545,17 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
     return (node1->val.term.code == node2->val.term.code && node1->val.term.attr == node2->val.term.attr);
   case GP_ANODE:
     if (node1->val.anode.children_num != node2->val.anode.children_num) return false;
-    if (node1->val.anode.name != node2->val.anode.name) return false; /* name exists in one examplar */
+    if (node1->val.anode.name != node2->val.anode.name) return false; /* name exists in one instance */
     return (memcmp (node1->val.anode.children, node2->val.anode.children,
                     sizeof (struct gp_tree_node *) * node1->val.anode.children_num)
             == 0);
   case GP_ALT:
-  case GP_OPT:
     return (node1->val.alt.first == node2->val.alt.first && node1->val.alt.second == node2->val.alt.second);
-  default: assert (false); /* nil and error node exist in one exemplar */
+  case GP_OPT:
+    return (node1->val.opt.context_num == node2->val.opt.context_num
+            && node1->val.opt.first == node2->val.opt.first
+            && node1->val.opt.second == node2->val.opt.second);
+  default: assert (false); /* nil and error node exist in one instance */
   }
 }
 
@@ -1866,16 +1871,23 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
 }
 
 static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                                 struct gp_tree_node *second, bool opt_p) {
+                                                 struct gp_tree_node *second, int context_num) {
   struct gp_tree_node *node = &g->temp_node;
-  node->type = opt_p ? GP_OPT : GP_ALT;
-  node->val.alt.first = first;
-  node->val.alt.second = second;
+  if (context_num < 0) {
+    node->type = GP_ALT;
+    node->val.alt.first = first;
+    node->val.alt.second = second;
+  } else {
+    node->num = context_num;
+    node->type = GP_OPT;
+    node->val.opt.first = first;
+    node->val.opt.second = second;
+  }
   hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
   struct gp_tree_node *res = (struct gp_tree_node *) *entry;
   if (res != NULL) return res;
 #ifndef NO_GP_DEBUG_PRINT
-  opt_p ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
+  context_num >= 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
 #endif
   res = (*g->parse_alloc) (sizeof (struct gp_tree_node));
   *res = *node;
@@ -1887,12 +1899,12 @@ static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tr
 
 struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
                                       struct gp_tree_node *second) {
-  return gp_get_alt_opt_node (g, first, second, false);
+  return gp_get_alt_opt_node (g, first, second, -1);
 }
 
 struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                      struct gp_tree_node *second) {
-  return gp_get_alt_opt_node (g, first, second, true);
+                                      struct gp_tree_node *second, int context_num) {
+  return gp_get_alt_opt_node (g, first, second, context_num);
 }
 
 static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, int stack_len,
@@ -1985,7 +1997,8 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
       merge_p = true;
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
       if (n_diff_attr > 0) {
-        bool opt_p = n_diff_attr > 1;
+        int context_num = -1;
+        if (n_diff_attr > 1) context_num = g->contexts_num++;
         stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (curr->els);
         stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (curr2->els);
         for (int k = (int) (VLO_LENGTH (curr->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
@@ -1999,9 +2012,9 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
             el2->anode_attr = get_stack_term_node (g, el2);
             el2->attr_p = false;
           }
-          el1->anode_attr = g->node_merge (g, el1->anode_attr, el2->anode_attr, opt_p);
+          el1->anode_attr = g->node_merge (g, el1->anode_attr, el2->anode_attr, context_num);
         }
-        if (opt_p) curr->ambiguity = 2;
+        if (context_num >= 0) curr->ambiguity = 2;
       }
       stack_free (g, curr2);
     }
@@ -2365,10 +2378,13 @@ static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
     if (anode->type == GP_ANODE) {
       for (int i = anode->val.anode.children_num - 1; i >= 0; i--)
         gc_mark_anode (g, anode->val.anode.children[i]);
-    } else {
-      assert (anode->type == GP_ALT || anode->type == GP_OPT);
+    } else if (anode->type == GP_ALT) {
       gc_mark_anode (g, anode->val.alt.first);
       gc_mark_anode (g, anode->val.alt.second);
+    } else {
+      assert (anode->type == GP_OPT);
+      gc_mark_anode (g, anode->val.opt.first);
+      gc_mark_anode (g, anode->val.opt.second);
     }
   }
 }
@@ -2611,12 +2627,17 @@ static void print_node (struct grammar *g, FILE *f, struct gp_tree_node *node) {
     break;
   case GP_ALT:
     fprintf (f, "ALTERNATIVE:");
-  alt:
     fprintf (f, "%d %d\n", node->val.alt.first->num, node->val.alt.second->num);
     print_node (g, f, node->val.alt.first);
     print_node (g, f, node->val.alt.second);
     break;
-  case GP_OPT: fprintf (f, "OPTION:"); goto alt;
+  case GP_OPT:
+    fprintf (f, "OPTION (%d):", node->val.opt.context_num);
+    fprintf (f, "%d %d\n", node->val.opt.first->num, node->val.opt.second->num);
+    print_node (g, f, node->val.opt.first);
+    print_node (g, f, node->val.opt.second);
+    break;
+
   default: assert (false);
   }
 }
@@ -2701,6 +2722,7 @@ static void grammar_init (struct grammar *g) {
   g->symbs = symb_init (g);
   g->term_sets = term_set_init (g);
   g->rules = rule_init (g);
+  g->contexts_num = 0;
   g->node_merge = default_node_merge;
   VLO_CREATE (g->caller_anode_names, g->alloc, 0);
   VLO_CREATE (g->temp_vlo, g->alloc, 0);
@@ -2806,7 +2828,6 @@ static void free_tree_reduce (struct gp_tree_node *node) {
       }
     break;
   case GP_ALT:
-  case GP_OPT:
     if (node->val.alt.first->type & GP_VISITED)
       node->val.alt.first = NULL;
     else
@@ -2815,6 +2836,16 @@ static void free_tree_reduce (struct gp_tree_node *node) {
       node->val.alt.second = NULL;
     else
       free_tree_reduce (node->val.alt.second);
+    break;
+  case GP_OPT:
+    if (node->val.opt.first->type & GP_VISITED)
+      node->val.opt.first = NULL;
+    else
+      free_tree_reduce (node->val.opt.first);
+    if (node->val.opt.second->type & GP_VISITED)
+      node->val.opt.second = NULL;
+    else
+      free_tree_reduce (node->val.opt.second);
     break;
   default: assert ("This should not happen" == NULL);
   }
@@ -2833,9 +2864,12 @@ static void free_tree_sweep (struct grammar *g, struct gp_tree_node *node) {
     g->parse_free (node->val.anode.children);
     break;
   case GP_ALT:
-  case GP_OPT:
     free_tree_sweep (g, node->val.alt.first);
     free_tree_sweep (g, node->val.alt.second);
+    break;
+  case GP_OPT:
+    free_tree_sweep (g, node->val.opt.first);
+    free_tree_sweep (g, node->val.opt.second);
     break;
   default: assert ("This should not happen" == NULL);
   }
@@ -3011,8 +3045,9 @@ static const char *ambig
     "  ;\n";
 
 static void *node_merge (struct grammar *g, struct gp_tree_node *node1, struct gp_tree_node *node2,
-                         bool opt_p) {
-  return (opt_p ? gp_get_opt_node : gp_get_alt_node) (g, node2, node1);
+                         int context_num) {
+  if (context_num) return gp_get_alt_node (g, node2, node1);
+  return gp_get_opt_node (g, node2, node1, context_num);
 }
 
 static void use_ambig (int argc, char **argv) {

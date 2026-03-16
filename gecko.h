@@ -78,6 +78,11 @@ struct gp_alt { /* alternative translations: */
   struct gp_tree_node *first, *second;
 };
 
+struct gp_opt {    /* context-dependent alternative translations: */
+  int context_num; /* the option context number */
+  struct gp_tree_node *first, *second;
+};
+
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
   unsigned num;                /* node number */
@@ -85,7 +90,8 @@ struct gp_tree_node {          /* the generalized node of the parse tree: */
     struct gp_nil nil;
     struct gp_term term;
     struct gp_anode anode;
-    struct gp_alt alt; /* alternative or context-dependent alternative */
+    struct gp_alt alt; /* alternative */
+    struct gp_opt opt; /* context-dependent alternative */
   } val;
 };
 
@@ -195,12 +201,15 @@ extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_
    but the alternative semantics means 4 possible choices for the translation: ac, ad, bc, bd instead
    of two right ones: ac, bd.  Therefore for such case we should use option (or context-dependent alternative)
    nodes for the merged stack: `...opt(a,b)...opt(c,d)...`.  To generate the alternative with the right
-   semantics, the merge function has argument opt_p.  It is possible to rid off option nodes by transforming
-   parse tree to contain only alternative nodes but it is not trivial task.  Fortunately, it is a very rare
-   case grammar for programming languages.
+   semantics (context dependent or independent), the merge function has argument `context_num` which defines
+   the corresponding context.  For context independent alternative, this number will be negative.  To
+   correctly traverse the parse tree, you should always choose the same alternative (`first` or `second`) for
+   options with the same `context_num`.  By correctly traversing the tree you can get rid of option nodes by
+   transforming the parse tree to contain only alternative nodes.  Fortunately, options in the parse tree are
+   impossible for grammars of most programming languages.
 
-   The function READ_TOKEN provides input tokens.  It returns code the next input token and its
-   attribute.  If the function returns negative value we've read all tokens. */
+   The function READ_TOKEN provides input tokens.  It returns the code of the next input token and its
+   attribute.  If the function returns a negative value, all tokens have been read. */
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr), struct gp_tree_node **root,
                      int *ambiguity);
 
@@ -208,9 +217,9 @@ extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr), s
    possible alternative during stack merging. */
 extern struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
                                              struct gp_tree_node *second);
-/* Analogous to previous function but for GP_OPT node */
+/* Analogous to the previous function but for GP_OPT node. */
 extern struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                             struct gp_tree_node *second);
+                                             struct gp_tree_node *second, int context_num);
 
 #ifndef NO_GP_DEBUG_PRINT
 /* Print translation of ROOT parsed for GRAMMAR. */
