@@ -80,9 +80,12 @@ drop in the source files and compile.
 
 ### Full Context-Free Grammar Support
 
-Unlike YACC and Bison, which are limited to LALR(1) grammars (with Bison
-claiming GLR support that in practice struggles with truly ambiguous
-grammars), Gecko can parse inputs described by **any context-free grammar**,
+YACC and Bison are limited to LALR(1) grammars.  Bison claims GLR support,
+but I was unable to make it work with ambiguous grammars: using `%glr-parser`
+with an ambiguous C grammar (the same one used by Gecko and ElkHound for
+benchmarking) reports a syntax error on the third line, and with the simplest
+ambiguous grammar `E : E '+' E | 'a'` it reports a syntax error on the 23rd token.
+Gecko, by contrast, can parse inputs described by **any context-free grammar**,
 including ambiguous ones. This is particularly useful for languages like C,
 where the infamous "typedef problem" (is `T * x;` a pointer declaration or a
 multiplication?) creates genuine ambiguity if typenames are not distinguished
@@ -264,14 +267,7 @@ The format supports:
 
 ### Terminal Declarations
 
-```
-TERM;
-```
-
-A bare `TERM` declares that all subsequent single-character literals
-(`'a'`, `'+'`, etc.) are terminals with codes equal to their ASCII values.
-
-Named terminals with explicit codes:
+Named terminals with explicit codes are described as follows:
 
 ```
 TERM IDENTIFIER = 300 CONSTANT = 338 STRING_LITERAL = 340;
@@ -279,6 +275,10 @@ TERM IDENTIFIER = 300 CONSTANT = 338 STRING_LITERAL = 340;
 
 Multiple terminals can be declared in a single `TERM` statement, each with
 an optional `= code` assignment.
+
+Single-character literals (`'a'`, `'+'`, etc.) are terminals with
+codes equal to their ASCII values and should not be described in TERM
+declarations.
 
 ### Operator Precedence
 
@@ -541,6 +541,9 @@ Debug levels range from 0 (silent) to 6 (extremely verbose):
 
 ### Stack Merging for Ambiguous Grammars
 
+ElkHound uses a mechanism to merge different translations of merged stacks.
+Gecko uses an analogous mechanism, but with a more explicit interface.
+
 ```c
 gp_set_node_merge_func(g, my_merge);
 ```
@@ -568,8 +571,6 @@ a non-negative value indicates correlated alternatives --- in such cases,
 `GP_ALT` to preserve the correct pairing of alternatives (see the parse tree
 section below for details).
 
-The ElkHound parser uses a similar merge mechanism.
-
 ---
 
 ## The Parse Tree
@@ -592,7 +593,8 @@ unique node number), plus a union containing the type-specific data:
   `...a...b...` and `...c...d...`, using `GP_ALT` nodes would produce
   `...alt(a,c)...alt(b,d)...`, which incorrectly implies four combinations
   (`ac`, `ad`, `bc`, `bd`) instead of the two correct ones (`ac`, `bd`). `GP_OPT`
-  nodes preserve this correlation: `...opt(a,c)...opt(b,d)...`.
+  nodes preserve this correlation: `...opt(n,a,c)...opt(n,b,d)...`, where `n` is
+  some context number
 
 ![Stack merge: alt vs opt nodes](merge_example.png)
 
