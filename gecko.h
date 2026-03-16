@@ -54,9 +54,8 @@ enum gp_tree_node_type { /* the parse tree node: */
                          GP_NIL,
                          GP_TERM,
                          GP_ANODE,
-                         GP_ALT,            /* alternative */
-                         GP_OPT,            /* context-dependent alternative */
-                         GP_VISITED = 0x80, /* for internal use only */
+                         GP_ALT, /* alternative */
+                         GP_OPT, /* context-dependent alternative */
 };
 
 struct gp_nil { /* The node exists in one instance. See comment to read_rule. */
