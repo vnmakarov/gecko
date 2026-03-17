@@ -23,12 +23,12 @@
 * Operator grammar support
   * Descriptions of operator priority and associativity analogous to YACC/Bison
 * Simple syntax-directed translation
-  * Generates **abstract syntax tree** as an output
+  * Generates **abstract syntax tree** as output
 * Library
   * Can be embedded into other programs
   * A grammar for Gecko can be constructed through function calls or using
     a YACC-like description syntax
-  * Very **fast startup** after reading grammar from file or string
+  * Very **fast startup** after reading a grammar from a file or string
 
 ## Comparison of major features of compiler-compilers
 
@@ -37,7 +37,7 @@
 |Library                                  | No      | No      | No       | Yes      | Yes      |
 |CFG grammar                              | LALR(1) | LALR(1)*| ambiguous| ambiguous| ambiguous|
 |Operator grammar (priority/associativity)| Yes     | Yes     | Yes      | No       | Yes      |
-|Speed independence on grammar size       | Yes     | Yes     | Yes      | No       | Yes      |
+|Speed independent of grammar size        | Yes     | Yes     | Yes      | No       | Yes      |
 |Syntax error recovery                    | Yes     | Yes     | No       | Yes      | Yes      |
 |Automatic error recovery                 | No      | No      | -        | No       | Yes      |
 |Actions                                  | Yes     | Yes     | Yes      | No       | Yes**    |
@@ -58,11 +58,11 @@
 * Additional differences between Gecko and YAEP:
   * Gecko is faster on unambiguous and moderately ambiguous grammars
   * Gecko requires less memory for parsing
-  * Gecko memory consumption does not depend on input length (or slightly depends for ambiguous grammars)
+  * Gecko memory consumption does not depend on input length (or depends slightly for ambiguous grammars)
   * Gecko permits shorter grammars by supporting operator grammars (operator associativity
     and precedence) analogously to YACC/Bison
   * YAEP is faster on highly ambiguous grammars when all possible translations or minimal cost translation
-    are required.  It also generates much smaller DAG for all possible translations for highly ambiguous grammars
+    are required.  It also generates a much smaller DAG for all possible translations of highly ambiguous grammars
 
 # Gecko usage example:
 
@@ -112,7 +112,7 @@ static void parse (void)
   * ``make bench`` (optional)
     * requires YACC/BISON, GCC, Clang, installed YAEP and built Elkhound (use `make bench ELKHOUND_DIR=<path>` to run Elkhound benchmarks)
   * ``make install``
-    * `gecko.h` && `libgecko.a` will be installed in `/usr/local/include` and `/usr/local/lib`
+    * `gecko.h` and `libgecko.a` will be installed in `/usr/local/include` and `/usr/local/lib`
     * You can change installation path `/usr/local` by using makefile arg `PREFIX`, e.g. `make PREFIX=/usr install`
     
 ## Speed comparison with YACC, ElkHound, YAEP, and GCC/Clang parsers
@@ -129,7 +129,7 @@ static void parse (void)
   * YAEP as of Oct. 2015.
   * [ElkHound](https://github.com/WeiDUorg/elkhound) as of 2019-02-17 (a GLR parser)
 * Bison is claimed to be a GLR parser but I did not manage to use **ambiguous**
-  C grammar (see below) for it.  Therefore and because its results on **unambiguous**
+  C grammar (see below) for it.  Therefore, and because its results on **unambiguous**
   C grammar are close to YACC's, I excluded it from the tests.
 * Grammar:
   * The base test grammar is the **ANSI C** grammar which is mostly
@@ -142,7 +142,7 @@ static void parse (void)
     the next identifier (as a typename or regular identifier).
 * Scanning test files:
   * We prepare all tokens beforehand in order to exclude scanning time from our benchmark.
-  * For YACC, at the scanning stage we do not yet distinguish identifiers and typenames. 
+  * For YACC, at the scanning stage we do not yet distinguish identifiers and typenames.
 * Tests:
   * The first test is 100K sieve functions, so the resulting file size was 1.5M C lines.
   * The second test is a pre-release version of gcc-4.0 for i686 with all the source
@@ -159,7 +159,7 @@ static void parse (void)
       is not correct as C code but it is correct from the syntactic point of view.
 * Measurements:
   * The result times are elapsed (wall) times.
-  * Memory is peak allocated memory for AMD9900X, the results are close to ones on other 64-bit targets
+  * Memory is peak allocated memory for AMD9900X, the results are close to those on other 64-bit targets
   * For GCC and Clang, memory was instead measured as max resident memory reported by ``/usr/bin/time``.
 * How to reproduce: please use `make bench`.
 
@@ -180,7 +180,7 @@ static void parse (void)
 |Gecko                 |   0.71        |   0.69         |  0.74           |  1.77        |    340         |
 
 
-  * YAEP has very good results as it uses dynamic programming to speedup Earley's parser
+  * YAEP has very good results as it uses dynamic programming to speed up Earley's parser
     and therefore it works very fast on files consisting of repeating parts.
   * The file below is more realistic for speed comparison.
       
@@ -197,10 +197,10 @@ static void parse (void)
 |YAEP                  |   0.66         |   1.03         |   0.71         |   1.33      |    471         |
 |Gecko                 |   0.29         |   0.30         |   0.31         |   0.68      |    124         |
 
-  * GCC and Clang have a slightly different test as other parsers can not take
+  * GCC and Clang have a slightly different test as other parsers cannot take
     C extensions in the original test.
 
-* Highly ambiguous grammar (E=E+E|a) with abstract tree generation (only for Gecko and YAEP)
+* Highly ambiguous grammar (E=E+E|a) with abstract tree generation
   * Input is `a(+a){200}`.  In other words, 200 operators `+` are used:
   
 |                      | AMD9900X(sec) | Apple M4(sec) | Intel 285K(sec) | Power10(sec) |Memory (parse only) MB|
@@ -224,7 +224,7 @@ static void parse (void)
     runs without extra allocations -- this makes unambiguous grammars nearly as fast as YACC
   * **Multi-stack path**: multiple stacks are maintained when ambiguity or conflicts arise;
     each stack independently processes shifts and reduces
-  * **Stack merging**: stacks with identical sets sequences are merged, combining parse tree
+  * **Stack merging**: stacks with identical state sequences are merged, combining parse tree
     nodes via a user callback `gp_node_merge_func_t(grammar, node1, node2, context_num)`.
     A negative `context_num` indicates a context-independent alternative; a non-negative value
     indicates correlated alternatives where `GP_OPT` nodes should be used instead of `GP_ALT`
@@ -239,7 +239,7 @@ static void parse (void)
   no grammar modifications — unlike YACC/Bison/YAEP, you don't need to add
   `error` rules to your grammar
 
-* As Gecko can deal with numerous parsing stacks, this permits implementing a high quality syntax recovery algorithm
+* As Gecko can deal with numerous parsing stacks, this permits implementing a high-quality syntax recovery algorithm
 
 * The syntax error recovery guarantees that Gecko always produces parse trees corresponding to
   syntactically correct inputs -- simply, some tokens before and after the error token are ignored
@@ -250,7 +250,7 @@ static void parse (void)
   * We repeatedly move more and more expensive delayed stacks to the pool of the current stacks
   * For each failed stack, we add the delayed stack derived from the stack and
     keep the failed stack which skips the current stack token and advances the stack input to the next input token
-  * We stop error recovery when we have a minimal cost stack that successfully consumed given number (defined by
+  * We stop error recovery when we have a minimal cost stack that successfully consumed a given number (defined by
     `gp_set_recovery_match`) of tokens without a gap or when we have a final stack that consumed `EOF`
   * The minimal cost stacks (or one minimal cost stack if we have one stack before the error recovery)
     become the start stacks after the recovery

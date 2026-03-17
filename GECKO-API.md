@@ -33,7 +33,7 @@ recovery and syntax-directed translation.
 | `GP_INCORRECT_TRANSLATION`         | 15    | Incorrect translation specification  |
 | `GP_INCORRECT_SYMBOL_NUMBER`       | 16    | Incorrect symbol number              |
 | `GP_REPEATED_SYMBOL_NUMBER`        | 17    | Repeated symbol number               |
-| `GP_UNACCESSIBLE_NONTERM`          | 18    | Unaccessible nonterminal             |
+| `GP_UNACCESSIBLE_NONTERM`          | 18    | Inaccessible nonterminal             |
 | `GP_NONTERM_DERIVATION`            | 19    | Nonterminal derivation issue         |
 | `GP_LOOP_NONTERM`                  | 20    | Looping nonterminal                  |
 | `GP_INVALID_TOKEN_CODE`            | 21    | Invalid token code                   |
@@ -160,7 +160,7 @@ Return the last occurred error code for the given grammar or zero otherwise.
 const char *gp_error_message(struct grammar *g);
 ```
 
-Return a message corresponding to the last occurred error code or empty string otherwise
+Return a message corresponding to the last occurred error code or an empty string otherwise.
 
 ### Grammar Definition
 
@@ -182,8 +182,8 @@ or an error code on failure (also available via `gp_error_code` and `gp_error_me
 **Parameters:**
 
 - `g` -- the grammar to populate
-- `strict_p` -- enable strict grammar checking which means reporting about terminals unreachable from axiom,
-   unability to produce any terminal string and other non-critical grammar errors.
+- `strict_p` -- enable strict grammar checking which means reporting about nonterminals unreachable from the axiom,
+   inability to produce any terminal string, and other non-critical grammar errors.
 - `read_terminal` -- callback to read the next terminal. Called before `read_rule`. Returns the terminal name and
    sets `*code` (must be non-negative), `*priority`, and `*assoc`. Return `NULL` when all terminals have been read.
    Use `GP_NON_ASSOC` if you don't want conflict resolution.
@@ -373,7 +373,7 @@ typedef void (*gp_syntax_error_func_t)(const char *err_nonterm_repr, const char 
 
 - `err_nonterm_repr` -- representation of the nonterminal minimally covering the error position and ignored tokens
 - `err_tok_repr`, `err_tok_attr` -- representation and attribute of the token where the error occurred
-- `stop_tok_repr`, `stop_tok_attr` -- representation and attribute of the token where recovery stopped.
+- `stop_tok_repr`, `stop_tok_attr` -- representation and attribute of the token where recovery stopped
 
 The default function prints the error nonterminal and token representations to stderr. Set a custom
 function to print source positions (which can be passed through token attributes) and to translate
@@ -462,7 +462,7 @@ On success (code zero), the parse tree root is stored in `*root`.
 - `grammar` -- the grammar (previously set up via `gp_read_grammar` or `gp_parse_grammar`)
 - `read_token` -- callback providing input tokens. Returns the token code and sets `*attr` to the token attribute.
   A negative return value signals end of input.
-- `root` -- output: the root of the parse tree. It never returns NULL.
+- `root` -- output: the root of the parse tree (never NULL on success)
 - `ambiguity` -- output: ambiguity status of the parse:
   - `0` -- no ambiguity found
   - `1` -- the grammar is ambiguous on the input
@@ -473,10 +473,10 @@ On success (code zero), the parse tree root is stored in `*root`.
 **Ambiguity level 2 and option nodes:**
 
 Consider merging two stacks with two different translations for two stack elements:
-`...a...b...` and `...c...d...`.  Using the result stack `...alt(a,b)...alt(c,d)...` with regular
+`...a...b...` and `...c...d...`.  Using the result stack `...alt(a,c)...alt(b,d)...` with regular
 alternative nodes would imply 4 possible choices (ac, ad, bc, bd) instead of the two correct ones (ac, bd).
-Therefore for such cases the parser uses option (context-dependent alternative, `GP_OPT`) nodes for the merged
-stack: `...opt(a,b)...opt(c,d)...`.  The node merge function receives a non-negative `context_num` for these
+Therefore, for such cases the parser uses option (context-dependent alternative, `GP_OPT`) nodes for the merged
+stack: `...opt(a,c)...opt(b,d)...`.  The node merge function receives a non-negative `context_num` for these
 cases (and a negative `context_num` for context-independent alternatives).  To correctly traverse the parse tree,
 you should always choose the same alternative (`first` or `second`) for option nodes with the same `context_num`.
 By correctly traversing the tree you can eliminate option nodes by transforming the parse tree to contain only
@@ -489,7 +489,7 @@ languages.
 struct gp_tree_node *gp_get_alt_node(struct grammar *g, struct gp_tree_node *first, struct gp_tree_node *second);
 ```
 
-Return a `GP_ALT` node with given `first` and `second`.  The function can be used in the node merge function
+Return a `GP_ALT` node with the given `first` and `second`.  The function can be used in the node merge function
 if you want to keep all possible alternatives during stack merging.
 
 #### `gp_get_opt_node`

@@ -3,7 +3,7 @@
 */
 
 /* This is the interface file of a general (working on any CFG) syntax parser with minimal error recovery
-   and syntax directed translation. The algorithm is described in doc directory.  The
+   and syntax-directed translation. The algorithm is described in README.md file.  The
    algorithm is sufficiently fast to be used in serious language processors. */
 
 #ifndef __GECKO__
@@ -105,8 +105,8 @@ extern int gp_error_code (struct grammar *g);
 extern const char *gp_error_message (struct grammar *g);
 
 /* Read terminals/rules into grammar G and check it depending on STRICT_P.
-   Returns zero if it is all ok. Otherwise, returns the error code (its code
-   will be in gp_error_code and message in gp_error_message).
+   Returns zero if it is all ok.  Otherwise, returns the error code (also available
+   via gp_error_code and gp_error_message).
 
    READ_TERMINAL is a function for reading terminals.  This function is called before function read_rule.
    The function should return the name and the code of the next terminal.  If all terminals have been
@@ -118,16 +118,16 @@ extern const char *gp_error_message (struct grammar *g);
    read_terminal.  The function should return the name of the LHS nonterminal and array of names of
    symbols in RHS of the rule (the array end marker should be NULL).  If all rules have been read the
    function returns NULL.  All symbols with names not provided by the previous function are considered
-   to be nonterminal. The function also returns translation given by abstract node name and its
-   fields which will be translation of symbols (with indexes given in array *TRANSL) in the RHS of
+   to be nonterminal.  The function also returns a translation given by an abstract node name and its
+   fields which will be translations of symbols (with indexes given in array *TRANSL) in the RHS of
    the rule.  All indexes in TRANSL should be different (so the translation of a symbol cannot be
    represented twice).  The end marker of the array should be a negative value.  There is a reserved
    value of the translation symbol number denoting an empty node.  It is the value defined by macro
    GP_NIL_TRANSLATION_NUMBER.  If *TRANSL is NULL or contains only the end marker, translations of
-   the rule will be nil node.  If ABS_NODE is NULL, abstract node is not created.  In this case
+   the rule will be a nil node.  If ABS_NODE is NULL, an abstract node is not created.  In this case
    *TRANSL should be NULL or contain at most one element which means that the translation of the
-   rule will be nil node or the translation of the symbol in RHS given by the single array element.
-   The function returns rule guard num through GUARD_NUM (see comments for gp_set_rule_guard). */
+   rule will be a nil node or the translation of the symbol in RHS given by the single array element.
+   The function returns the rule guard number through GUARD_NUM (see comments for gp_set_rule_guard). */
 extern int gp_read_grammar (struct grammar *g, bool strict_p,
                             const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
                             const char *(*read_rule) (const char ***rhs, const char **abs_node, int **transl,
@@ -143,39 +143,40 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      It should always be non-NULL.
 
    * parse_free is used to free memory for parse tree representation.  By default it is free.
-     NULL value means no freeing.   It is not safe to change parse_alloc and parse_free functions after
+     NULL value means no freeing.  It is not safe to change parse_alloc and parse_free functions after
      gp_parse and before gp_fin as some data allocated by parse_alloc in gp_parse can be freed in gp_fin
      and reading a new grammar.
 
-   * syntax error function is used to print an error message about a syntax error which occurred in
-     ERR_NONTERM_REPR on a token with representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type
-     gp_syntax_error_func_t). The next two parameters describe the recovery stop token.  The default function
-     prints only error nonterm and the token representations.  You should set up the new function to print
-     positions which can be passed through the token attributes and you can translate ERR_NONTERM in more
+   * syntax error function is used to print an error message about a syntax error on a token with
+     representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).
+     ERR_NONTERM_REPR is the nonterminal minimally covering the error position and ignored tokens.
+     The next two parameters describe the recovery stop token.  The default function prints the error
+     nonterminal and token representations.  You should set up a new function to print positions which
+     can be passed through the token attributes and you can translate ERR_NONTERM_REPR into a more
      readable name, e.g. "stmt" used in a grammar into "statement".
 
-   * non-NUll rule guard function is used to reject some rules or do some other actions.  It is called for
-     each reduction of rule having a guard number.  The function gets the guard number and argument passed
-     to gp_parse. If the function returns false,  the ruled reduction is rejected
+   * non-NULL rule guard function is used to reject some rules or do some other actions.  It is called for
+     each reduction of a rule having a guard number.  The function gets the guard number and argument passed
+     to gp_parse.  If the function returns false, the rule reduction is rejected.
 
-   * debug_level says what debugging information to output (it works only if we compiled without
-     defined macro NO_GP_DEBUG_PRINT):
+   * debug_level says what debugging information to output (it works only if compiled without
+     defining macro NO_GP_DEBUG_PRINT):
 
      * 0 (default value) means print nothing
      * 1 results in printing statistics
-     * 2 results in additional print of the result translation
-     * 3 results in printing read token, actions (conflicts marked by '!') for dynamically generated
+     * 2 results in additionally printing the result translation
+     * 3 results in printing read tokens, actions (conflicts marked by '!') for dynamically generated
        SLR sets, and high-level error recovery info
-     * 4 means printing rules, first/follows nonterminal sets, dynamically generated SLR sets
+     * 4 means printing rules, first/follow nonterminal sets, dynamically generated SLR sets
      * 5 results in printing stacks during parsing and stack merging
      * 6 results in even more detailed info about processing stacks during parsing
 
    * recovery_match means how many subsequent tokens should be successfully shifted to finish error
      recovery.  The default value is 3.
 
-   * gp_set_node_merge_func is used during merging stacks.  It gets two parse tree nodes of a symbol
-     (terminal or nonterminal) from stacks being merged and returns the result node.  Null FUNC
-     sets up the default function which returns always the first node.  The default function is set
+   * gp_set_node_merge_func is used during stack merging.  It gets two parse tree nodes of a symbol
+     (terminal or nonterminal) from stacks being merged and returns the result node.  NULL FUNC
+     sets up the default function which always returns the first node.  The default function is set
      up in GP_CREATE_GRAMMAR.  Using the default function results in returning only one translation
      by GP_PARSE. */
 
@@ -199,24 +200,24 @@ typedef void *(*gp_node_merge_func_t) (struct grammar *grammar, struct gp_tree_n
                                        struct gp_tree_node *node2, int context_num);
 extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_node_merge_func_t func);
 
-/* Parse input according to the read grammar. Returns the error code (which will be also in
-   gp_error_code). If the code is zero, also put parse result into *root (it will never be NULL).
-   Set up *AMBIGUITY to 1 if we found that the grammar is ambiguous on the input.
+/* Parse input according to the read grammar.  Returns the error code (which is also available via
+   gp_error_code).  If the code is zero, also puts the parse result into *root (it will never be NULL).
+   Sets *AMBIGUITY to 1 if the grammar is ambiguous on the input.
 
-   *AMBIGUITY is set up to 2 if the final stack is produced by merging stacks and two or more
+   *AMBIGUITY is set to 2 if the final stack is produced by merging stacks and two or more
    terminal attributes/abstract nodes were different.
 
    Consider merging two stacks with two different translations for two stack elements:
-   `...a...b...` and `...c...d...`.  We could use the result stack `...alt(a,b)...alt(c,d)...`
+   `...a...b...` and `...c...d...`.  We could use the result stack `...alt(a,c)...alt(b,d)...`
    but the alternative semantics means 4 possible choices for the translation: ac, ad, bc, bd instead
-   of two right ones: ac, bd.  Therefore for such case we should use option (or context-dependent alternative)
-   nodes for the merged stack: `...opt(a,b)...opt(c,d)...`.  To generate the alternative with the right
-   semantics (context dependent or independent), the merge function has argument `context_num` which defines
-   the corresponding context.  For context independent alternative, this number will be negative.  To
-   correctly traverse the parse tree, you should always choose the same alternative (`first` or `second`) for
-   options with the same `context_num`.  By correctly traversing the tree you can get rid of option nodes by
-   transforming the parse tree to contain only alternative nodes.  Fortunately, options in the parse tree are
-   impossible for grammars of most programming languages.
+   of the two correct ones: ac, bd.  Therefore for such a case we should use option (or context-dependent
+   alternative) nodes for the merged stack: `...opt(a,c)...opt(b,d)...`.  To generate the alternative with
+   the right semantics (context-dependent or -independent), the merge function has an argument `context_num`
+   which defines the corresponding context.  For a context-independent alternative, this number will be
+   negative.  To correctly traverse the parse tree, you should always choose the same alternative (`first`
+   or `second`) for options with the same `context_num`.  By correctly traversing the tree you can get rid
+   of option nodes by transforming the parse tree to contain only alternative nodes.  Fortunately, options
+   in the parse tree are impossible for grammars of most programming languages.
 
    The function READ_TOKEN provides input tokens.  It returns the code of the next input token and its
    attribute.  If the function returns a negative value, all tokens have been read.
