@@ -162,12 +162,14 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
              start_ignored_tok_num);
 }
 #else
-static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
-                               const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+static void test_syntax_error (const char *err_nonterm, const char *err_tok_repr,
+                               void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
+                               void *stop_tok_attr GP_UNUSED) {
   if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
+    fprintf (stderr, "Syntax error in %s on token %s\n", err_nonterm, err_tok_repr);
   else
-    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
+    fprintf (stderr, "Syntax error in %s on token %s and stopping on token %s\n", err_nonterm, err_tok_repr,
+             stop_tok_repr);
 }
 #endif
 

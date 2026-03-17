@@ -1,4 +1,4 @@
-Syntax error on token '+' (pos=7) and stopping on token 'a' (pos=8)
+Syntax error in E on token '+' (pos=7) and stopping on token 'a' (pos=8)
       8: ABSTRACT: plus ( 1 7 )
       1: TERMINAL: code=97, repr='a'
       7: ABSTRACT: mult ( 2 6 )

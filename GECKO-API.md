@@ -364,17 +364,20 @@ Set the syntax error reporting function. Called when a syntax error occurs durin
 
 **Type:**
 ```c
-typedef void (*gp_syntax_error_func_t)(const char *err_tok_repr, void *err_tok_attr,
-                                       const char *stop_tok_repr, void *stop_tok_attr);
+typedef void (*gp_syntax_error_func_t)(const char *err_nonterm_repr, const char *err_tok_repr,
+                                       void *err_tok_attr, const char *stop_tok_repr,
+                                       void *stop_tok_attr);
 ```
 
 **Callback parameters:**
 
+- `err_nonterm_repr` -- representation of the nonterminal minimally covering the error position and ignored tokens
 - `err_tok_repr`, `err_tok_attr` -- representation and attribute of the token where the error occurred
 - `stop_tok_repr`, `stop_tok_attr` -- representation and attribute of the token where recovery stopped.
 
-The default function prints token representations to stderr. Set a custom function to print source
-positions (which can be passed through token attributes).
+The default function prints the error nonterminal and token representations to stderr. Set a custom
+function to print source positions (which can be passed through token attributes) and to translate
+nonterminal names into more readable form (e.g., `"stmt"` into `"statement"`).
 
 #### `gp_set_debug_level`
 

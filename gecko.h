@@ -147,11 +147,12 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      gp_parse and before gp_fin as some data allocated by parse_alloc in gp_parse can be freed in gp_fin
      and reading a new grammar.
 
-   * syntax error function is used to print an error message about a syntax error which occurred on a token
-     with representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next
-     two parameters describe the recovery stop token.  The default function prints only the token
-     representations.  You should set up the new function to print positions which can be passed through the
-     token attributes.
+   * syntax error function is used to print an error message about a syntax error which occurred in
+     ERR_NONTERM_REPR on a token with representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type
+     gp_syntax_error_func_t). The next two parameters describe the recovery stop token.  The default function
+     prints only error nonterm and the token representations.  You should set up the new function to print
+     positions which can be passed through the token attributes and you can translate ERR_NONTERM in more
+     readable name, e.g. "stmt" used in a grammar into "statement".
 
    * non-NUll rule guard function is used to reject some rules or do some other actions.  It is called for
      each reduction of rule having a guard number.  The function gets the guard number and argument passed
@@ -184,8 +185,8 @@ extern gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_all
 extern gp_parse_free_func_t gp_set_parse_free (struct grammar *g, gp_parse_free_func_t fn);
 
 /* The syntax error reporting function type. */
-typedef void (*gp_syntax_error_func_t) (const char *err_tok_repr, void *err_tok_attr,
-                                        const char *stop_tok_repr, void *stop_tok_attr);
+typedef void (*gp_syntax_error_func_t) (const char *err_nonterm_repr, const char *err_tok_repr,
+                                        void *err_tok_attr, const char *stop_tok_repr, void *stop_tok_attr);
 extern gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_error_func_t fn);
 
 typedef bool (*gp_rule_guard_func_t) (int num, void *arg);

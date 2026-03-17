@@ -960,12 +960,15 @@ static void *parse_alloc_default (int nmemb) {
 
 static void parse_free_default (void *mem) { free (mem); }
 
-static void syntax_error_default (const char *err_tok_repr, void *err_tok_attr GP_UNUSED,
-                                  const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+static void syntax_error_default (const char *err_nonterm_repr, const char *err_tok_repr,
+                                  void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
+                                  void *stop_tok_attr GP_UNUSED) {
+  assert (err_nonterm_repr != NULL);
   if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error on token %s\n", err_tok_repr);
+    fprintf (stderr, "Syntax error in %s on token %s\n", err_nonterm_repr, err_tok_repr);
   else
-    fprintf (stderr, "Syntax error on token %s and stopping on token %s\n", err_tok_repr, stop_tok_repr);
+    fprintf (stderr, "Syntax error in %s on token %s and stopping on token %s\n", err_nonterm_repr,
+             err_tok_repr, stop_tok_repr);
 }
 
 int gp_error_code (struct grammar *g) { /* Return the last occurred error code for given grammar. */
@@ -1596,6 +1599,7 @@ struct recovery_info {
       int n_matched_toks; /* number of last matched toks */
       int buff_token_ind;
       int cost;
+      struct symb *nonterm; /* the most nested nonterm covering the error */
     } token_info;
     struct recovery_info *next; /* used for freed infos */
   } u;
@@ -1722,6 +1726,7 @@ static void stack_init_recovery (struct grammar *g, struct stack *stack, int buf
   stack->recovery = recovery_info_get_free (g);
   stack->recovery->u.token_info.buff_token_ind = buff_token_ind;
   stack->recovery->u.token_info.n_matched_toks = stack->recovery->u.token_info.cost = 0;
+  stack->recovery->u.token_info.nonterm = NULL;
 }
 
 static void stack_free_recovery (struct grammar *g, struct stack *stack) {
@@ -1964,7 +1969,14 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
   assert (rhs_len < stack_len);
   stack_el_t *stack_addr = (stack_el_t *) VLO_BEGIN (stack->els);
   struct set *set = stack_addr[stack_len - 1 - rhs_len].set;
-  int ntoks = rhs_len == 0 ? g->read_tokens - 1 : stack_addr[stack_len - rhs_len].ntoks;
+  int ntoks;
+  if (rhs_len != 0) {
+    ntoks = stack_addr[stack_len - rhs_len].ntoks;
+  } else {
+    ntoks = g->read_tokens - 1;
+    int diff = g->curr_buff_token_ind - VLO_LENGTH (g->token_buff) / sizeof (struct token_buff_el);
+    if (UNLIKELY (diff < 0)) ntoks += diff + 1;
+  }
   VLO_SHORTEN (stack->els, sizeof (stack_el_t) * rhs_len);
   void *anode_attr = g->empty_node;
   if (rule->anode != NULL || rule->trans_len != 0) anode_attr = get_transl (g, stack_addr, stack_len, rule);
@@ -2060,9 +2072,12 @@ static void print_stack_els (FILE *f, struct stack *stack) {
 
 static void print_stack (FILE *f, struct stack *stack) {
   fprintf (f, "      {#%d}", stack->num);
-  if (stack->recovery != NULL)
+  if (stack->recovery != NULL) {
+    struct symb *nonterm = stack->recovery->u.token_info.nonterm;
+    if (nonterm != NULL) fprintf (f, "nonterm=%s ", nonterm->repr);
     fprintf (f, "token #%d (matched=%d, cost=%d):", stack->recovery->u.token_info.buff_token_ind,
              stack->recovery->u.token_info.n_matched_toks, stack->recovery->u.token_info.cost);
+  }
   print_stack_els (stderr, stack);
 }
 
@@ -2081,6 +2096,9 @@ static void print_stacks (FILE *f, const char *title, vlo_t *stacks, int start) 
 }
 #endif
 
+/* Process START_STACK on term.  Add stacks produces by shifting to new_stacks and failed new stacks (reduced
+   but not shifted) to failed stacks. Current stacks are the same after the return.  Return true if there is
+   any shifted stack, in other words a new stack.  */
 static bool process_term_for_stack (struct grammar *g, struct stack *start_stack, int term, void *attr) {
   bool shift_p = false;
   long len = VLO_LENGTH (g->curr_stacks);
@@ -2121,6 +2139,10 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
         if (r->guard_num >= 0 && g->rule_guard != NULL && !g->rule_guard (r->guard_num, g->rule_guard_arg))
           continue;
         set = stack_reduce (g, stack, action->u.rule);
+        if (stack->recovery != NULL && stack->recovery->u.token_info.nonterm == NULL) {
+          assert (!set->symb->term_p);
+          stack->recovery->u.token_info.nonterm = set->symb;
+        }
         VLO_ADD_MEMORY (g->curr_stacks, &stack, sizeof (stack));
       } else { /* shift */
         struct set *shifted_set = action->u.set;
@@ -2196,6 +2218,7 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
     print_stacks (stderr, "    Stacks before error recovery stop", &g->new_stacks, 0);
 #endif
   int n = 0;
+  const char *error_nonterm = NULL;
   struct stack *single_stack = NULL;
   for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
@@ -2208,9 +2231,11 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
       stack_free (g, stack);
     } else if (one_stack_p && single_stack == NULL) {
       single_stack = stack;
+      error_nonterm = stack->recovery->u.token_info.nonterm->repr;
       stack_free_recovery (g, stack);
       ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
     } else if (!one_stack_p) {
+      error_nonterm = stack->recovery->u.token_info.nonterm->repr;
       stack_free_recovery (g, stack);
       ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
     } else {
@@ -2221,8 +2246,8 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   g->curr_buff_token_ind = buff_token_ind;
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 2)) {
-    fprintf (stderr, "<<<%s error recovery stop (buff token ind =%d)>>>\n",
-             one_stack_p ? "Single stack" : "Multi-stack", buff_token_ind);
+    fprintf (stderr, "<<<%s error recovery stop (buff token ind =%d, error nonterm =%s)>>>\n",
+             one_stack_p ? "Single stack" : "Multi-stack", buff_token_ind, error_nonterm);
     if (g->debug_level > 3)
       print_stacks (stderr, "    Result stacks after error recovery", &g->new_stacks, 0);
   }
@@ -2232,7 +2257,7 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   void *stop_token_attr;
   int stop_code = token_buff_get (g, buff_token_ind, &stop_token_attr);
   struct symb *stop_token_term = term_find_by_code (g, stop_code);
-  g->syntax_error (error_term->repr, error_attr, stop_token_term->repr, stop_token_attr);
+  g->syntax_error (error_nonterm, error_term->repr, error_attr, stop_token_term->repr, stop_token_attr);
   return single_stack;
 }
 
@@ -2325,6 +2350,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
         stack->recovery->u.token_info.buff_token_ind++;
         stack->recovery->u.token_info.cost++;
         stack->recovery->u.token_info.n_matched_toks = 0;
+        stack->recovery->u.token_info.nonterm = NULL;
         VLO_ADD_MEMORY (g->new_stacks, &stack, sizeof (stack));
       }
       if (shift_p && max_buff_ind < stack->recovery->u.token_info.buff_token_ind)
@@ -2337,6 +2363,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
       stack->recovery->u.token_info.buff_token_ind++;
       stack->recovery->u.token_info.cost++;
       stack->recovery->u.token_info.n_matched_toks = 0;
+      stack->recovery->u.token_info.nonterm = NULL;
       VLO_ADD_MEMORY (g->new_stacks, &stack, sizeof (stack));
       if (max_buff_ind < stack->recovery->u.token_info.buff_token_ind)
         max_buff_ind = stack->recovery->u.token_info.buff_token_ind;
