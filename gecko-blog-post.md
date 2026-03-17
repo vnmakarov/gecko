@@ -182,7 +182,7 @@ The core API is deliberately minimal:
 ```c
 struct grammar *g = gp_create_grammar();
 gp_parse_grammar(g, true, description);
-gp_parse(g, read_token, &root, &ambiguity);
+gp_parse(g, read_token, &root, &ambiguity, NULL);
 gp_fin(g);
 ```
 
@@ -318,6 +318,9 @@ After `#`:
   are the translations of RHS symbols at positions i, j, k
 - Omitting the `#` gives a nil translation
 
+An optional **guard** can follow the translation: `? N` assigns guard
+number `N` to the rule alternative (see Rule Guards in Configuration).
+
 ### Comments
 
 C-style `/* ... */` comments are supported in grammar descriptions.
@@ -342,8 +345,9 @@ const char *read_terminal(int *code, int *priority, enum gp_assoc *assoc) {
 **`read_rule`** --- called repeatedly to provide grammar rules:
 
 ```c
-const char *read_rule(const char ***rhs, const char **abs_node, int **transl) {
-    // Return LHS name, set RHS array, abstract node name, translation
+const char *read_rule(const char ***rhs, const char **abs_node, int **transl,
+                      int *guard_num) {
+    // Return LHS name, set RHS array, abstract node name, translation, guard number
     // Return NULL when done
 }
 ```
@@ -370,7 +374,8 @@ const char *read_terminal(int *code, int *priority, enum gp_assoc *assoc) {
 
 static int nrule = 0;
 
-const char *read_rule(const char ***rhs, const char **anode, int **transl) {
+const char *read_rule(const char ***rhs, const char **anode, int **transl,
+                      int *guard_num) {
     static const char *rhs_1[] = {"T", NULL};
     static int tr_1[] = {0, -1};
     static const char *rhs_2[] = {"E", "+", "T", NULL};
@@ -385,6 +390,7 @@ const char *read_rule(const char ***rhs, const char **anode, int **transl) {
     static int tr_6[] = {1, -1};
 
     nrule++;
+    *guard_num = -1;
     switch (nrule) {
     case 1: *rhs = rhs_1; *anode = NULL; *transl = tr_1; return "$S";
     case 2: *rhs = rhs_2; *anode = "plus"; *transl = tr_2; return "E";
@@ -455,7 +461,7 @@ void main(void)
         exit(1);
     }
     gp_set_debug_level(g, 2);
-    if (gp_parse(g, read_token_func, &root, &ambiguity))
+    if (gp_parse(g, read_token_func, &root, &ambiguity, NULL))
         fprintf(stderr, "gp_parse: %s\n", gp_error_message(g));
     gp_fin(g);
 }
@@ -473,7 +479,7 @@ A few things to note:
 3. **`gp_set_debug_level(g, 2)`** enables printing of the result translation
    (AST) to stderr, which is useful for verifying the parse tree structure.
 
-4. **`gp_parse(g, read_token_func, &root, &ambiguity)`** runs the parser.
+4. **`gp_parse(g, read_token_func, &root, &ambiguity, NULL)`** runs the parser.
    `read_token_func` is a user-provided function that returns the next
    token's code and attribute. It returns a negative value at end of input.
    On success, `root` points to the parse tree and `ambiguity` indicates
@@ -481,7 +487,8 @@ A few things to note:
    ambiguous on the input, and 2 means the final stack was produced by
    merging stacks where terminal attributes or abstract nodes differed,
    which would result in context-dependent alternative (`GP_OPT`) nodes
-   in the parse tree if a custom merge function is provided.
+   in the parse tree if a custom merge function is provided. The last
+   argument is passed to the rule guard function (see below).
 
 5. **`gp_fin(g)`** frees all resources associated with the grammar.
 
@@ -541,6 +548,23 @@ Debug levels range from 0 (silent) to 6 (extremely verbose):
   SLR sets
 - **Level 5:** Print stack operations during parsing and stack merging
 - **Level 6:** Even more detailed stack processing information
+
+### Rule Guards
+
+```c
+gp_set_rule_guard(g, my_guard);
+```
+
+Rule guards allow you to reject specific rule reductions during parsing,
+enabling context-sensitive parsing constraints. Each rule alternative can
+have a guard number assigned in the grammar description (using `? N` after
+the translation) or via `read_rule`. When a rule with a guard number is
+about to be reduced, the guard function is called with that number and the
+`arg` passed to `gp_parse`. If the guard function returns `false`, the
+reduction is rejected. The guard function can also prepare data for
+subsequent guard calls. For example, using this mechanism you could
+distinguish typenames from identifiers in a C grammar, eliminating the
+need for ambiguous parsing and generation of alternative nodes.
 
 ### Stack Merging for Ambiguous Grammars
 
@@ -814,13 +838,14 @@ Here is a summary of how Gecko compares with the major alternatives:
 | Speed independent of grammar size        | Yes     | Yes     | Yes      | No       | Yes      |
 | Syntax error recovery                    | Yes     | Yes     | No       | Yes      | Yes      |
 | Automatic error recovery                 | No      | No      | ---      | No       | Yes      |
-| Actions                                  | Yes     | Yes     | Yes      | No       | No       |
+| Actions                                  | Yes     | Yes     | Yes      | No       | Yes*     |
 | Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
 | Generation of all translations           | ---     | ---     | Yes      | Yes      | Yes      |
 | Generation of minimal cost translation   | ---     | ---     | No       | Yes      | No       |
-| Reentrant (thread-safe)                  | Yes*    | Yes*    | Yes      | No       | Yes      |
+| Reentrant (thread-safe)                  | Yes**   | Yes**   | Yes      | No       | Yes      |
 
-(\*) Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
+(\*) See rule guard functions.
+(\**) Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
 
 Key differentiators:
 
