@@ -446,7 +446,7 @@ static int read_token_func(void **attr) {
     return input[input_pos++].code;
 }
 
-void main(void)
+int main(void)
 {
     struct grammar *g;
     struct gp_tree_node *root;
@@ -464,6 +464,7 @@ void main(void)
     if (gp_parse(g, read_token_func, &root, &ambiguity, NULL))
         fprintf(stderr, "gp_parse: %s\n", gp_error_message(g));
     gp_fin(g);
+    return 0;
 }
 ```
 
@@ -524,7 +525,7 @@ token where recovery stopped. The default function prints the error
 nonterminal and token representations. In a real compiler, you would set
 this to print file names, line numbers, and column numbers extracted from
 the token attributes, and translate nonterminal names into more readable
-form (e.g., `"stmt"` into `"statement"`).
+form (e.g., `stmt` into `statement`).
 
 ### Error Recovery Tuning
 
@@ -624,7 +625,7 @@ unique node number), plus a union containing the type-specific data:
   `...alt(a,c)...alt(b,d)...`, which incorrectly implies four combinations
   (`ac`, `ad`, `bc`, `bd`) instead of the two correct ones (`ac`, `bd`). `GP_OPT`
   nodes preserve this correlation: `...opt(n,a,c)...opt(n,b,d)...`, where `n` is
-  some context number
+  some context number.
 
 ![Stack merge: alt vs opt nodes](merge_example.png)
 
@@ -814,7 +815,7 @@ To put this in perspective: Gecko parses the entire old GCC source tree in
 **0.29 seconds** on modern hardware. The numbers for `gcc -fsyntax-only` and
 `clang -fsyntax-only`, which only do fast hand-written recursive descent
 parsing and basic semantic analysis, show that parsing is not the bottleneck
-of the compilers, and 10% Gecko parser slowdown will not be critical.
+of the compilers, and a 10% Gecko parser slowdown will not be critical.
 
 ### Highly Ambiguous Grammar
 
@@ -970,7 +971,7 @@ Gecko is a good fit when:
 
 Gecko might not be the best choice when:
 
-- You need **semantic actions** during parsing (Gecko only produces ASTs)
+- You need **semantic actions** during parsing (Gecko uses rule guards instead)
 - You need **minimal-cost translations** for highly ambiguous grammars
   (consider YAEP)
 - You need a parser in a language other than C (Gecko is C-only)
