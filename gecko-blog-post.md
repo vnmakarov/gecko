@@ -517,11 +517,14 @@ can be freed in `gp_fin` and when reading a new grammar.
 gp_set_syntax_error(g, my_error_func);
 ```
 
-The error function receives the representation and attribute of the error
-token, plus the representation and attribute of the token where recovery
-stopped. The default function prints token representations. In a real
-compiler, you would set this to print file names, line numbers, and column
-numbers extracted from the token attributes.
+The error function receives the representation of the nonterminal minimally
+covering the error position and ignored tokens, the representation and
+attribute of the error token, plus the representation and attribute of the
+token where recovery stopped. The default function prints the error
+nonterminal and token representations. In a real compiler, you would set
+this to print file names, line numbers, and column numbers extracted from
+the token attributes, and translate nonterminal names into more readable
+form (e.g., `"stmt"` into `"statement"`).
 
 ### Error Recovery Tuning
 
