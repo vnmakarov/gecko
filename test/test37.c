@@ -38,7 +38,7 @@ const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
 static int nrule;
 
 /* The following function imported by Gecko (see comments in the interface file). */
-const char *read_rule (const char ***rhs, const char **anode, int **transl) {
+const char *read_rule (const char ***rhs, const char **anode, int **transl, int *guard_num) {
   static const char *rhs_1[] = {"E", "+", "E", NULL};
   static int tr_1[] = {0, 2, -1};
   static const char *rhs_2[] = {"E", "*", "E", NULL};
@@ -48,6 +48,7 @@ const char *read_rule (const char ***rhs, const char **anode, int **transl) {
   static const char *rhs_4[] = {"(", "E", ")", NULL};
   static int tr_4[] = {1, -1};
 
+  *guard_num = -1;
   nrule++;
   switch (nrule) {
   case 1:

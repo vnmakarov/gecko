@@ -919,7 +919,7 @@ int main (int argc, char **argv) {
 #else
   struct gp_tree_node *root;
   gp_set_syntax_error (g, test_syntax_error);
-  parser_res = gp_parse (g, test_read_token, &root, &ambiguity);
+  parser_res = gp_parse (g, test_read_token, &root, &ambiguity, NULL);
   if (parser_res) fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_fin (g);
 #endif

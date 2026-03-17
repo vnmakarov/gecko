@@ -72,6 +72,10 @@ static void test_syntax_error (const char *err_tok_repr, void *err_tok_attr GP_U
 }
 #endif
 
+#ifndef YAEP
+static gp_rule_guard_func_t rule_guard = NULL;
+#endif
+
 static const char *input;
 static const char *description;
 
@@ -107,7 +111,7 @@ static void test_standard_parse (void) {
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  bool fail = gp_parse (g, test_read_token, &root, &ambiguity);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguity, NULL);
 #endif
   if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
@@ -122,7 +126,7 @@ static bool test_standard_read (bool print_transl,
                                 const char *(*read_rule) (const char ***, const char **, int *, int **) ) {
 #else
                                 const char *(*read_terminal) (int *, int *, enum gp_assoc *),
-                                const char *(*read_rule) (const char ***, const char **, int **) ) {
+                                const char *(*read_rule) (const char ***, const char **, int **, int *) ) {
 #endif
   struct grammar *g;
   struct tree_node *root;
@@ -143,7 +147,7 @@ static bool test_standard_read (bool print_transl,
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  bool fail = gp_parse (g, test_read_token, &root, &ambiguity);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguity, NULL);
 #endif
   if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
@@ -197,7 +201,8 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  bool fail = gp_parse (g, test_read_token, &root, &ambiguity);
+  gp_set_rule_guard (g, rule_guard);
+  bool fail = gp_parse (g, test_read_token, &root, &ambiguity, NULL);
 #endif
   if (fail) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));

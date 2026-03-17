@@ -58,15 +58,14 @@
 
   /* The following structure describes syntax grammar rule. */
   struct srule {
+    int guard_num; /* rule guard number */
     /* The following members are left hand side nonterminal
        representation and abstract node name (if any) for the rule. */
     char *lhs, *anode;
-    /* The following is length of right hand side of the rule. */
-    int rhs_len;
+    int rhs_len; /* The following is length of right hand side of the rule. */
     /* Terminal/nonterminal representations in RHS of the rule.  The array end marker is NULL. */
     char **rhs;
-    /* The translations numbers. */
-    int *trans;
+    int *trans; /* The translations numbers. */
   };
 
   /* Current priority for terminal associativity */
@@ -101,7 +100,7 @@
 %token TERM LEFT RIGHT NONASSOC
 %type<assoc> assocs
 %type<ref> trans
-%type<num> number
+%type<num> number guard
 
 %%
 
@@ -143,11 +142,13 @@ rule : SEM_IDENT { slhs = (char *) $1; } rhs opt_sem;
 
 rhs : rhs '|' alt | alt;
 
-alt : seq trans {
+alt : seq trans guard
+      {
         struct srule rule;
   	int end_marker = -1;
 
 	OS_TOP_ADD_MEMORY (strans, &end_marker, sizeof (int));
+	rule.guard_num = $3;
 	rule.lhs = slhs;
 	rule.anode = (char *) $2;
 	rule.rhs_len = OS_TOP_LENGTH (srhs) / sizeof (char *);
@@ -158,8 +159,8 @@ alt : seq trans {
 	rule.trans = (int *) OS_TOP_BEGIN (strans);
 	OS_TOP_FINISH (strans);
         VLO_ADD_MEMORY (srules, &rule, sizeof (rule));
-    }
-    ;
+      }
+      ;
 
 seq : seq IDENT {
         char *repr = (char *) $2;
@@ -178,6 +179,10 @@ seq : seq IDENT {
     |
     ;
 
+guard :            { $$ = -1; }
+      | '?' NUMBER { $$ = $2; }
+      ;
+      
 trans : { $$ = NULL; }
       | '#' { $$ = NULL; }
       | '#' NUMBER {
@@ -250,6 +255,7 @@ int yylex (void *g) {
       break;
     case '=':
     case '#':
+    case '?':
     case '|':
     case ';':
     case '-':
@@ -469,12 +475,13 @@ static const char *sread_terminal (int *code, int *priority, enum gp_assoc *asso
   return name;
 }
 
-static const char *sread_rule (const char ***rhs, const char **abs_node, int **transl) {
+static const char *sread_rule (const char ***rhs, const char **abs_node, int **transl, int *guard_num) {
   struct srule *rule;
   const char *lhs;
 
   rule = &((struct srule *) VLO_BEGIN (srules))[nsrule];
   if ((char *) rule >= (char *) VLO_BOUND (srules)) return NULL;
+  *guard_num = rule->guard_num;
   lhs = rule->lhs;
   *rhs = (const char **) rule->rhs;
   *abs_node = rule->anode;

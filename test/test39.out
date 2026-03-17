@@ -1,0 +1,10 @@
+guard=2
+guard=1
+guard=2
+guard=1
+      9: ABSTRACT: plus ( 0 8 )
+      0: EMPTY
+      8: ABSTRACT: mult ( 6 0 )
+      6: ABSTRACT: plus ( 0 5 )
+      5: TERMINAL: code=97, repr='a'
+

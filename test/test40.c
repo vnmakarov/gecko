@@ -798,7 +798,7 @@ int main (int argc, char **argv) {
   gp_set_parse_alloc (g, test_parse_alloc);
   gp_set_parse_free (g, test_parse_free);
   gp_set_syntax_error (g, test_syntax_error);
-  if (gp_parse (g, test_read_token_from_lex, &root, &ambiguity)) {
+  if (gp_parse (g, test_read_token_from_lex, &root, &ambiguity, NULL)) {
     fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
     exit (1);
   }

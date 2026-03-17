@@ -40,18 +40,20 @@
 |Speed independence on grammar size       | Yes     | Yes     | Yes      | No       | Yes      |
 |Syntax error recovery                    | Yes     | Yes     | No       | Yes      | Yes      |
 |Automatic error recovery                 | No      | No      | -        | No       | Yes      |
-|Actions                                  | Yes     | Yes     | Yes      | No       | No       |
+|Actions                                  | Yes     | Yes     | Yes      | No       | Yes**    |
 |Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
-|Generation of all translations           | -       | -       | Yes      | Yes**    | Yes**    |
+|Generation of all translations           | -       | -       | Yes      | Yes***   | Yes***   |
 |Generation of minimal cost translation   | -       | -       | No       | Yes      | No       |
-|Reentrant (thread-safe)                  | Yes***  | Yes***  | Yes      | No       | Yes      |
+|Reentrant (thread-safe)                  | Yes**** | Yes**** | Yes      | No       | Yes      |
 
 \* Bison is claimed to be a GLR parser but I did not manage to use **ambiguous** C grammar (see speed comparison) for it
 
-\** All alternatives can be generated through the corresponding ElkHound/Gecko merge functions.
+\** See rule guard functions.
+
+\*** All alternatives can be generated through the corresponding ElkHound/Gecko merge functions.
    But to generate abstract node trees for alternatives analogous to YAEP, additional non-trivial work needs to be done.
 
-\*** Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
+\**** Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
 
 * Additional differences between Gecko and YAEP:
   * Gecko is faster on unambiguous and moderately ambiguous grammars
@@ -95,7 +97,7 @@ static void parse (void)
       fprintf (stderr, "%s\n", gp_error_message (g));
       exit (1);
     }
-  if (gp_parse (g, read_token_func, &root, &ambiguity))
+  if (gp_parse (g, read_token_func, &root, &ambiguity, NULL))
     fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_fin (g);
 }

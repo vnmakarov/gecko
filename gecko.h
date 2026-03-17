@@ -126,11 +126,12 @@ extern const char *gp_error_message (struct grammar *g);
    GP_NIL_TRANSLATION_NUMBER.  If *TRANSL is NULL or contains only the end marker, translations of
    the rule will be nil node.  If ABS_NODE is NULL, abstract node is not created.  In this case
    *TRANSL should be NULL or contain at most one element which means that the translation of the
-   rule will be nil node or the translation of the symbol in RHS given by the single array element. */
+   rule will be nil node or the translation of the symbol in RHS given by the single array element.
+   The function returns rule guard num through GUARD_NUM (see comments for gp_set_rule_guard). */
 extern int gp_read_grammar (struct grammar *g, bool strict_p,
                             const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
-                            const char *(*read_rule) (const char ***rhs, const char **abs_node,
-                                                      int **transl));
+                            const char *(*read_rule) (const char ***rhs, const char **abs_node, int **transl,
+                                                      int *guard_num));
 
 /* Analogous to the previous one but it parses grammar description. */
 extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *description);
@@ -147,10 +148,14 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      and reading a new grammar.
 
    * syntax error function is used to print an error message about a syntax error which occurred on a token
-   with representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next
-   two parameters describe the recovery stop token.  The default function prints only the token
-   representations.  You should set up the new function to print positions which can be passed through the
-   token attributes.
+     with representation ERR_TOK_REPR and attribute ERR_TOK_ATTR (see type gp_syntax_error_func_t).  The next
+     two parameters describe the recovery stop token.  The default function prints only the token
+     representations.  You should set up the new function to print positions which can be passed through the
+     token attributes.
+
+   * non-NUll rule guard function is used to reject some rules or do some other actions.  It is called for
+     each reduction of rule having a guard number.  The function gets the guard number and argument passed
+     to gp_parse. If the function returns false,  the ruled reduction is rejected
 
    * debug_level says what debugging information to output (it works only if we compiled without
      defined macro NO_GP_DEBUG_PRINT):
@@ -183,6 +188,9 @@ typedef void (*gp_syntax_error_func_t) (const char *err_tok_repr, void *err_tok_
                                         const char *stop_tok_repr, void *stop_tok_attr);
 extern gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_error_func_t fn);
 
+typedef bool (*gp_rule_guard_func_t) (int num, void *arg);
+extern gp_rule_guard_func_t gp_set_rule_guard (struct grammar *g, gp_rule_guard_func_t fn);
+
 extern int gp_set_debug_level (struct grammar *grammar, int level);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
@@ -210,9 +218,11 @@ extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_
    impossible for grammars of most programming languages.
 
    The function READ_TOKEN provides input tokens.  It returns the code of the next input token and its
-   attribute.  If the function returns a negative value, all tokens have been read. */
+   attribute.  If the function returns a negative value, all tokens have been read.
+
+   ARG is passed to the rule guard function. */
 extern int gp_parse (struct grammar *grammar, int (*read_token) (void **attr), struct gp_tree_node **root,
-                     int *ambiguity);
+                     int *ambiguity, void *arg);
 
 /* Return GP_ALT node with given FIRST and SECOND.  Use it in the node merge function if you want to keep all
    possible alternatives during stack merging. */

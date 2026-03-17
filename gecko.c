@@ -72,6 +72,7 @@ struct grammar {    /* major structure which stores information about grammar: *
   gp_parse_alloc_func_t parse_alloc;   /* function to allocate parse tree nodes */
   gp_parse_free_func_t parse_free;     /* function to free parse tree nodes */
   gp_syntax_error_func_t syntax_error; /* function to print syntax error */
+  gp_rule_guard_func_t rule_guard;     /* function to guard rules */
 
   vlo_t caller_anode_names; /* Pointers to allocated names of anodes */
 
@@ -112,7 +113,10 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   struct set *start_set; /* start set of the grammar */
 
-  int contexts_num;
+  void *rule_guard_arg; /* arg passed to rule guards */
+
+  int contexts_num; /* next context number */
+
   vlo_t all_nodes;       /* all parse tree nodes */
   bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
 
@@ -504,6 +508,7 @@ static void term_set_fin (struct grammar *g,
 
 struct rule {                 /* rule of the grammar: */
   int num;                    /* order number of rule */
+  int guard_num;              /* guard number, < 0 means no guard calls */
   int rhs_len;                /* length of rhs */
   int lhs_nonterm_num;        /* = lhs->u.nonterm.nonterm_num */
   struct rule *next;          /* the next grammar rule */
@@ -548,7 +553,7 @@ static struct rules *rule_init (struct grammar *g) {
 }
 
 /* Create new rule with LHS empty rhs. */
-static struct rule *rule_new_start (struct grammar *g, struct symb *lhs, const char *anode) {
+static struct rule *rule_new_start (struct grammar *g, struct symb *lhs, const char *anode, int guard_num) {
   struct rule *rule;
   struct symb *empty;
 
@@ -556,6 +561,7 @@ static struct rule *rule_new_start (struct grammar *g, struct symb *lhs, const c
   OS_TOP_EXPAND (g->rules->rules_os, sizeof (struct rule));
   rule = (struct rule *) OS_TOP_BEGIN (g->rules->rules_os);
   OS_TOP_FINISH (g->rules->rules_os);
+  rule->guard_num = guard_num;
   rule->lhs = lhs;
   rule->lhs_nonterm_num = lhs->u.nonterm.nonterm_num;
   rule->priority_term = NULL;
@@ -1127,7 +1133,8 @@ static void empty_grammar (struct grammar *g);
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p,
                      const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
-                     const char *(*read_rule) (const char ***rhs, const char **abs_node, int **transl)) {
+                     const char *(*read_rule) (const char ***rhs, const char **abs_node, int **transl,
+                                               int *guard_num)) {
   struct symb *symb;
   assert (g != NULL);
   int code;
@@ -1151,7 +1158,8 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   int *transl;
   struct rule *rule;
   struct symb *start;
-  while ((lhs = (*read_rule) (&rhs, &anode, &transl)) != NULL) {
+  int guard_num;
+  while ((lhs = (*read_rule) (&rhs, &anode, &transl, &guard_num)) != NULL) {
     symb = symb_find_by_repr (g, lhs);
     if (symb == NULL)
       symb = symb_add_nonterm (g, lhs);
@@ -1172,14 +1180,14 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
       if (term_tab_find_by_code (g, END_MARKER_CODE) != NULL) abort ();
       g->end_marker = symb_add_term (g, END_MARKER_NAME, END_MARKER_CODE, -1, GP_NON_ASSOC);
       /* Add rules for start */
-      rule = rule_new_start (g, g->axiom, NULL);
+      rule = rule_new_start (g, g->axiom, NULL, -1);
       rule_new_symb_add (g, symb);
       rule_new_symb_add (g, g->end_marker);
       rule_new_stop (g);
       rule->order[0] = 0;
       rule->trans_len = 1;
     }
-    rule = rule_new_start (g, symb, anode);
+    rule = rule_new_start (g, symb, anode, guard_num);
     while (*rhs != NULL) {
       symb = symb_find_by_repr (g, *rhs);
       if (symb == NULL) symb = symb_add_nonterm (g, *rhs);
@@ -1259,6 +1267,13 @@ gp_syntax_error_func_t gp_set_syntax_error (struct grammar *g, gp_syntax_error_f
   assert (g != NULL);
   gp_syntax_error_func_t old = g->syntax_error;
   g->syntax_error = fn;
+  return old;
+}
+
+gp_rule_guard_func_t gp_set_rule_guard (struct grammar *g, gp_rule_guard_func_t fn) {
+  assert (g != NULL);
+  gp_rule_guard_func_t old = g->rule_guard;
+  g->rule_guard = fn;
   return old;
 }
 
@@ -2102,6 +2117,9 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
       }
 #endif
       if (LIKELY (!action->shift_p)) { /* reduce */
+        struct rule *r = action->u.rule;
+        if (r->guard_num >= 0 && g->rule_guard != NULL && !g->rule_guard (r->guard_num, g->rule_guard_arg))
+          continue;
         set = stack_reduce (g, stack, action->u.rule);
         VLO_ADD_MEMORY (g->curr_stacks, &stack, sizeof (stack));
       } else { /* shift */
@@ -2507,7 +2525,10 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
         g->n_single_stack_actions++;
 #endif
         if (LIKELY (!actions[0].shift_p)) { /* reduce */
-          set = stack_reduce (g, single_stack, actions[0].u.rule);
+          struct rule *r = actions[0].u.rule;
+          if (r->guard_num >= 0 && g->rule_guard != NULL && !g->rule_guard (r->guard_num, g->rule_guard_arg))
+            goto multi_stack;
+          set = stack_reduce (g, single_stack, r);
 #ifndef NO_GP_DEBUG_PRINT
           if (UNLIKELY (g->debug_level > 4)) print_single_stack (g, stderr, single_stack, &actions[0]);
 #endif
@@ -2656,9 +2677,11 @@ void gp_print_translation (struct grammar *g, FILE *f, struct gp_tree_node *root
 
 #endif
 
-int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node **root, int *ambiguity) {
+int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node **root, int *ambiguity,
+              void *arg) {
   g->all_searches = g->all_collisions = 0;
   assert (g != NULL);
+  g->rule_guard_arg = arg;
   g->read_token = read;
   *root = NULL;
   *ambiguity = 0;
@@ -2904,7 +2927,7 @@ const char *read_terminal (int *code, int *priority, enum gp_assoc *assoc) {
 static int nrule; /* the current number of next rule grammar terminal */
 
 /* The function imported by Gecko (see comments in the interface file). */
-const char *read_rule (const char ***rhs, const char **anode, int **transl) {
+const char *read_rule (const char ***rhs, const char **anode, int **transl, int *guard_num) {
   static const char *rhs_1[] = {"T", NULL};
   static int tr_1[] = {0, -1};
   static const char *rhs_2[] = {"E", "+", "T", NULL};
@@ -2918,6 +2941,7 @@ const char *read_rule (const char ***rhs, const char **anode, int **transl) {
   static const char *rhs_6[] = {"(", "E", ")", NULL};
   static int tr_6[] = {1, -1};
 
+  *guard_num = -1;
   nrule++;
   switch (nrule) {
   case 1:
@@ -2977,7 +3001,7 @@ static void use_functions (int argc, char **argv) {
   gp_set_debug_level (g, argc > 1 ? atoi (argv[2]) : 3);
   if (gp_read_grammar (g, true, read_terminal, read_rule) != 0) exit (1);
   ntok = 0;
-  if (gp_parse (g, test_read_token, &root, &ambiguity) != 0) exit (1);
+  if (gp_parse (g, test_read_token, &root, &ambiguity, NULL) != 0) exit (1);
   gp_free_tree (g, root);
   gp_fin (g);
 }
@@ -3014,10 +3038,10 @@ static void use_description (int argc, char **argv, int (*read_fn) (void **)) {
   if (gp_parse_grammar (g, true, description) != 0) exit (1);
   if (gp_parse_grammar (g, true, description) != 0) exit (1);
   ntok = 0;
-  if (gp_parse (g, read_fn, &root1, &ambiguity) == 0) {
+  if (gp_parse (g, read_fn, &root1, &ambiguity, NULL) == 0) {
     ntok = 0;
     gp_set_debug_level (g, 0);
-    if (gp_parse (g, read_fn, &root2, &ambiguity) != 0) exit (1);
+    if (gp_parse (g, read_fn, &root2, &ambiguity, NULL) != 0) exit (1);
     gp_free_tree (g, root2);
     gp_free_tree (g, root1);
   }
@@ -3056,7 +3080,7 @@ static void use_ambig (int argc, char **argv) {
   if (gp_parse_grammar (g, true, ambig) != 0) exit (1);
   ntok = 0;
   gp_set_node_merge_func (g, node_merge);
-  if (gp_parse (g, test_read_ambig, &root, &ambiguity) != 0) exit (1);
+  if (gp_parse (g, test_read_ambig, &root, &ambiguity, NULL) != 0) exit (1);
   gp_free_tree (g, root);
   gp_fin (g);
 }

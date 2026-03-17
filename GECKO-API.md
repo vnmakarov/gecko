@@ -172,7 +172,8 @@ int gp_read_grammar(struct grammar *g, bool strict_p,
                                                   enum gp_assoc *assoc),
                      const char *(*read_rule)(const char ***rhs,
                                               const char **abs_node,
-                                              int **transl));
+                                              int **transl,
+                                              int *guard_num));
 ```
 
 Read terminals and rules into grammar `g` and check it depending on `strict_p`.  Returns zero on success,
@@ -189,7 +190,9 @@ or an error code on failure (also available via `gp_error_code` and `gp_error_me
 - `read_rule` -- callback to read the next rule. Called after all terminals are read. Returns
    the LHS nonterminal name and sets `*rhs` to a NULL-terminated array of RHS symbol names. Any symbol
    not declared as a terminal is treated as a nonterminal. Also sets `*abs_node` (abstract node name) and `*transl`
-   (array of RHS symbol indices for translation children, terminated by a negative value). Return `NULL` when all rules have been read.
+   (array of RHS symbol indices for translation children, terminated by a negative value).
+   Also sets `*guard_num` to the rule's guard number (a negative value means no guard; see `gp_set_rule_guard`).
+   Return `NULL` when all rules have been read.
 
 **Axiom requirement:**
 
@@ -287,6 +290,19 @@ Each alternative can have an optional **translation** specification after `#`:
 | `# name (N1 N2 ...)` | Create an abstract node named `name` with children being translations of RHS symbols at indices N1, N2, etc. |
 
 Within the parenthesized list, `-` can be used in place of a number to denote a nil node child.
+
+#### Guard Specifications
+
+Each alternative can have an optional **guard** specification after the translation:
+
+| Form      | Meaning                                                  |
+|-----------|----------------------------------------------------------|
+| *(nothing)* | No guard (guard number is negative)                    |
+| `? N`     | Set the guard number to N for this rule alternative      |
+
+When a rule has a guard number and a rule guard function is set (via `gp_set_rule_guard`),
+the guard function is called on each reduction of the rule. If it returns `false`, the
+reduction is rejected. This can be used to implement context-sensitive parsing constraints.
 
 #### Complete Example
 
@@ -387,6 +403,23 @@ int gp_set_recovery_match(struct grammar *grammar, int n_toks);
 
 Set how many subsequent tokens must be successfully shifted to confirm that error recovery is complete. Default is 3.
 
+#### `gp_set_rule_guard`
+
+```c
+gp_rule_guard_func_t gp_set_rule_guard(struct grammar *g,
+                                        gp_rule_guard_func_t fn);
+```
+
+Set the rule guard function. A non-NULL rule guard function is called for each reduction of a rule
+that has a guard number (a non-negative value set via `read_rule` or the `? N` syntax in grammar
+descriptions). The function receives the guard number and the `arg` passed to `gp_parse`. If the
+function returns `false`, the rule reduction is rejected. `NULL` disables rule guards (default).
+
+**Type:**
+```c
+typedef bool (*gp_rule_guard_func_t)(int num, void *arg);
+```
+
 #### `gp_set_node_merge_func`
 
 ```c
@@ -415,7 +448,7 @@ typedef void *(*gp_node_merge_func_t)(struct grammar *grammar,
 
 ```c
 int gp_parse(struct grammar *grammar, int (*read_token)(void **attr),
-             struct gp_tree_node **root, int *ambiguity);
+             struct gp_tree_node **root, int *ambiguity, void *arg);
 ```
 
 Parse input according to the grammar. Returns an error code (also available via `gp_error_code`).
@@ -432,6 +465,7 @@ On success (code zero), the parse tree root is stored in `*root`.
   - `1` -- the grammar is ambiguous on the input
   - `2` -- the final stack was produced by merging stacks where two or more terminal attributes or abstract nodes
     were different
+- `arg` -- passed to the rule guard function (see `gp_set_rule_guard`)
 
 **Ambiguity level 2 and option nodes:**
 
