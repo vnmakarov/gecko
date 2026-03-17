@@ -519,12 +519,12 @@ struct rule {                 /* rule of the grammar: */
   /* The following three members define rule translation: */
   const char *anode; /* abstract node name if any */
   int trans_len;     /* number of symbol translations in the rule translation */
-  /* ???Array elements correspond to element of rhs with the same index. The element value is order
-     number of the corresponding symbol translation in the rule translation. If the symbol
-     translation is rejected, the corresponding element value is negative. */
+  /* Array elements correspond to symbol of rhs with the same index. The element value is order
+     number of the corresponding symbol in the rule translation. If the symbol translation is rejected,
+     the corresponding element value is negative. */
   int *order;
-  /* ???Size of all previous rule lengths + number of the previous rules. Imagine that all left hand
-     symbol and right hand side symbols of the rules are stored in array. Then the following member
+  /* Size of all previous rule lengths + number of the previous rules. Imagine that all left hand
+     symbols and right hand side symbols of the rules are stored in array. Then the following member
      is index of the rule lhs in the array. */
   int rule_start_offset;
   char *caller_anode; /* the same string as anode but memory allocated in parse_alloc */
@@ -1350,7 +1350,7 @@ static void print_action (struct grammar *g, FILE *f, struct action *a) {
 #endif
 
 static void remove_priority_conflict_actions (struct grammar *g, struct action *actions, int *actions_num) {
-  struct symb *term = term_get (g, actions[0].term_num);  // ???
+  struct symb *term = term_get (g, actions[0].term_num);
   assert (term->u.term.term_num == actions[0].term_num);
   int num = *actions_num, new_num = 1;
   if (term->u.term.priority < 0 || num <= 1 || !actions[0].shift_p) return;
