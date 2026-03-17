@@ -2726,7 +2726,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
              g->all_collisions * 100.0 / g->all_searches, g->all_collisions, g->all_searches);
   }
 #endif
-  return ok_p ? 0 : 1; /* !!! change in the future */
+  return ok_p ? 0 : g->error_code;
 }
 
 struct traverse_el { /* element of stack used for traversing */
