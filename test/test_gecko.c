@@ -173,11 +173,9 @@ static void test_syntax_error (const char *err_nonterm, const char *err_tok_repr
 }
 #endif
 
-/* The following function imported by Earley's algorithm (see comments
-   in the interface file). */
+/* The following function imported by Gecko (see comments in the interface file). */
 static int test_read_token (void **attr) {
   int code;
-
   *attr = (void *) (ptrdiff_t) line;
   code = get_lex ();
   if (code <= 0) return -1;
