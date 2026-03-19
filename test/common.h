@@ -120,6 +120,9 @@ static void test_standard_parse (void) {
     fprintf (stderr, "gp parse: %s\n", error_message (g));
     exit (1);
   }
+#ifndef YAEP
+  gp_free_tree (g, root);
+#endif
   free_grammar (g);
 }
 
@@ -158,6 +161,7 @@ static bool test_standard_read (bool print_transl,
   }
 #ifndef YAEP
   if (print_transl) gp_print_translation (g, stderr, root);
+  gp_free_tree (g, root);
 #endif
   free_grammar (g);
   return ambiguity != 0;
@@ -217,6 +221,7 @@ static void test_complex_parse (bool ambiguous, bool print_cost UNUSED, int reco
   }
 #ifndef YAEP
   if (print_transl) gp_print_translation (g, stderr, root);
+  gp_free_tree (g, root);
 #endif
   free_grammar (g);
 }
