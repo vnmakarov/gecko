@@ -17,8 +17,8 @@ typedef const void *hash_table_entry_t;
    for using the hash tables.  All work with hash table should be executed only through functions
    mentioned below. */
 typedef struct hash_table {
-  size_t size;               /* current size (in entries) of the hash table */
-  size_t number_of_elements; /* current number of elements including also deleted elements */
+  size_t size;                       /* current size (in entries) of the hash table */
+  size_t number_of_elements;         /* current number of elements including also deleted elements */
   size_t number_of_deleted_elements; /* current number of deleted elements in the table */
   /* The member is used for debugging. Its value is number of all calls of `find_hash_table_entry'
      for the hash table. */
@@ -62,8 +62,7 @@ static inline hash_table_t create_hash_table (gp_allocator_t *allocator, size_t 
 
   for (size = 2; min_size > size; size *= 2);
   result = (hash_table_t) gp_malloc (allocator, sizeof (*result));
-  result->entries
-    = (hash_table_entry_t *) gp_malloc (allocator, size * sizeof (hash_table_entry_t));
+  result->entries = (hash_table_entry_t *) gp_malloc (allocator, size * sizeof (hash_table_entry_t));
   result->size = size;
   result->hash_function = hash_function;
   result->eq_function = eq_function;
@@ -72,8 +71,7 @@ static inline hash_table_t create_hash_table (gp_allocator_t *allocator, size_t 
   result->searches = 0;
   result->collisions = 0;
   result->alloc = allocator;
-  for (entry_ptr = result->entries; entry_ptr < result->entries + size; entry_ptr++)
-    *entry_ptr = EMPTY_ENTRY;
+  for (entry_ptr = result->entries; entry_ptr < result->entries + size; entry_ptr++) *entry_ptr = EMPTY_ENTRY;
   return result;
 }
 
@@ -104,8 +102,8 @@ static inline void _expand_hash_table (hash_table_t htab);
    occupancy (taking into accout also deleted elements) is more than 75%.  Naturally the hash table
    must already exist.  If reservation flag is TRUE then the element with given value should be
    inserted into the table entry before another call of `find_hash_table_entry'. */
-static inline hash_table_entry_t *find_hash_table_entry (hash_table_t htab,
-                                                         hash_table_entry_t element, int reserve) {
+static inline hash_table_entry_t *find_hash_table_entry (hash_table_t htab, hash_table_entry_t element,
+                                                         bool reserve) {
   hash_table_entry_t *entry_ptr;
   hash_table_entry_t *first_deleted_entry_ptr;
   uint64_t hash_value;
@@ -147,11 +145,11 @@ static inline void _expand_hash_table (hash_table_t htab) {
   hash_table_entry_t *new_entry_ptr;
 
   assert (htab != NULL);
-  new_htab = create_hash_table (htab->alloc, htab->number_of_elements * 3, htab->hash_function,
-                                htab->eq_function);
+  new_htab
+    = create_hash_table (htab->alloc, htab->number_of_elements * 3, htab->hash_function, htab->eq_function);
   for (entry_ptr = htab->entries; entry_ptr < htab->entries + htab->size; entry_ptr++)
     if (*entry_ptr != EMPTY_ENTRY && *entry_ptr != DELETED_ENTRY) {
-      new_entry_ptr = find_hash_table_entry (new_htab, *entry_ptr, 1 /* TRUE */);
+      new_entry_ptr = find_hash_table_entry (new_htab, *entry_ptr, true);
       assert (*new_entry_ptr == EMPTY_ENTRY);
       *new_entry_ptr = (*entry_ptr);
     }
@@ -163,12 +161,11 @@ static inline void _expand_hash_table (hash_table_t htab) {
 /* Delete element with given value from hash table. The hash table entry value will be
    `DELETED_ENTRY' after the function call.  Naturally the hash table must already exist. Hash table
    entry for given value should be not empty (or deleted). */
-static inline void remove_element_from_hash_table_entry (hash_table_t htab,
-                                                         hash_table_entry_t element) {
+static inline void remove_element_from_hash_table_entry (hash_table_t htab, hash_table_entry_t element) {
   hash_table_entry_t *entry_ptr;
 
   assert (htab != NULL);
-  entry_ptr = find_hash_table_entry (htab, element, 0);
+  entry_ptr = find_hash_table_entry (htab, element, false);
   assert (*entry_ptr != EMPTY_ENTRY && *entry_ptr != DELETED_ENTRY);
   *entry_ptr = DELETED_ENTRY;
   htab->number_of_deleted_elements++;
