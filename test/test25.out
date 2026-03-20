@@ -1,4 +1,4 @@
-Syntax error in E on token '*' (pos=4) and stopping on token '(' (pos=5)
+Syntax error in E on token '*' (pos=4) and stopping on token '*' (pos=4)
       7: ABSTRACT: plus ( 1 6 )
       1: TERMINAL: code=97, repr='a'
       6: ABSTRACT: mult ( 2 5 )
