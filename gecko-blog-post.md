@@ -822,7 +822,7 @@ For the truly ambiguous grammar `E = E + E | a` with input `a(+a){200}`
 
 ![Highly Ambiguous Grammar (E=E+E|a, 200 ops) -- Parse Time and Memory](bench_ambig.png)
 
-Gecko is approximately **10x faster than ElkHound** and **5x faster than
+Gecko is approximately **13x faster than ElkHound** and **7.5x faster than
 YAEP** on this test. This demonstrates that Gecko's stack merging and
 hash-consing techniques work extremely well even under heavy ambiguity.
 

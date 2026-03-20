@@ -8,7 +8,7 @@
 * Parse inputs described by **unambiguous and ambiguous grammars**
 * Small and simple
   * x86-64 code size is only 80KB
-  * 3.7K C SLOC
+  * 3.8K C SLOC
 * Strong emphasis on good automatic syntax error recovery and error reporting, as this is a complicated feature in other compiler-compilers
   * Requires no grammar modifications
   * Simple interface for custom support of syntax error reporting
@@ -19,7 +19,7 @@
     on unambiguous and moderately ambiguous grammars
   * 2.5 times faster than [ElkHound](https://github.com/WeiDUorg/elkhound) (a famous GLR parser)
     on unambiguous and moderately ambiguous grammars
-  * about 10 times faster than ElkHound on highly ambiguous grammars
+  * about 8-13 times faster than YAEP and ElkHound on highly ambiguous grammars
 * Operator grammar support
   * Descriptions of operator priority and associativity analogous to YACC/Bison
 * Simple syntax-directed translation
@@ -207,7 +207,7 @@ static void parse (void)
 |----------------------|--------------:|--------------:|----------------:|-------------:|---------------------:|
 |ElkHound              |  9.50         |  15.65        |  10.82          |  13.82       |  9.6                 |
 |YAEP                  |  5.53         |   7.67        |   5.77          |  13.40       |  154                 |
-|Gecko                 |  1.10         |   1.16        |   1.09          |   1.81       |  119                 |
+|Gecko                 |  0.73         |   0.80        |   0.84          |   1.59       |   74                 |
 
 
 ## Gecko internals overview

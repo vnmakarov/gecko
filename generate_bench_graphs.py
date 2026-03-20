@@ -143,10 +143,10 @@ parsers_ambig = ['ElkHound', 'YAEP', 'Gecko']
 data_ambig = {
     'ElkHound': [ 9.50, 15.65, 10.82, 13.82],
     'YAEP':     [ 5.53,  7.67,  5.77, 13.40],
-    'Gecko':    [ 1.10,  1.16,  1.09,  1.81],
+    'Gecko':    [ 0.73,  0.80,  0.84,  1.59],
 }
 
-mem_ambig = {'ElkHound': 9.6, 'YAEP': 154, 'Gecko': 119}
+mem_ambig = {'ElkHound': 9.6, 'YAEP': 154, 'Gecko': 74}
 
 fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(14, 5),
                                    gridspec_kw={'width_ratios': [3, 1.2]})
