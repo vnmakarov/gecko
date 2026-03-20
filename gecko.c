@@ -2218,6 +2218,11 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
    Return the single stack if ONE_STACK_P, otherwise return NULL.  Report the syntax error. */
 static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct symb *error_term,
                                     void *error_attr) {
+  for (int i = 0; i < (int) (VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *)); i++) {
+    struct stack *stack = ((struct stack **) VLO_BEGIN (g->failed_stacks))[i];
+    stack_free (g, stack);
+  }
+  VLO_NULLIFY (g->failed_stacks);
   int min_cost = -1, buff_token_ind = -1;
   bool eof_stack_p = false;
   for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
@@ -2305,7 +2310,8 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
   struct symb *error_term = term_find_by_code (g, code);
   void *error_attr = attr;
   token_buff_add (g, code, attr, false);
-  for (;;) {
+  bool stop_p = false;
+  do {
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 3))
       print_stacks (stderr, "   Failed recovery stacks", &g->failed_stacks, 0);
@@ -2367,7 +2373,6 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
     struct stack *min_cost_stack = NULL;
     /* True when eof was reached or a minimal cost stack matched at least recovery_token_matches or
        stack matched at least MAX_RECOVERY_TOKEN_MATCH tokens.  */
-    bool stop_p = false;
     for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
       struct stack_el *el = &((struct stack_el *) VLO_BOUND (stack->els))[-1];
@@ -2383,9 +2388,8 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
         stop_p = stack->recovery->u.info.n_matched_toks >= g->recovery_token_matches;
       }
     }
-    if (stop_p) break;
     token_buff_expand (g, max_buff_ind);
-  }
+  } while (!stop_p);
   return recovery_stop (g, one_stack_p, error_term, error_attr);
 }
 
