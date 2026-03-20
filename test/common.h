@@ -62,16 +62,16 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
              start_recovered_tok_num - start_ignored_tok_num, start_ignored_tok_num);
 }
 #else
-static void test_syntax_error (const char *err_nonterm, const char *err_tok_repr,
+static void test_syntax_error (const char *err_nonterm, bool after_p, const char *err_tok_repr,
                                void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
                                void *stop_tok_attr GP_UNUSED) {
   if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error in %s on token %s (pos=%d)\n", err_nonterm, err_tok_repr,
-             (int) (ptrdiff_t) err_tok_attr);
+    fprintf (stderr, "Syntax error %s %s on token %s (pos=%d)\n", after_p ? "after" : "in", err_nonterm,
+             err_tok_repr, (int) (ptrdiff_t) err_tok_attr);
   else
-    fprintf (stderr, "Syntax error in %s on token %s (pos=%d) and stopping on token %s (pos=%d)\n",
-             err_nonterm, err_tok_repr, (int) (ptrdiff_t) err_tok_attr, stop_tok_repr,
-             (int) (ptrdiff_t) stop_tok_attr);
+    fprintf (stderr, "Syntax error %s %s on token %s (pos=%d) and stopping on token %s (pos=%d)\n",
+             after_p ? "after" : "in", err_nonterm, err_tok_repr, (int) (ptrdiff_t) err_tok_attr,
+             stop_tok_repr, (int) (ptrdiff_t) stop_tok_attr);
 }
 #endif
 

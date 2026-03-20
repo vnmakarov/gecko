@@ -168,7 +168,7 @@ static void error (struct grammar *g, int code, const char *format, ...);
 
 /* This page is abstract data `grammar symbols'. */
 
-typedef long int term_set_el_t; /* type of element of array representing set of terminals */
+typedef unsigned long int term_set_el_t; /* type of element of array representing set of terminals */
 
 struct rule;
 
@@ -395,7 +395,6 @@ static void symb_fin (struct grammar *g, struct symbs *symbs) { /* Finalize work
 
 /* This page contains abstract data set of terminals. */
 
-typedef long int term_set_el_t; /* type of element of array representing set of terminals */
 #define TERM_SET_EL_BITS (CHAR_BIT * sizeof (term_set_el_t))
 
 struct tab_term_set { /* element of term set hash table: */
@@ -958,15 +957,16 @@ static void *parse_alloc_default (int nmemb) {
 
 static void parse_free_default (void *mem) { free (mem); }
 
-static void syntax_error_default (const char *err_nonterm_repr, const char *err_tok_repr,
+static void syntax_error_default (const char *err_nonterm_repr, bool after_p, const char *err_tok_repr,
                                   void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
                                   void *stop_tok_attr GP_UNUSED) {
   assert (err_nonterm_repr != NULL);
   if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error in %s on token %s\n", err_nonterm_repr, err_tok_repr);
+    fprintf (stderr, "Syntax error %s %s on token %s\n", after_p ? "after" : "in", err_nonterm_repr,
+             err_tok_repr);
   else
-    fprintf (stderr, "Syntax error in %s on token %s and stopping on token %s\n", err_nonterm_repr,
-             err_tok_repr, stop_tok_repr);
+    fprintf (stderr, "Syntax error %s %s on token %s and stopping on token %s\n", after_p ? "after" : "in",
+             err_nonterm_repr, err_tok_repr, stop_tok_repr);
 }
 
 int gp_error_code (struct grammar *g) { /* Return the last occurred error code for given grammar. */
@@ -1597,6 +1597,7 @@ struct recovery_info {
       int buff_token_ind;
       int cost;
       int err_ntoks;        /* how many tokens were read before the error token */
+      bool after_p;         /* true if error occurred after nonterm */
       struct symb *nonterm; /* the most nested nonterm covering the error */
     } info;
     struct recovery_info *next; /* used for freed infos */
@@ -1729,6 +1730,7 @@ static void stack_init_recovery (struct grammar *g, struct stack *stack, int buf
   stack->recovery = recovery_info_get_free (g);
   stack->recovery->u.info.buff_token_ind = buff_token_ind;
   stack->recovery->u.info.n_matched_toks = stack->recovery->u.info.cost = 0;
+  stack->recovery->u.info.after_p = false;
   stack->recovery->u.info.nonterm = NULL;
   stack->recovery->u.info.err_ntoks = g->read_tokens - 1;
   int diff = buff_token_ind - VLO_LENGTH (g->token_buff) / sizeof (struct token_buff_el);
@@ -1856,9 +1858,13 @@ static void push_init_set (struct grammar *g, struct stack *stack, struct set *s
 #endif
 }
 
-static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
+static FORCE_INLINE stack_el_t *stack_get_top_el (struct stack *stack) {
   assert (VLO_LENGTH (stack->els) != 0);
-  return ((stack_el_t *) VLO_BOUND (stack->els))[-1].set;
+  return &((stack_el_t *) VLO_BOUND (stack->els))[-1];
+}
+
+static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
+  return stack_get_top_el (stack)->set;
 }
 
 static FORCE_INLINE struct set *stack_shift (struct grammar *g, struct stack *stack, struct set *set,
@@ -2109,7 +2115,8 @@ static void print_stack (FILE *f, struct stack *stack) {
   fprintf (f, "      {#%d}", stack->num);
   if (stack->recovery != NULL) {
     struct symb *nonterm = stack->recovery->u.info.nonterm;
-    if (nonterm != NULL) fprintf (f, "nonterm=%s ", nonterm->repr);
+    if (nonterm != NULL)
+      fprintf (f, "nonterm=%s%s ", nonterm->repr, stack->recovery->u.info.after_p ? "+" : "");
     fprintf (f, "token #%d (matched=%d, cost=%d):", stack->recovery->u.info.buff_token_ind,
              stack->recovery->u.info.n_matched_toks, stack->recovery->u.info.cost);
   }
@@ -2131,11 +2138,20 @@ static void print_stacks (FILE *f, const char *title, vlo_t *stacks, int start) 
 }
 #endif
 
-static void set_recovery_nonterm (struct stack *stack) {
-  assert (stack->recovery != NULL && stack->recovery->u.info.nonterm == NULL);
+static void set_recovery_nonterm (struct stack *stack, bool reduce_p) {
+  assert (stack->recovery != NULL);
+  stack_el_t *top_el = stack_get_top_el (stack);
+  if (reduce_p && (stack->recovery->u.info.nonterm == NULL || stack->recovery->u.info.after_p)
+      && top_el->ntoks <= stack->recovery->u.info.err_ntoks) {
+    stack->recovery->u.info.after_p = false;
+    stack->recovery->u.info.nonterm = top_el->set->symb;
+    return;
+  }
+  if (stack->recovery->u.info.nonterm != NULL) return;
   for (int i = VLO_LENGTH (stack->els) / sizeof (stack_el_t) - 1; i >= 0; i--) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     if (!el->set->symb->term_p && el->ntoks <= stack->recovery->u.info.err_ntoks) {
+      stack->recovery->u.info.after_p = true;
       stack->recovery->u.info.nonterm = el->set->symb;
       break;
     }
@@ -2182,12 +2198,14 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
 #endif
       if (LIKELY (!action->shift_p)) { /* reduce */
         struct rule *r = action->u.rule;
-        if (r->guard_num >= 0 && g->rule_guard != NULL && !g->rule_guard (r->guard_num, g->rule_guard_arg))
+        if (r->guard_num >= 0 && g->rule_guard != NULL && !g->rule_guard (r->guard_num, g->rule_guard_arg)) {
+          stack_free (g, stack);
           continue;
+        }
         set = stack_reduce (g, stack, action->u.rule);
-        if (stack->recovery != NULL && stack->recovery->u.info.nonterm == NULL) {
+        if (stack->recovery != NULL) {
           assert (!set->symb->term_p);
-          set_recovery_nonterm (stack);
+          set_recovery_nonterm (stack, true);
         }
         VLO_ADD_MEMORY (g->curr_stacks, &stack, sizeof (stack));
       } else { /* shift */
@@ -2199,7 +2217,7 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
         if (stack->recovery != NULL) {
           stack->recovery->u.info.n_matched_toks++;
           stack->recovery->u.info.buff_token_ind++;
-          if (stack->recovery->u.info.nonterm == NULL) set_recovery_nonterm (stack);
+          set_recovery_nonterm (stack, false);
         }
       }
     }
@@ -2242,6 +2260,7 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
     print_stacks (stderr, "    Stacks before error recovery stop", &g->new_stacks, 0);
 #endif
   int n = 0;
+  bool error_after_p = false;
   const char *error_nonterm = NULL;
   struct stack *single_stack = NULL;
   for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
@@ -2255,10 +2274,12 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
       stack_free (g, stack);
     } else if (one_stack_p && single_stack == NULL) {
       single_stack = stack;
+      error_after_p = stack->recovery->u.info.after_p;
       error_nonterm = stack->recovery->u.info.nonterm->repr;
       stack_free_recovery (g, stack);
       ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
     } else if (!one_stack_p) {
+      error_after_p = stack->recovery->u.info.after_p;
       error_nonterm = stack->recovery->u.info.nonterm->repr;
       stack_free_recovery (g, stack);
       ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
@@ -2270,8 +2291,9 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   g->curr_buff_token_ind = buff_token_ind;
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 2)) {
-    fprintf (stderr, "<<<%s error recovery stop (buff token ind =%d, error nonterm =%s)>>>\n",
-             one_stack_p ? "Single stack" : "Multi-stack", buff_token_ind, error_nonterm);
+    fprintf (stderr, "<<<%s error recovery stop (buff token ind =%d, error nonterm =%s%s)>>>\n",
+             one_stack_p ? "Single stack" : "Multi-stack", buff_token_ind, error_nonterm,
+             error_after_p ? "+" : "");
     if (g->debug_level > 3)
       print_stacks (stderr, "    Result stacks after error recovery", &g->new_stacks, 0);
   }
@@ -2281,7 +2303,8 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   void *stop_token_attr;
   int stop_code = token_buff_get (g, buff_token_ind, &stop_token_attr);
   struct symb *stop_token_term = term_find_by_code (g, stop_code);
-  g->syntax_error (error_nonterm, error_term->repr, error_attr, stop_token_term->repr, stop_token_attr);
+  g->syntax_error (error_nonterm, error_after_p, error_term->repr, error_attr, stop_token_term->repr,
+                   stop_token_attr);
   return single_stack;
 }
 
@@ -2343,6 +2366,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
         stack->recovery->u.info.buff_token_ind++;
         stack->recovery->u.info.cost++;
         stack->recovery->u.info.n_matched_toks = 0;
+        stack->recovery->u.info.after_p = false;
         stack->recovery->u.info.nonterm = NULL;
         VLO_ADD_MEMORY (g->new_stacks, &stack, sizeof (stack));
         if (max_buff_ind < stack->recovery->u.info.buff_token_ind)
@@ -2464,6 +2488,7 @@ static void gc (struct grammar *g, vlo_t *stacks) {
       }
 #endif
       if (node != g->empty_node) remove_element_from_hash_table_entry (g->nodes_htab, node);
+      if (node->type == GP_ANODE) g->parse_free (node->val.anode.children);
       g->parse_free (node);
     }
   }
@@ -2855,6 +2880,7 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
   for (int i = 0; i < nodes_num; i++) {  // exists in case of an error
     struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
+    if (node->type == GP_ANODE) g->parse_free (node->val.anode.children);
     g->parse_free (node);
   }
   VLO_DELETE (g->all_nodes);

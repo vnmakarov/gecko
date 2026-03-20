@@ -1,4 +1,4 @@
-Syntax error in T on token '*' (pos=5) and stopping on token 'a' (pos=6)
+Syntax error in F on token '*' (pos=5) and stopping on token 'a' (pos=6)
       9: ABSTRACT: plus ( 1 8 )
       1: TERMINAL: code=97, repr='a'
       8: ABSTRACT: mult ( 2 7 )
