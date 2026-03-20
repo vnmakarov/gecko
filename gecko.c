@@ -154,6 +154,9 @@ struct grammar {    /* major structure which stores information about grammar: *
      recovery starts when there are no actions on all current stacks.  They are also used during error
      recovery.  */
   vlo_t failed_stacks;
+
+  hash_table_t stack_htab; /* internal htab used for stack merging */
+
 #ifndef NO_GP_DEBUG_PRINT
   int n_single_stack_actions, n_multi_stack_actions; /* actions taken for single and multiple stacks */
   bool *visits_p;                                    /* temporary array used for printing parse trees */
@@ -2035,6 +2038,51 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
   return goto_set;
 }
 
+#define MERGE_HTAB_THRESHOLD 10 /* # stacks threshold to use htab for merging stacks */
+
+/* Stack hash table: */
+
+static uint64_t stack_hash (hash_table_entry_t s) { /* Hash of the stack. */
+  struct stack *stack = ((struct stack *) s);
+  uint64_t result = hash_init (88);
+  for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++) {
+    stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
+    result = hash_step (result, (uint64_t) (ptrdiff_t) el->set);
+  }
+  return hash_finish (result);
+}
+
+static bool stack_eq (hash_table_entry_t s1, hash_table_entry_t s2) { /* Equality of the stacks. */
+  struct stack *stack1 = ((struct stack *) s1);
+  struct stack *stack2 = ((struct stack *) s2);
+  if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
+  for (int i = 0; i < (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)); i++) {
+    stack_el_t *el1 = &((stack_el_t *) VLO_BEGIN (stack1->els))[i];
+    stack_el_t *el2 = &((stack_el_t *) VLO_BEGIN (stack2->els))[i];
+    if (el1->set != el2->set) return false;
+  }
+  return true;
+}
+
+/* Insert STACK into htab if it is not there yet.  Return the final stack in the htab.  */
+static struct stack *stack_tab_insert (struct grammar *g, struct stack *stack) {
+  struct stack *tab_stack;
+  struct stack **stack_entry = (struct stack **) find_hash_table_entry (g->stack_htab, stack, true);
+  if ((tab_stack = *stack_entry) != NULL) return tab_stack;
+  *stack_entry = stack;
+  return stack;
+}
+
+static void stack_tab_init (struct grammar *g) { /* Initialize work with the stack table. */
+  g->stack_htab = create_hash_table (g->alloc, 2 * MERGE_HTAB_THRESHOLD, stack_hash, stack_eq);
+}
+
+static void stack_tab_fin (struct grammar *g) { /* Finalalize work with the stack table. */
+  delete_htab_update_statistics (g, g->stack_htab);
+}
+
+/* Return true if stacks with set points of view are equal.  Return different node/attributes of the
+   corresponding stack els through N_DIFF_ATTR. */
 static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_attr) {
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
   assert (stack1->recovery == NULL && stack2->recovery == NULL);
@@ -2050,12 +2098,53 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_
   return true;
 }
 
-static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
+/* Merge nodes/attrs stack FROM to stack TO.  Setup TO ambiguity. */
+static FORCE_INLINE void merge_nodes (struct grammar *g, struct stack *to, struct stack *from,
+                                      int n_diff_attr) {
+  if (n_diff_attr <= 0) return;
+  int context_num = -1;
+  if (n_diff_attr > 1) context_num = g->contexts_num++;
+  stack_el_t *to_addr = (stack_el_t *) VLO_BEGIN (to->els);
+  stack_el_t *from_addr = (stack_el_t *) VLO_BEGIN (from->els);
+  for (int k = (int) (VLO_LENGTH (to->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
+    stack_el_t *to_el = &to_addr[k], *from_el = &from_addr[k];
+    if (to_el->anode_attr == from_el->anode_attr) continue;
+    if (to_el->attr_p) {
+      to_el->anode_attr = get_stack_term_node (g, to_el);
+      to_el->attr_p = false;
+    }
+    if (from_el->attr_p) {
+      from_el->anode_attr = get_stack_term_node (g, from_el);
+      from_el->attr_p = false;
+    }
+    to_el->anode_attr = g->node_merge (g, to_el->anode_attr, from_el->anode_attr, context_num);
+  }
+  if (context_num >= 0) to->ambiguity = 2;
+}
+
+static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) { /* merge identical STACKS */
   bool merge_p = false;
   int last = 0;
   int len = VLO_LENGTH (*stacks) / sizeof (struct stack *);
+  bool htab_p = len > MERGE_HTAB_THRESHOLD;
+  if (htab_p) empty_hash_table (g->stack_htab);
   for (int i = 0; i < len; i++) {
     struct stack *curr = ((struct stack **) VLO_BEGIN (*stacks))[i];
+    if (htab_p) {
+      struct stack *tab_stack;
+      if ((tab_stack = stack_tab_insert (g, curr)) == curr) {
+        ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
+      } else {
+        int n_diff_attr;
+        bool eq_p = stack_eq_p (curr, tab_stack, &n_diff_attr);
+        assert (eq_p);
+        if (tab_stack->ambiguity == 0) tab_stack->ambiguity = 1;
+        merge_p = true;
+        merge_nodes (g, tab_stack, curr, n_diff_attr);
+        stack_free (g, curr);
+      }
+      continue;
+    }
     if (curr == NULL) continue;
     ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
     for (int j = i + 1; j < len; j++) {
@@ -2066,26 +2155,7 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
       if (curr->ambiguity == 0) curr->ambiguity = 1;
       merge_p = true;
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
-      if (n_diff_attr > 0) {
-        int context_num = -1;
-        if (n_diff_attr > 1) context_num = g->contexts_num++;
-        stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (curr->els);
-        stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (curr2->els);
-        for (int k = (int) (VLO_LENGTH (curr->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
-          stack_el_t *el1 = &stack_addr1[k], *el2 = &stack_addr2[k];
-          if (el1->anode_attr == el2->anode_attr) continue;
-          if (el1->attr_p) {
-            el1->anode_attr = get_stack_term_node (g, el1);
-            el1->attr_p = false;
-          }
-          if (el2->attr_p) {
-            el2->anode_attr = get_stack_term_node (g, el2);
-            el2->attr_p = false;
-          }
-          el1->anode_attr = g->node_merge (g, el1->anode_attr, el2->anode_attr, context_num);
-        }
-        if (context_num >= 0) curr->ambiguity = 2;
-      }
+      merge_nodes (g, curr, curr2, n_diff_attr);
       stack_free (g, curr2);
     }
   }
@@ -2855,6 +2925,7 @@ static void grammar_init (struct grammar *g) {
   VLO_CREATE (g->curr_stacks, g->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (g->new_stacks, g->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (g->failed_stacks, g->alloc, 0);
+  stack_tab_init (g);
 }
 
 struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
@@ -2896,6 +2967,7 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   symb_fin (g, g->symbs);
   set_fin (g);
   sit_fin (g);
+  stack_tab_fin (g);
   VLO_DELETE (g->symb_sits);
   VLO_DELETE (g->actions_vlo);
   VLO_DELETE (g->temp_nodes_vlo);
