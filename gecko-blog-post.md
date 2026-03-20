@@ -219,21 +219,17 @@ simultaneously.
 When a syntax error is detected (a token that no current stack can shift or
 reduce on), Gecko's recovery algorithm kicks in:
 
-1. **Build a pool of candidate stacks.** Starting from the current (failed)
-   stacks, Gecko creates *delayed stacks* by popping elements from the top
-   of each stack. Each pop increases the "cost" of recovery.
+1. **Reject and pop.** For each failed stack, Gecko rejects the current
+   stack token and creates a new stack derived from the failed stack by
+   popping the top elements until the new stack has an action on the current
+   token of the original stack.
 
-2. **Try to parse forward.** For each candidate stack, Gecko attempts to
-   continue parsing from the current input position. If a candidate also
-   fails, it creates a further delayed stack (by popping) and also tries
-   advancing the input by skipping the current token.
-
-3. **Find minimal-cost success.** Recovery succeeds when a candidate stack
+2. **Find minimal-cost success.** Recovery succeeds when a candidate stack
    successfully consumes a configurable number of consecutive tokens
    (default: 3, set via `gp_set_recovery_match`) without encountering
    another error, or when a candidate reaches EOF.
 
-4. **Resume normal parsing.** The minimal-cost stack(s) become the new
+3. **Resume normal parsing.** The minimal-cost stack(s) become the new
    starting point for continued parsing.
 
 ### The Key Guarantee
@@ -518,14 +514,16 @@ can be freed in `gp_fin` and when reading a new grammar.
 gp_set_syntax_error(g, my_error_func);
 ```
 
-The error function receives the representation of the nonterminal minimally
-covering the error position and ignored tokens, the representation and
-attribute of the error token, plus the representation and attribute of the
-token where recovery stopped. The default function prints the error
-nonterminal and token representations. In a real compiler, you would set
-this to print file names, line numbers, and column numbers extracted from
-the token attributes, and translate nonterminal names into more readable
-form (e.g., `stmt` into `statement`).
+The error function receives the representation of a nonterminal related to
+the error position and a boolean `after_p` flag indicating whether the error
+occurred after that nonterminal (print "error after ...") or within it
+(print "error in ...").  It also receives the representation and attribute
+of the error token, plus the representation and attribute of the token where
+recovery stopped. The default function prints the error nonterminal and
+token representations. In a real compiler, you would set this to print file
+names, line numbers, and column numbers extracted from the token attributes,
+and translate nonterminal names into more readable form (e.g., `stmt` into
+`statement`).
 
 ### Error Recovery Tuning
 

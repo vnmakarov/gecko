@@ -244,12 +244,9 @@ static void parse (void)
 * The syntax error recovery guarantees that Gecko always produces parse trees corresponding to
   syntactically correct inputs -- simply, some tokens before and after the error token are ignored
 
-* Error recovery algorithm in brief:                                                                                                    
-  * We keep a pool of the current stacks and stacks (called *delayed stacks*) derived from the current stacks
-    by popping the top element (LR-state)
-  * We repeatedly move more and more expensive delayed stacks to the pool of the current stacks
-  * For each failed stack, we add the delayed stack derived from the stack and
-    keep the failed stack which skips the current stack token and advances the stack input to the next input token
+* Error recovery algorithm in brief:
+  * For each failed stack, we reject the current stack token and add a new stack derived from the failed stack
+    by popping the top elements until the new stack has an action on the current token of the original stack
   * We stop error recovery when we have a minimal cost stack that successfully consumed a given number (defined by
     `gp_set_recovery_match`) of tokens without a gap or when we have a final stack that consumed `EOF`
   * The minimal cost stacks (or one minimal cost stack if we have one stack before the error recovery)

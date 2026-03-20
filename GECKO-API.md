@@ -364,14 +364,17 @@ Set the syntax error reporting function. Called when a syntax error occurs durin
 
 **Type:**
 ```c
-typedef void (*gp_syntax_error_func_t)(const char *err_nonterm_repr, const char *err_tok_repr,
-                                       void *err_tok_attr, const char *stop_tok_repr,
-                                       void *stop_tok_attr);
+typedef void (*gp_syntax_error_func_t)(const char *err_nonterm_repr, bool after_p,
+                                       const char *err_tok_repr, void *err_tok_attr,
+                                       const char *stop_tok_repr, void *stop_tok_attr);
 ```
 
 **Callback parameters:**
 
-- `err_nonterm_repr` -- representation of the nonterminal minimally covering the error position and ignored tokens
+- `err_nonterm_repr` -- representation of a nonterminal related to the error position
+- `after_p` -- if true, the error occurred after the nonterminal described by `err_nonterm_repr` (you can
+  print the error as "error after ERR_NONTERM_REPR"); if false, the nonterminal minimally covers the error
+  position (you can print the error as "error in ERR_NONTERM_REPR")
 - `err_tok_repr`, `err_tok_attr` -- representation and attribute of the token where the error occurred
 - `stop_tok_repr`, `stop_tok_attr` -- representation and attribute of the token where recovery stopped
 
