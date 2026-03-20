@@ -2053,11 +2053,12 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_
 static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) {
   bool merge_p = false;
   int last = 0;
-  for (int i = 0; i < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); i++) {
+  int len = VLO_LENGTH (*stacks) / sizeof (struct stack *);
+  for (int i = 0; i < len; i++) {
     struct stack *curr = ((struct stack **) VLO_BEGIN (*stacks))[i];
     if (curr == NULL) continue;
     ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
-    for (int j = i + 1; j < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); j++) {
+    for (int j = i + 1; j < len; j++) {
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
       if (curr2 == NULL) continue;
       int n_diff_attr;
