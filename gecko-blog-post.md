@@ -9,16 +9,18 @@ author: Vladimir Makarov
 
 # Gecko: A Fast, Standalone GLR Parser Library in C
 
-Parsing is the backbone of every programming language implementation, and the
-choice of parser technology has far-reaching consequences for the language
-designer. LALR(1) parsers like YACC and Bison have dominated for decades, but
-they force grammar authors into contortions to avoid conflicts. Generalized
-parsers --- those that handle the full class of context-free grammars, including
-ambiguous ones --- have traditionally been considered too slow for production
-use. Gecko is a new GLR parser library that challenges that assumption: it
-handles **any** context-free grammar, provides **automatic syntax error
-recovery** with no grammar modifications, and still runs at speeds competitive
-with YACC on unambiguous grammars.
+Parsing is the backbone of every programming language implementation,
+and the choice of parser technology has far-reaching consequences for
+the language designer. LALR(1) parsers like YACC and Bison have
+dominated for decades, but they force grammar authors into contortions
+to avoid conflicts. Generalized parsers --- those that handle the full
+class of context-free grammars, including ambiguous ones --- have
+traditionally been considered too slow for production use.
+
+Gecko is a new GLR parser library that challenges that assumption. It
+handles **any** context-free grammar, provides **automatic syntax
+error recovery** with no grammar modifications, and still runs at
+speeds competitive with YACC on unambiguous grammars.
 
 In this post I'll walk through Gecko's design goals, its key features, how to
 use it in your own projects, and the benchmarks that demonstrate its
@@ -76,11 +78,12 @@ drop in the source files and compile.
 
 ### Full context-free grammar support
 
-YACC and Bison are limited to LALR(1) grammars.  Bison claims GLR support,
-but I was unable to make it work with ambiguous grammars: using `%glr-parser`
-with an ambiguous C grammar (the same one used by Gecko and ElkHound for
-benchmarking) reports a syntax error on the third line, and with the simplest
-ambiguous grammar `E : E '+' E | 'a'` it reports a syntax error on the 23rd token.
+YACC and Bison are limited to LALR(1) grammars.  Bison claims GLR
+support, but I was unable to make it work with ambiguous grammars.
+Using `%glr-parser` with an ambiguous C grammar (the same one used by
+Gecko and ElkHound for benchmarking) reports a syntax error on the
+third line. With the simplest ambiguous grammar `E : E '+' E | 'a'`
+it reports a syntax error on the 23rd token.
 Gecko, by contrast, can parse inputs described by **any context-free grammar**,
 including ambiguous ones. This is particularly useful for languages like C,
 where the infamous "typedef problem" (is `T * x;` a pointer declaration or a
@@ -119,12 +122,13 @@ The `#` notation after each alternative specifies the translation:
 - `# 1` means "the translation is the translation of the RHS symbol at
   index 1" (skipping the parentheses)
 
-This approach is simpler than YACC-style actions for many use cases: you get
-a clean AST without writing any C code in the grammar. The resulting parse
-tree consists of `GP_TERM` nodes (for terminals), `GP_ANODE` nodes (for
-abstract nodes with named children), `GP_NIL` nodes (for empty
-translations), `GP_ALT` nodes (for ambiguous alternatives), and `GP_OPT`
-nodes (for context-dependent alternatives).
+This approach is simpler than YACC-style actions for many use cases:
+you get a clean AST without writing any C code in the grammar. The
+resulting parse tree consists of `GP_TERM` nodes (for terminals),
+`GP_ANODE` nodes (for abstract nodes with named children), `GP_NIL`
+nodes (for empty translations), `GP_ALT` nodes (for ambiguous
+alternatives), and `GP_OPT` nodes (for context-dependent
+alternatives).
 
 For the grammar above and input `a+a*(a*a+a)`, Gecko will generate the
 following tree:
@@ -153,12 +157,12 @@ E : 'a'         # 0
   ;
 ```
 
-Here, `LEFT '+'` and `LEFT '*'` declare left-associative operators with `*`
-having higher precedence than `+` (later declarations have higher
-precedence). This lets you write ambiguous-looking rules like `E '+' E` and
-have Gecko resolve the conflicts the same way YACC would --- but with the
-full power of GLR parsing behind it in case other parts of your grammar are
-genuinely ambiguous.
+Here, `LEFT '+'` and `LEFT '*'` declare left-associative operators
+with `*` having higher precedence than `+` (later declarations have
+higher precedence). This lets you write ambiguous-looking rules like
+`E '+' E` and have Gecko resolve the conflicts the same way YACC
+would. The full power of GLR parsing is still behind it in case other
+parts of your grammar are genuinely ambiguous.
 
 The supported associativity declarations are `LEFT`, `RIGHT`, and
 `NONASSOC`, and multiple tokens can appear on the same line to share a
@@ -196,16 +200,16 @@ Four function calls to go from grammar description to parse tree.
 
 ## Automatic syntax error recovery
 
-This is perhaps Gecko's most distinctive feature. People who have used
-YACC/Bison or other widely used compiler-compiler tools know how difficult
-it is to implement good syntactic error recovery. In my experience, more
-time is spent on this task --- and on dealing with syntax errors in the
-semantic checker --- than on writing the original grammar. Therefore, a
-strong emphasis in the Gecko project was placed on simplifying this task.
-Syntax error recovery in Gecko is automated as much as possible, and Gecko
-always generates parse trees corresponding to some correct input, which is
-obtained from the original erroneous input by removing as few tokens as
-possible.
+This is perhaps Gecko's most distinctive feature. People who have
+used YACC/Bison or other widely used compiler-compiler tools know how
+difficult it is to implement good syntactic error recovery. In my
+experience, more time is spent on this task --- and on dealing with
+syntax errors in the semantic checker --- than on writing the original
+grammar. Therefore, a strong emphasis in the Gecko project was placed
+on simplifying this task. Syntax error recovery in Gecko is automated
+as much as possible. Gecko always generates parse trees corresponding
+to some correct input, which is obtained from the original erroneous
+input by removing as few tokens as possible.
 
 Traditional parser generators require you to manually add `error` tokens to
 your grammar to enable any kind of error recovery. Getting this right is
@@ -238,12 +242,13 @@ reduce on), Gecko's recovery algorithm kicks in:
 
 ### The key guarantee
 
-Gecko's error recovery guarantees that **the parser always produces parse
-trees corresponding to syntactically correct inputs**. The way it achieves
-this is conceptually simple: some tokens before and/or after the error point
-are ignored, and the remaining token stream is syntactically valid according
-to the grammar. The parser reports which tokens were involved in the error
-through a user-configurable error callback.
+Gecko's error recovery guarantees that **the parser always produces
+parse trees corresponding to syntactically correct inputs**. The way
+it achieves this is conceptually simple: some tokens before and/or
+after the error point are ignored, and the remaining token stream is
+syntactically valid according to the grammar. The parser reports which
+tokens were involved in the error through a user-configurable error
+callback.
 
 Consider a simple expression grammar and the input `a+a*(a*+a)` --- note the
 extra `*` before `+a)`. Gecko will detect the error at the `+` token (after
@@ -474,16 +479,17 @@ A few things to note:
 3. **`gp_set_debug_level(g, 2)`** enables printing of the result translation
    (AST) to stderr, which is useful for verifying the parse tree structure.
 
-4. **`gp_parse(g, read_token_func, &root, &ambiguity, NULL)`** runs the parser.
-   `read_token_func` is a user-provided function that returns the next
-   token's code and attribute. It returns a negative value at end of input.
-   On success, `root` points to the parse tree and `ambiguity` indicates
-   the ambiguity level: 0 means no ambiguity, 1 means the grammar is
-   ambiguous on the input, and 2 means the final stack was produced by
-   merging stacks where terminal attributes or abstract nodes differed,
-   which would result in context-dependent alternative (`GP_OPT`) nodes
-   in the parse tree if a custom merge function is provided. The last
-   argument is passed to the rule guard function (see below).
+4. **`gp_parse(g, read_token_func, &root, &ambiguity, NULL)`** runs
+   the parser. `read_token_func` is a user-provided function that
+   returns the next token's code and attribute. It returns a negative
+   value at end of input. On success, `root` points to the parse tree
+   and `ambiguity` indicates the ambiguity level. 0 means no
+   ambiguity. 1 means the grammar is ambiguous on the input. 2 means
+   the final stack was produced by merging stacks where terminal
+   attributes or abstract nodes differed, which would result in
+   context-dependent alternative (`GP_OPT`) nodes in the parse tree if
+   a custom merge function is provided. The last argument is passed to
+   the rule guard function (see below).
 
 5. **`gp_fin(g)`** frees all resources associated with the grammar.
 
@@ -510,16 +516,18 @@ can be freed in `gp_fin` and when reading a new grammar.
 gp_set_syntax_error(g, my_error_func);
 ```
 
-The error function receives the representation of a nonterminal related to
-the error position and a boolean `after_p` flag indicating whether the error
-occurred after that nonterminal (print "error after ...") or within it
-(print "error in ...").  It also receives the representation and attribute
-of the error token, plus the representation and attribute of the token where
-recovery stopped. The default function prints the error nonterminal and
-token representations. In a real compiler, you would set this to print file
-names, line numbers, and column numbers extracted from the token attributes,
-and translate nonterminal names into more readable form (e.g., `stmt` into
-`statement`).
+The error function receives the representation of a nonterminal
+related to the error position and a boolean `after_p` flag indicating
+whether the error occurred after that nonterminal (print "error
+after ...") or within it (print "error in ..."). It also receives the
+representation and attribute of the error token, plus the
+representation and attribute of the token where recovery stopped.
+
+The default function prints the error nonterminal and token
+representations. In a real compiler, you would set this to print file
+names, line numbers, and column numbers extracted from the token
+attributes. You would also translate nonterminal names into more
+readable form (e.g., `stmt` into `statement`).
 
 ### Error recovery tuning
 
@@ -553,16 +561,19 @@ Debug levels range from 0 (silent) to 6 (extremely verbose):
 gp_set_rule_guard(g, my_guard);
 ```
 
-Rule guards allow you to reject specific rule reductions during parsing,
-enabling context-sensitive parsing constraints. Each rule alternative can
-have a guard number assigned in the grammar description (using `? N` after
-the translation) or via `read_rule`. When a rule with a guard number is
-about to be reduced, the guard function is called with that number and the
-`arg` passed to `gp_parse`. If the guard function returns `false`, the
-reduction is rejected. The guard function can also prepare data for
-subsequent guard calls. For example, using this mechanism you could
-distinguish typenames from identifiers in a C grammar, eliminating the
-need for ambiguous parsing and generation of alternative nodes.
+Rule guards allow you to reject specific rule reductions during
+parsing, enabling context-sensitive parsing constraints. Each rule
+alternative can have a guard number assigned in the grammar
+description (using `? N` after the translation) or via `read_rule`.
+When a rule with a guard number is about to be reduced, the guard
+function is called with that number and the `arg` passed to
+`gp_parse`. If the guard function returns `false`, the reduction is
+rejected.
+
+The guard function can also prepare data for subsequent guard calls.
+For example, using this mechanism you could distinguish typenames from
+identifiers in a C grammar, eliminating the need for ambiguous parsing
+and generation of alternative nodes.
 
 ### Stack merging for ambiguous grammars
 
@@ -588,13 +599,14 @@ void *my_merge(struct grammar *g, struct gp_tree_node *node1,
 }
 ```
 
-This creates `GP_ALT` or `GP_OPT` nodes in the parse tree that represent
-all possible interpretations. The `context_num` argument defines the merge
-context: a negative value indicates a context-independent alternative, while
-a non-negative value indicates correlated alternatives --- in such cases,
-`GP_OPT` (context-dependent alternative) nodes should be used instead of
-`GP_ALT` to preserve the correct pairing of alternatives (see the parse tree
-section below for details).
+This creates `GP_ALT` or `GP_OPT` nodes in the parse tree that
+represent all possible interpretations. The `context_num` argument
+defines the merge context. A negative value indicates a
+context-independent alternative. A non-negative value indicates
+correlated alternatives --- in such cases, `GP_OPT`
+(context-dependent alternative) nodes should be used instead of
+`GP_ALT` to preserve the correct pairing of alternatives (see the
+parse tree section below for details).
 
 ## The parse tree
 
@@ -632,18 +644,20 @@ a non-trivial task. If your grammar requires this, consider using
 [YAEP](https://github.com/vnmakarov/yaep), which handles this
 automatically.
 
-Parse tree nodes are **hash-consed**: structurally identical subtrees share
-the same node in memory. This is transparent to the user but significantly
-reduces memory consumption, especially for ambiguous grammars where many
-partial parse trees share common prefixes and suffixes.
+Parse tree nodes are **hash-consed**: structurally identical subtrees
+share the same node in memory. This is transparent to the user but
+significantly reduces memory consumption, especially for ambiguous
+grammars where many partial parse trees share common prefixes and
+suffixes.
 
-The parse tree (which in the common case is a DAG) can be very unbalanced,
-so using recursive functions for traversal may cause stack overflow. Gecko
-provides `gp_traverse_tree`, which uses an explicit stack instead of
-recursion. It calls user-provided `preorder` and `postorder` functions
-before and after processing each node's children. If the `preorder` function
-returns `false`, the node's children are skipped. Both callbacks receive the
-current node, its parent, and a user-provided argument.
+The parse tree (which in the common case is a DAG) can be very
+unbalanced, so using recursive functions for traversal may cause stack
+overflow. Gecko provides `gp_traverse_tree`, which uses an explicit
+stack instead of recursion. It calls user-provided `preorder` and
+`postorder` functions before and after processing each node's
+children. If the `preorder` function returns `false`, the node's
+children are skipped. Both callbacks receive the current node, its
+parent, and a user-provided argument.
 
 You can free the parse tree explicitly with:
 
@@ -694,10 +708,10 @@ Each SLR set has:
 - An **action map**: for each terminal, what actions to take (shift, reduce,
   or both)
 
-Conflicts in the action map (shift-reduce or reduce-reduce) are resolved
-using operator precedence and associativity declarations, exactly as in
-YACC. Conflicts that cannot be resolved this way are left as multiple
-actions --- this is where GLR parsing takes over.
+Conflicts in the action map (shift-reduce or reduce-reduce) are
+resolved using operator precedence and associativity declarations,
+exactly as in YACC. Conflicts that cannot be resolved this way are
+left as multiple actions. This is where GLR parsing takes over.
 
 The SLR sets are **reused across multiple parses** with the same grammar,
 so repeated calls to `gp_parse` skip the set construction phase entirely.
@@ -799,11 +813,12 @@ This is the more interesting benchmark. On realistic C code:
 - Gecko can parse roughly **2 million lines of C per second** on an
   AMD 9900X
 
-To put this in perspective: Gecko parses the entire old GCC source tree in
-**0.29 seconds** on modern hardware. The numbers for `gcc -fsyntax-only` and
-`clang -fsyntax-only`, which only do fast hand-written recursive descent
-parsing and basic semantic analysis, show that parsing is not the bottleneck
-of the compilers, and a 10% Gecko parser slowdown will not be critical.
+To put this in perspective: Gecko parses the entire old GCC source
+tree in **0.29 seconds** on modern hardware. The numbers for `gcc
+-fsyntax-only` and `clang -fsyntax-only`, which only do fast
+hand-written recursive descent parsing and basic semantic analysis,
+show that parsing is not the bottleneck of the compilers. A 10% Gecko
+parser slowdown will not be critical.
 
 ### Highly ambiguous grammar
 
@@ -968,10 +983,11 @@ benchmarks are available on GitHub:
 
 Gecko demonstrates that generalized parsing doesn't have to mean slow
 parsing. By combining a GLR algorithm with a single-stack fast path,
-hash-consed parse trees, and adaptive garbage collection, Gecko achieves
-speeds within 5--10% of YACC on unambiguous grammars while handling the full
-class of context-free grammars. Its automatic error recovery eliminates one
-of the most painful aspects of working with traditional parser generators.
+hash-consed parse trees, and adaptive garbage collection, Gecko
+achieves speeds within 5--10% of YACC on unambiguous grammars while
+handling the full class of context-free grammars. Its automatic error
+recovery eliminates one of the most painful aspects of working with
+traditional parser generators.
 
 At 3,500 lines of C and 80KB of compiled code, Gecko is small enough to
 understand and fast enough for production use. The final result is quite
