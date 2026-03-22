@@ -32,22 +32,25 @@ The world of parser generators is crowded. YACC and Bison have been around
 since the 1970s. More recently, PEG parsers, parser combinators, and various
 Earley-based tools have appeared. So why build yet another parser?
 
-During my career I wrote several compiler-compilers. The first one was an
-LALR(1) parser written in 1985 in Pascal (you can try to find its
-description in the Russian journal "Programming" for 1985). The next one was
-MSTA, written in the nineties. It was an LALR(k)/LR(k) parser with many
-additional optimizations that made it faster than YACC/Bison. Using it I
-found that speed is not the most important feature of a parser, especially
-with faster modern CPUs, and that LR(k) is not enough for real language
-grammars. Therefore, about ten years ago I wrote
-[YAEP](https://github.com/vnmakarov/yaep): an Earley parser that can work
-with any context-free grammar. I spent a lot of time making it fast, and it
-is actually the fastest implementation of an Earley parser that I know of.
-Still, I was not satisfied with its speed and memory consumption for
-unambiguous and moderately ambiguous grammars. Unfortunately, it is
-difficult to solve these problems because of inherent features of the Earley
-algorithm. Therefore, recently I turned my attention to GLR parsers --- and
-Gecko is my implementation of one.
+During my career I wrote several compiler-compilers. The first one
+was an LALR(1) parser written in 1985 in Pascal (you can try to find
+its description in the Russian journal "Programming" for 1985). The
+next one was MSTA, written in the nineties. It was an LALR(k)/LR(k)
+parser with many additional optimizations that made it faster than
+YACC/Bison. Using it I found that speed is not the most important
+feature of a parser, especially with faster modern CPUs, and that
+LR(k) is not enough for real language grammars.
+
+Therefore, about ten years ago I wrote
+[YAEP](https://github.com/vnmakarov/yaep): an Earley parser that can
+work with any context-free grammar. I spent a lot of time making it
+fast, and it is actually the fastest implementation of an Earley
+parser that I know of. Still, I was not satisfied with its speed and
+memory consumption for unambiguous and moderately ambiguous grammars.
+Unfortunately, it is difficult to solve these problems because of
+inherent features of the Earley algorithm. Therefore, recently I
+turned my attention to GLR parsers --- and Gecko is my implementation
+of one.
 
 **I don't know tools that offer the combination of features that Gecko
 provides**:
@@ -84,11 +87,12 @@ Using `%glr-parser` with an ambiguous C grammar (the same one used by
 Gecko and ElkHound for benchmarking) reports a syntax error on the
 third line. With the simplest ambiguous grammar `E : E '+' E | 'a'`
 it reports a syntax error on the 23rd token.
-Gecko, by contrast, can parse inputs described by **any context-free grammar**,
-including ambiguous ones. This is particularly useful for languages like C,
-where the infamous "typedef problem" (is `T * x;` a pointer declaration or a
-multiplication?) creates genuine ambiguity if typenames are not distinguished
-from identifiers at the lexer level.
+
+Gecko, by contrast, can parse inputs described by **any context-free
+grammar**, including ambiguous ones. This is particularly useful for
+languages like C, where the infamous "typedef problem" (is `T * x;` a
+pointer declaration or a multiplication?) creates genuine ambiguity if
+typenames are not distinguished from identifiers at the lexer level.
 
 With Gecko, you can use a single token type for all identifiers ---
 including typenames --- and let the parser explore both interpretations
@@ -206,10 +210,12 @@ difficult it is to implement good syntactic error recovery. In my
 experience, more time is spent on this task --- and on dealing with
 syntax errors in the semantic checker --- than on writing the original
 grammar. Therefore, a strong emphasis in the Gecko project was placed
-on simplifying this task. Syntax error recovery in Gecko is automated
-as much as possible. Gecko always generates parse trees corresponding
-to some correct input, which is obtained from the original erroneous
-input by removing as few tokens as possible.
+on simplifying this task.
+
+Syntax error recovery in Gecko is automated as much as possible.
+Gecko always generates parse trees corresponding to some correct
+input, which is obtained from the original erroneous input by removing
+as few tokens as possible.
 
 Traditional parser generators require you to manually add `error` tokens to
 your grammar to enable any kind of error recovery. Getting this right is
@@ -584,11 +590,13 @@ Gecko uses an analogous mechanism, but with a more explicit interface.
 gp_set_node_merge_func(g, my_merge);
 ```
 
-When the parser merges stacks (because two parsing paths have reached the
-same state), it needs to combine the parse tree nodes from both paths. The
-default merge function simply returns the first node, effectively choosing
-one arbitrary parse. If you want to preserve all alternatives (e.g., for
-later semantic disambiguation), you can use `gp_get_alt_node` and
+When the parser merges stacks (because two parsing paths have reached
+the same state), it needs to combine the parse tree nodes from both
+paths. The default merge function simply returns the first node,
+effectively choosing one arbitrary parse.
+
+If you want to preserve all alternatives (e.g., for later semantic
+disambiguation), you can use `gp_get_alt_node` and
 `gp_get_opt_node`:
 
 ```c
@@ -636,12 +644,12 @@ unique node number), plus a union containing the type-specific data:
 Fortunately, this is a rare case for programming language grammars;
 for example, the C grammar does not exhibit this behavior.
 
-To correctly traverse the parse tree, you should always choose the same
-alternative (`first` or `second`) for option nodes with the same
-`context_num`. By doing so, it is possible to eliminate option nodes and
-transform the parse tree to contain only alternative nodes, but this is
-a non-trivial task. If your grammar requires this, consider using
-[YAEP](https://github.com/vnmakarov/yaep), which handles this
+To correctly traverse the parse tree, you should always choose the
+same alternative (`first` or `second`) for option nodes with the same
+`context_num`. By doing so, it is possible to eliminate option nodes
+and transform the parse tree to contain only alternative nodes, but
+this is a non-trivial task. If your grammar requires this, consider
+using [YAEP](https://github.com/vnmakarov/yaep), which handles this
 automatically.
 
 Parse tree nodes are **hash-consed**: structurally identical subtrees
@@ -698,10 +706,10 @@ grammar loops.
 
 ### SLR set construction
 
-Gecko constructs **SLR(1) sets** (also known as LR(0) item sets with SLR
-lookaheads). Each set contains a collection of LR items (a rule plus a
-position within that rule). LR items are **memoized** --- each unique
-(rule, position) pair exists as exactly one object in memory.
+Gecko constructs **SLR(1) sets** (also known as LR(0) item sets with
+SLR lookaheads). Each set contains a collection of LR items (a rule
+plus a position within that rule). LR items are **memoized** --- each
+unique (rule, position) pair exists as exactly one object in memory.
 
 Each SLR set has:
 - A **goto map**: for each nonterminal, which set to transition to
@@ -713,14 +721,16 @@ resolved using operator precedence and associativity declarations,
 exactly as in YACC. Conflicts that cannot be resolved this way are
 left as multiple actions. This is where GLR parsing takes over.
 
-The SLR sets are **reused across multiple parses** with the same grammar,
-so repeated calls to `gp_parse` skip the set construction phase entirely.
+The SLR sets are **reused across multiple parses** with the same
+grammar, so repeated calls to `gp_parse` skip the set construction
+phase entirely.
 
-I initially tried building SLR sets on demand during parsing, but I found
-that for the C grammar, parsing even small files (e.g., the sieve test)
-results in building practically all possible SLR sets. So I switched to
-building all SLR sets at once, which makes sense since building all SLR
-sets for the C grammar takes less than 1ms on an AMD 9900X.
+I initially tried building SLR sets on demand during parsing, but I
+found that for the C grammar, parsing even small files (e.g., the
+sieve test) results in building practically all possible SLR sets. So
+I switched to building all SLR sets at once, which makes sense since
+building all SLR sets for the C grammar takes less than 1ms on an AMD
+9900X.
 
 ### The parsing algorithm
 
@@ -758,14 +768,14 @@ comparison during stack merging.
 
 During parsing, Gecko periodically performs **garbage collection** of
 unreachable parse tree nodes. This uses a mark-sweep algorithm with a
-bitmap for marking. The GC threshold is adaptive --- it runs more frequently
-when many nodes are being created and less frequently when parsing is
-proceeding smoothly.
+bitmap for marking. The GC threshold is adaptive --- it runs more
+frequently when many nodes are being created and less frequently when
+parsing is proceeding smoothly.
 
-This is important for keeping memory consumption bounded during the parsing
-of long inputs, especially with ambiguous grammars where many intermediate
-nodes are created and then become unreachable as stacks are merged or
-discarded.
+This is important for keeping memory consumption bounded during the
+parsing of long inputs, especially with ambiguous grammars where many
+intermediate nodes are created and then become unreachable as stacks
+are merged or discarded.
 
 ## Benchmark results
 
@@ -775,10 +785,10 @@ ElkHound (a well-known GLR parser), and YAEP (a fast Earley parser).
 
 ### Test setup
 
-The benchmarks use an **ANSI C grammar** as the test grammar. For Gecko,
-ElkHound, and YAEP, the grammar is slightly ambiguous because typenames
-use the same token type as identifiers. For YACC, typenames are a separate
-token type (since YACC can't handle the ambiguity).
+The benchmarks use an **ANSI C grammar** as the test grammar. For
+Gecko, ElkHound, and YAEP, the grammar is slightly ambiguous because
+typenames use the same token type as identifiers. For YACC, typenames
+are a separate token type (since YACC can't handle the ambiguity).
 
 Two test files are used:
 1. **1.5 million lines** of C code (100,000 sieve functions)
