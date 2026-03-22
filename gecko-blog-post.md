@@ -7,6 +7,8 @@ tags: [GLR, parser, compiler-compiler, syntax-analysis, error-recovery]
 author: Vladimir Makarov
 ---
 
+# Gecko: A Fast, Standalone GLR Parser Library in C
+
 Parsing is the backbone of every programming language implementation, and the
 choice of parser technology has far-reaching consequences for the language
 designer. LALR(1) parsers like YACC and Bison have dominated for decades, but
@@ -22,7 +24,7 @@ In this post I'll walk through Gecko's design goals, its key features, how to
 use it in your own projects, and the benchmarks that demonstrate its
 performance.
 
-# Why another parser?
+## Why another parser?
 
 The world of parser generators is crowded. YACC and Bison have been around
 since the 1970s. More recently, PEG parsers, parser combinators, and various
@@ -61,9 +63,9 @@ provides**:
 
 Let's look at each of these in detail.
 
-# Feature overview
+## Feature overview
 
-## Small and simple
+### Small and simple
 
 Gecko's entire implementation is roughly **3,500 lines of C** (SLOC). The
 compiled x86-64 code weighs in at about **80KB**. There are no external
@@ -72,7 +74,7 @@ utility libraries (custom allocators, hash tables, variable-length objects,
 and object stacks). This makes Gecko trivial to embed in any project --- just
 drop in the source files and compile.
 
-## Full context-free grammar support
+### Full context-free grammar support
 
 YACC and Bison are limited to LALR(1) grammars.  Bison claims GLR support,
 but I was unable to make it work with ambiguous grammars: using `%glr-parser`
@@ -90,7 +92,7 @@ including typenames --- and let the parser explore both interpretations
 simultaneously. The ambiguity is resolved structurally in the resulting parse
 tree, rather than requiring feedback hacks between scanner and parser.
 
-## Simple syntax-directed translation
+### Simple syntax-directed translation
 
 Gecko doesn't use semantic actions the way YACC does. Instead, it generates
 **abstract syntax trees (ASTs)** as output using a concise notation in the
@@ -134,7 +136,7 @@ In the tree, `ANODE` and `TERM` represent parse tree node types
 the abstract node, and `a` represents the attribute of the corresponding input
 token.
 
-## Operator grammars
+### Operator grammars
 
 Many practical grammars include expression syntax with dozens of precedence
 levels. Writing these out as a cascade of nonterminals (one per precedence
@@ -166,7 +168,7 @@ As with YACC, writing grammars that use operator precedence/associativity
 declarations and left-recursive rules results in faster parsing and lower
 memory consumption.
 
-## Library architecture
+### Library architecture
 
 Gecko is a **library**, not a standalone tool. This is a fundamental design
 decision. Where YACC and Bison generate C source files that you compile and
@@ -192,7 +194,7 @@ gp_fin(g);
 
 Four function calls to go from grammar description to parse tree.
 
-# Automatic syntax error recovery
+## Automatic syntax error recovery
 
 This is perhaps Gecko's most distinctive feature. People who have used
 YACC/Bison or other widely used compiler-compiler tools know how difficult
@@ -216,7 +218,7 @@ modifications whatsoever**. This is made possible by Gecko's GLR
 architecture, which naturally maintains multiple parsing stacks
 simultaneously.
 
-## How it works
+### How it works
 
 When a syntax error is detected (a token that no current stack can shift or
 reduce on), Gecko's recovery algorithm kicks in:
@@ -234,7 +236,7 @@ reduce on), Gecko's recovery algorithm kicks in:
 3. **Resume normal parsing.** The minimal-cost stack(s) become the new
    starting point for continued parsing.
 
-## The key guarantee
+### The key guarantee
 
 Gecko's error recovery guarantees that **the parser always produces parse
 trees corresponding to syntactically correct inputs**. The way it achieves
@@ -256,12 +258,12 @@ This approach works well in practice because:
   independently
 - The parse tree output is always **structurally valid**
 
-# The grammar description language
+## The grammar description language
 
 Gecko accepts grammars in a YACC-like textual format via `gp_parse_grammar`.
 The format supports:
 
-## Terminal declarations
+### Terminal declarations
 
 Named terminals with explicit codes are described as follows:
 
@@ -276,7 +278,7 @@ Single-character literals (`'a'`, `'+'`, etc.) are terminals with
 codes equal to their ASCII values and should not be described in TERM
 declarations.
 
-## Operator precedence
+### Operator precedence
 
 ```
 LEFT '+' '-';
@@ -288,7 +290,7 @@ NONASSOC '<' '>';
 Operators listed on the same line share a precedence level. Lines appearing
 later have higher precedence. This is identical to YACC/Bison semantics.
 
-## Rules
+### Rules
 
 ```
 lhs : rhs_symbol_1 rhs_symbol_2 ... # translation
@@ -305,7 +307,7 @@ Therefore, when using `gp_read_grammar`, you typically add an explicit
 start rule such as `$S : E` that has a single alternative. When using
 `gp_parse_grammar`, Gecko adds such a rule automatically.
 
-## Translation specifications
+### Translation specifications
 
 After `#`:
 - A single number `N` means the translation is the translation of the Nth
@@ -317,11 +319,11 @@ After `#`:
 An optional **guard** can follow the translation: `? N` assigns guard
 number `N` to the rule alternative (see Rule Guards in Configuration).
 
-## Comments
+### Comments
 
 C-style `/* ... */` comments are supported in grammar descriptions.
 
-# Programmatic grammar construction
+## Programmatic grammar construction
 
 For maximum flexibility, Gecko also supports building grammars
 programmatically via the `gp_read_grammar` function. You provide two callback
@@ -401,7 +403,7 @@ This programmatic interface is useful when grammars need to be constructed
 dynamically or when integrating Gecko with a system that already has its own
 grammar representation.
 
-# A complete usage example
+## A complete usage example
 
 Here is a small but complete example showing how to use Gecko to parse
 arithmetic expressions:
@@ -485,11 +487,11 @@ A few things to note:
 
 5. **`gp_fin(g)`** frees all resources associated with the grammar.
 
-# Configuration and customization
+## Configuration and customization
 
 Gecko provides several configuration functions to customize parser behavior:
 
-## Memory management
+### Memory management
 
 ```c
 gp_set_parse_alloc(g, my_alloc);   // Custom allocator for parse tree nodes
@@ -502,7 +504,7 @@ Note that it is not safe to change these functions after `gp_parse` and
 before `gp_fin`, as some data allocated by `parse_alloc` in `gp_parse`
 can be freed in `gp_fin` and when reading a new grammar.
 
-## Syntax error reporting
+### Syntax error reporting
 
 ```c
 gp_set_syntax_error(g, my_error_func);
@@ -519,7 +521,7 @@ names, line numbers, and column numbers extracted from the token attributes,
 and translate nonterminal names into more readable form (e.g., `stmt` into
 `statement`).
 
-## Error recovery tuning
+### Error recovery tuning
 
 ```c
 gp_set_recovery_match(g, 5);  // Require 5 consecutive tokens after recovery
@@ -529,7 +531,7 @@ The default is 3. Higher values produce more conservative recovery (fewer
 false recoveries, but potentially more tokens skipped). The optimal value
 depends on your grammar and expected input.
 
-## Debug output
+### Debug output
 
 ```c
 gp_set_debug_level(g, 3);
@@ -545,7 +547,7 @@ Debug levels range from 0 (silent) to 6 (extremely verbose):
 - **Level 5:** Print stack operations during parsing and stack merging
 - **Level 6:** Even more detailed stack processing information
 
-## Rule guards
+### Rule guards
 
 ```c
 gp_set_rule_guard(g, my_guard);
@@ -562,7 +564,7 @@ subsequent guard calls. For example, using this mechanism you could
 distinguish typenames from identifiers in a C grammar, eliminating the
 need for ambiguous parsing and generation of alternative nodes.
 
-## Stack merging for ambiguous grammars
+### Stack merging for ambiguous grammars
 
 ElkHound uses a mechanism to merge different translations of merged stacks.
 Gecko uses an analogous mechanism, but with a more explicit interface.
@@ -594,7 +596,7 @@ a non-negative value indicates correlated alternatives --- in such cases,
 `GP_ALT` to preserve the correct pairing of alternatives (see the parse tree
 section below for details).
 
-# The parse tree
+## The parse tree
 
 Gecko's parse tree is a DAG (directed acyclic graph) of `struct
 gp_tree_node` values. Each node has a `type` field and a `num` field (a
@@ -654,12 +656,12 @@ will be freed through that. Setting `parse_free` to `NULL` disables
 automatic freeing entirely, which is useful if you're using arena allocation
 and plan to free everything at once.
 
-# How Gecko works inside
+## How Gecko works inside
 
 Understanding Gecko's internal architecture helps explain its performance
 characteristics.
 
-## Grammar analysis
+### Grammar analysis
 
 When you call `gp_parse_grammar` or `gp_read_grammar`, Gecko performs
 several analysis passes:
@@ -680,7 +682,7 @@ In strict mode (`strict_p = true`), Gecko will report errors for
 unreachable nonterminals, nonterminals that can't derive terminals, and
 grammar loops.
 
-## SLR set construction
+### SLR set construction
 
 Gecko constructs **SLR(1) sets** (also known as LR(0) item sets with SLR
 lookaheads). Each set contains a collection of LR items (a rule plus a
@@ -706,7 +708,7 @@ results in building practically all possible SLR sets. So I switched to
 building all SLR sets at once, which makes sense since building all SLR
 sets for the C grammar takes less than 1ms on an AMD 9900X.
 
-## The parsing algorithm
+### The parsing algorithm
 
 Gecko's GLR parser uses a two-tier architecture that is key to its
 performance:
@@ -729,7 +731,7 @@ configuration), they are merged. The parse tree nodes from both stacks are
 combined using the user-configurable merge function. This prevents the
 exponential blowup that would otherwise occur with ambiguous grammars.
 
-## Hash-consing of parse tree nodes
+### Hash-consing of parse tree nodes
 
 Parse tree nodes are **hash-consed**: before creating a new node, Gecko
 checks whether a structurally identical node already exists. If so, the
@@ -738,7 +740,7 @@ where many partial parse trees share common subtrees. Hash-consing
 significantly reduces both memory consumption and the cost of tree
 comparison during stack merging.
 
-## Garbage collection
+### Garbage collection
 
 During parsing, Gecko periodically performs **garbage collection** of
 unreachable parse tree nodes. This uses a mark-sweep algorithm with a
@@ -751,13 +753,13 @@ of long inputs, especially with ambiguous grammars where many intermediate
 nodes are created and then become unreachable as stacks are merged or
 discarded.
 
-# Benchmark results
+## Benchmark results
 
 Performance claims are meaningless without data. Gecko includes a
 comprehensive benchmark suite (`make bench`) that compares it against YACC,
 ElkHound (a well-known GLR parser), and YAEP (a fast Earley parser).
 
-## Test setup
+### Test setup
 
 The benchmarks use an **ANSI C grammar** as the test grammar. For Gecko,
 ElkHound, and YAEP, the grammar is slightly ambiguous because typenames
@@ -776,7 +778,7 @@ The benchmarks were run on four different architectures:
 - Intel 285K (Fedora 42)
 - IBM Power10 (RHEL 10)
 
-## C grammar results: 1.5M lines (100K sieve functions)
+### C grammar results: 1.5M lines (100K sieve functions)
 
 ![C Grammar: 1.5M Lines (100K Sieve Functions) -- Parse Time and Peak Memory](bench_sieve.png)
 
@@ -784,7 +786,7 @@ On this test, YAEP has unusually good results because it uses dynamic
 programming that speeds up parsing of files with repeating patterns. The
 second test is more representative of real-world parsing.
 
-## C grammar results: ~500K lines (whole old GCC)
+### C grammar results: ~500K lines (whole old GCC)
 
 ![C Grammar: ~500K Lines (Old GCC) -- Parse Time and Peak Memory](bench_gcc.png)
 
@@ -803,7 +805,7 @@ To put this in perspective: Gecko parses the entire old GCC source tree in
 parsing and basic semantic analysis, show that parsing is not the bottleneck
 of the compilers, and a 10% Gecko parser slowdown will not be critical.
 
-## Highly ambiguous grammar
+### Highly ambiguous grammar
 
 For the truly ambiguous grammar `E = E + E | a` with input `a(+a){200}`
 (200 plus operators), Gecko's GLR engine shows its strength:
@@ -814,7 +816,7 @@ Gecko is approximately **13x faster than ElkHound** and **7.5x faster than
 YAEP** on this test. This demonstrates that Gecko's stack merging and
 hash-consing techniques work extremely well even under heavy ambiguity.
 
-# Comparison with other parser technologies
+## Comparison with other parser technologies
 
 Here is a summary of how Gecko compares with the major alternatives:
 
@@ -848,7 +850,7 @@ Key differentiators:
   possible translations for highly ambiguous grammars and produces a much
   smaller DAG for those translations
 
-# Building and installing
+## Building and installing
 
 Getting started with Gecko is straightforward:
 
@@ -870,7 +872,7 @@ To run the ElkHound benchmarks, pass the ElkHound build directory:
 make bench ELKHOUND_DIR=/path/to/elkhound
 ```
 
-# Real-world application: parsing ANSI C
+## Real-world application: parsing ANSI C
 
 The Gecko test suite includes a complete ANSI C grammar with a Flex-based
 lexer. This serves both as a test and as a practical example of how to use
@@ -909,7 +911,7 @@ the scanner-parser feedback loop that every YACC-based C parser requires.
 **Automatic error recovery.** The grammar contains no `error` tokens
 anywhere. Syntax errors in the input are handled automatically.
 
-# Design philosophy
+## Design philosophy
 
 Gecko reflects several deliberate design choices.
 
@@ -931,7 +933,7 @@ By being a library rather than a code generator, Gecko avoids the
 build complexity, debugging difficulty, and inflexibility that come
 with generated parsers.
 
-# When to use Gecko
+## When to use Gecko
 
 Gecko is a good fit when:
 
@@ -953,7 +955,7 @@ Gecko might not be the best choice when:
 - Your grammar is simple enough that a recursive descent parser would be
   equally clear and fast
 
-# Getting the code
+## Getting the code
 
 Gecko is open source under the **MIT license**. The source code, tests, and
 benchmarks are available on GitHub:
@@ -962,7 +964,7 @@ benchmarks are available on GitHub:
 
 ---
 
-# Conclusion
+## Conclusion
 
 Gecko demonstrates that generalized parsing doesn't have to mean slow
 parsing. By combining a GLR algorithm with a single-stack fast path,
