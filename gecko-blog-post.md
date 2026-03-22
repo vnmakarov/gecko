@@ -96,38 +96,6 @@ including typenames --- and let the parser explore both interpretations
 simultaneously. The ambiguity is resolved structurally in the resulting parse
 tree, rather than requiring feedback hacks between scanner and parser.
 
-### Operator Grammars
-
-Many practical grammars include expression syntax with dozens of precedence
-levels. Writing these out as a cascade of nonterminals (one per precedence
-level) is tedious and error-prone. Gecko supports **operator priority and
-associativity declarations** using the same syntax as YACC/Bison:
-
-```
-LEFT '+';
-LEFT '*';
-E : 'a'         # 0
-  | '(' E ')'   # 1
-  | E '+' E     # plus (0 2)
-  | E '*' E     # mult (0 2)
-  ;
-```
-
-Here, `LEFT '+'` and `LEFT '*'` declare left-associative operators with `*`
-having higher precedence than `+` (later declarations have higher
-precedence). This lets you write ambiguous-looking rules like `E '+' E` and
-have Gecko resolve the conflicts the same way YACC would --- but with the
-full power of GLR parsing behind it in case other parts of your grammar are
-genuinely ambiguous.
-
-The supported associativity declarations are `LEFT`, `RIGHT`, and
-`NONASSOC`, and multiple tokens can appear on the same line to share a
-precedence level.
-
-As with YACC, writing grammars that use operator precedence/associativity
-declarations and left-recursive rules results in faster parsing and lower
-memory consumption.
-
 ### Simple Syntax-Directed Translation
 
 Gecko doesn't use semantic actions the way YACC does. Instead, it generates
@@ -161,6 +129,48 @@ tree consists of `GP_TERM` nodes (for terminals), `GP_ANODE` nodes (for
 abstract nodes with named children), `GP_NIL` nodes (for empty
 translations), `GP_ALT` nodes (for ambiguous alternatives), and `GP_OPT`
 nodes (for context-dependent alternatives).
+
+For the grammar above and input `a+a*(a*a+a)`, Gecko will generate the
+following tree:
+
+<img src="tree-example.png" alt="AST for a+a*(a*a+a)" width="500">
+
+In the tree, `ANODE` and `TERM` represent parse tree node types
+(`GP_ANODE` and `GP_TERM`), `plus` and `mult` are the `name` field of
+the abstract node, and `a` represents the attribute of the corresponding input
+token.
+
+### Operator Grammars
+
+Many practical grammars include expression syntax with dozens of precedence
+levels. Writing these out as a cascade of nonterminals (one per precedence
+level) is tedious and error-prone. Gecko supports **operator priority and
+associativity declarations** using the same syntax as YACC/Bison:
+
+```
+LEFT '+';
+LEFT '*';
+E : 'a'         # 0
+  | '(' E ')'   # 1
+  | E '+' E     # plus (0 2)
+  | E '*' E     # mult (0 2)
+  ;
+```
+
+Here, `LEFT '+'` and `LEFT '*'` declare left-associative operators with `*`
+having higher precedence than `+` (later declarations have higher
+precedence). This lets you write ambiguous-looking rules like `E '+' E` and
+have Gecko resolve the conflicts the same way YACC would --- but with the
+full power of GLR parsing behind it in case other parts of your grammar are
+genuinely ambiguous.
+
+The supported associativity declarations are `LEFT`, `RIGHT`, and
+`NONASSOC`, and multiple tokens can appear on the same line to share a
+precedence level.
+
+As with YACC, writing grammars that use operator precedence/associativity
+declarations and left-recursive rules results in faster parsing and lower
+memory consumption.
 
 ### Library Architecture
 
