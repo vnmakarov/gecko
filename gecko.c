@@ -2433,7 +2433,9 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
           break;
         }
       }
-      if (curr_code != END_MARKER_CODE) { /* skip curr stack term: */
+      if (curr_code == END_MARKER_CODE) {
+        stack_free (g, stack);
+      } else { /* skip curr stack term: */
         stack->recovery->u.info.buff_token_ind++;
         stack->recovery->u.info.cost++;
         stack->recovery->u.info.n_matched_toks = 0;
