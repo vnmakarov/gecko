@@ -72,8 +72,8 @@ Let's look at each of these in detail.
 
 ### Small and simple
 
-Gecko's entire implementation is roughly **3,500 lines of C** (SLOC). The
-compiled x86-64 code weighs in at about **80KB**. There are no external
+Gecko's entire implementation is roughly **3,800 lines of C** (SLOC). The
+compiled x86-64 code weighs in at about **90KB**. There are no external
 dependencies beyond the C standard library and a few accompanying header-only
 utility libraries (custom allocators, hash tables, variable-length objects,
 and object stacks). This makes Gecko trivial to embed in any project --- just

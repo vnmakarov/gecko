@@ -625,7 +625,7 @@ int yy_flex_debug = 0;
 char *yytext;
 #line 1 "ansic.l"
 /* This file is a part of Gecko Parser (GLR Parser) project.
-   Copyright (C) 2025 Vladimir Makarov <vmakarov.gcc@gmail.com>.
+   Copyright (C) 2026 Vladimir Makarov <vmakarov.gcc@gmail.com>.
 */
 #line 13 "ansic.l"
 #include <stdio.h>
@@ -2434,11 +2434,10 @@ yywrap()
 void
 comment(void)
 {
-	char c, c1;
+	int c, c1;
 
 loop:
-	while ((c = input()) != '*' && c != 0)
-		/*putchar(c)*/;
+	while ((c = input()) != '*' && c != 0);
 
 	if ((c1 = input()) != '/' && c != 0)
 	{
@@ -2446,8 +2445,6 @@ loop:
 		goto loop;
 	}
 
-	if (c != 0)
-		/*putchar(c1)*/;
 }
 
 void

@@ -106,9 +106,9 @@ typedef struct {
 /* This macro returns current length of variable length object on the top of OS.  The macro has side
    effects! */
 #ifndef NDEBUG
-#define OS_TOP_LENGTH(os)                                                                \
-  ((os).os_top_object_start != NULL ? (os).os_top_object_free - (os).os_top_object_start \
-                                    : (abort (), 0))
+#define OS_TOP_LENGTH(os)                                                                           \
+  ((os).os_top_object_start != NULL ? (size_t) ((os).os_top_object_free - (os).os_top_object_start) \
+                                    : (abort (), (size_t) 0))
 #else
 #define OS_TOP_LENGTH(os) ((os).os_top_object_free - (os).os_top_object_start)
 #endif
@@ -127,9 +127,8 @@ typedef struct {
    top OS.  The macro has side effects! Remember also that the top object may change own place after
    any addition. */
 #ifndef NDEBUG
-#define OS_TOP_END(os)                                                       \
-  ((os).os_top_object_start != NULL ? (void *) ((os).os_top_object_free - 1) \
-                                    : (abort (), (void *) 0))
+#define OS_TOP_END(os) \
+  ((os).os_top_object_start != NULL ? (void *) ((os).os_top_object_free - 1) : (abort (), (void *) 0))
 #else
 #define OS_TOP_END(os) ((void *) ((os).os_top_object_free - 1))
 #endif
@@ -207,8 +206,7 @@ typedef struct {
 static inline void _OS_create_function (os_t *os, size_t initial_segment_length) {
   if (initial_segment_length == 0) initial_segment_length = OS_DEFAULT_SEGMENT_LENGTH;
   os->os_current_segment
-    = (struct _os_segment *) gp_malloc (os->os_alloc,
-                                        initial_segment_length + sizeof (struct _os_segment));
+    = (struct _os_segment *) gp_malloc (os->os_alloc, initial_segment_length + sizeof (struct _os_segment));
   os->os_current_segment->os_previous_segment = NULL;
   os->os_top_object_start = _OS_ALIGNED_ADDRESS (os->os_current_segment->os_segment_contest);
   os->os_top_object_free = os->os_top_object_start;
@@ -265,8 +263,7 @@ static inline void _OS_expand_memory (os_t *os, size_t additional_length) {
   segment_length = os_top_object_length + additional_length;
   segment_length += segment_length / 2 + 1;
   if (segment_length < OS_DEFAULT_SEGMENT_LENGTH) segment_length = OS_DEFAULT_SEGMENT_LENGTH;
-  new_segment
-    = (struct _os_segment *) gp_malloc (os->os_alloc, segment_length + sizeof (struct _os_segment));
+  new_segment = (struct _os_segment *) gp_malloc (os->os_alloc, segment_length + sizeof (struct _os_segment));
   new_os_top_object_start = _OS_ALIGNED_ADDRESS (new_segment->os_segment_contest);
   memcpy (new_os_top_object_start, os->os_top_object_start, os_top_object_length);
   if (os->os_top_object_start == _OS_ALIGNED_ADDRESS (os->os_current_segment->os_segment_contest)) {
@@ -290,8 +287,7 @@ static inline void _OS_add_string_function (os_t *os, const char *str) {
   if (str == NULL) return;
   if (os->os_top_object_free != os->os_top_object_start) OS_TOP_SHORTEN (*os, 1);
   string_length = strlen (str) + 1;
-  if (os->os_top_object_free + string_length > os->os_boundary)
-    _OS_expand_memory (os, string_length);
+  if (os->os_top_object_free + string_length > os->os_boundary) _OS_expand_memory (os, string_length);
   memcpy (os->os_top_object_free, str, string_length);
   os->os_top_object_free = os->os_top_object_free + string_length;
 }

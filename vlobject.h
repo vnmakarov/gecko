@@ -82,9 +82,10 @@ typedef struct {
 
 /* This macro returns current length of VLO.  The macro has side effects! */
 #ifndef NDEBUG
-#define VLO_LENGTH(vlo) ((vlo).vlo_start != NULL ? (vlo).vlo_free - (vlo).vlo_start : (abort (), 0))
+#define VLO_LENGTH(vlo) \
+  ((vlo).vlo_start != NULL ? (size_t) ((vlo).vlo_free - (vlo).vlo_start) : (abort (), (size_t) 0))
 #else
-#define VLO_LENGTH(vlo) ((vlo).vlo_free - (vlo).vlo_start)
+#define VLO_LENGTH(vlo) ((size_t) ((vlo).vlo_free - (vlo).vlo_start))
 #endif /* #ifndef NDEBUG */
 
 /* This macro returns pointer (of type `void *') to the first byte of the VLO.  The macro has side
@@ -98,8 +99,7 @@ typedef struct {
 /* This macro returns pointer (of type `void *') to the last byte of VLO.  The macro has side
    effects!  Remember also that the VLO may change own place after any addition. */
 #ifndef NDEBUG
-#define VLO_END(vlo) \
-  ((vlo).vlo_start != NULL ? (void *) ((vlo).vlo_free - 1) : (abort (), (void *) 0))
+#define VLO_END(vlo) ((vlo).vlo_start != NULL ? (void *) ((vlo).vlo_free - 1) : (abort (), (void *) 0))
 #else
 #define VLO_END(vlo) ((void *) ((vlo).vlo_free - 1))
 #endif /* #ifndef NDEBUG */

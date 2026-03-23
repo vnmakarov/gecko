@@ -120,9 +120,9 @@ static void store_lexs (gp_allocator_t *alloc) {
       OS_TOP_FINISH (lexs);
     } else
       lex.id = NULL;
-    lex.code = code;
+    lex.code = (short) code;
     lex.line = line;
-    lex.column = column;
+    lex.column = (short) column;
     lex.next = NULL;
     OS_TOP_ADD_MEMORY (lexs, &lex, sizeof (lex));
     if (prev == NULL)
@@ -135,18 +135,6 @@ static void store_lexs (gp_allocator_t *alloc) {
 #ifdef DEBUG
   fprintf (stderr, "%d tokens\n", nt);
 #endif
-}
-
-/* All parse_alloc memory is contained here. */
-static os_t mem_os;
-
-static void *test_parse_alloc (int size) {
-  void *result;
-
-  OS_TOP_EXPAND (mem_os, size);
-  result = OS_TOP_BEGIN (mem_os);
-  OS_TOP_FINISH (mem_os);
-  return result;
 }
 
 /* Printing syntax error. */
@@ -859,18 +847,16 @@ static const char *description
 
 int main (int argc, char **argv) {
   ticker_t t;
-  int code;
   struct grammar *g;
 
   gp_allocator_t *alloc = gp_alloc_new (NULL, NULL, NULL, NULL);
   if (alloc == NULL) {
     exit (1);
   }
-  OS_CREATE (mem_os, alloc, 0);
   t = create_ticker ();
   store_lexs (alloc);
 #ifdef linux
-  printf ("scanner time %.6f, memory=%.1fkB\n", active_time (t), get_peak_heap_size () / 1024.);
+  printf ("scanner time %.6f, memory=%.1fkB\n", active_time (t), (double) get_peak_heap_size () / 1024.0);
 #else
   printf ("scanner time %.2f\n", active_time (t));
 #endif
@@ -883,7 +869,6 @@ int main (int argc, char **argv) {
 #endif
   if (g == NULL) {
     fprintf (stderr, "create grammar: No memory\n");
-    OS_DELETE (mem_os);
     exit (1);
   }
 #ifdef YAEP
@@ -906,7 +891,6 @@ int main (int argc, char **argv) {
 #endif
 
   if (parser_res != 0) {
-    OS_DELETE (mem_os);
     exit (1);
   }
   t = create_ticker ();
@@ -924,15 +908,13 @@ int main (int argc, char **argv) {
   gp_fin (g);
 #endif
   if (parser_res) {
-    OS_DELETE (mem_os);
     exit (1);
   }
 #ifdef linux
-  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), get_peak_heap_size () / 1024.);
+  printf ("parse time %.6f, memory=%.1fkB\n", active_time (t), (double) get_peak_heap_size () / 1024.0);
 #else
   printf ("parse time %.6f\n", active_time (t));
 #endif
-  OS_DELETE (mem_os);
   gp_alloc_del (alloc);
   exit (0);
 }

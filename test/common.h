@@ -38,10 +38,9 @@
 #define error_message gp_error_message
 #endif
 
-static void *test_parse_alloc (int size) {
+static void *test_parse_alloc (size_t size) {
   void *result;
 
-  assert ((size > 0) && ((unsigned int) size == (size_t) size));
   result = malloc (size);
   assert (result != NULL);
 

@@ -115,7 +115,7 @@ terms : terms IDENT number {
           term.code = $3;
 	  term.priority = -1;
 	  term.assoc = GP_NON_ASSOC;
-          term.num = VLO_LENGTH (sterms) / sizeof (term);
+          term.num = (int) (VLO_LENGTH (sterms) / sizeof (term));
 	  VLO_ADD_MEMORY (sterms, &term, sizeof (term));
         }
      | TERM
@@ -151,7 +151,7 @@ alt : seq trans guard
 	rule.guard_num = $3;
 	rule.lhs = slhs;
 	rule.anode = (char *) $2;
-	rule.rhs_len = OS_TOP_LENGTH (srhs) / sizeof (char *);
+	rule.rhs_len = (int) (OS_TOP_LENGTH (srhs) / sizeof (char *));
         OS_TOP_EXPAND (srhs, sizeof (char *));
 	rule.rhs = (char **) OS_TOP_BEGIN (srhs);
 	rule.rhs[rule.rhs_len] = NULL;
@@ -170,7 +170,7 @@ seq : seq IDENT {
         struct sterm term;
         term.repr = (char *) $2;
         term.code = term.repr[1];
-        term.num = VLO_LENGTH (sterms) / sizeof (term);
+        term.num = (int) (VLO_LENGTH (sterms) / sizeof (term));
 	term.priority = -1;
 	term.assoc = GP_NON_ASSOC;
         VLO_ADD_MEMORY (sterms, &term, sizeof (term));
@@ -264,7 +264,7 @@ int yylex (void *g) {
     case '\'':
       OS_TOP_ADD_BYTE (stoks, '\'');
       yylval.num = *curr_ch++;
-      OS_TOP_ADD_BYTE (stoks, yylval.num);
+      OS_TOP_ADD_BYTE (stoks, (char) yylval.num);
       if (*curr_ch++ != '\'') yyerror (g, "invalid character");
       OS_TOP_ADD_BYTE (stoks, '\'');
       OS_TOP_ADD_BYTE (stoks, '\0');
@@ -273,8 +273,8 @@ int yylex (void *g) {
       return CHAR;
     default:
       if (isalpha (c) || c == '_') {
-        OS_TOP_ADD_BYTE (stoks, c);
-        while ((c = *curr_ch++) != '\0' && (isalnum (c) || c == '_')) OS_TOP_ADD_BYTE (stoks, c);
+        OS_TOP_ADD_BYTE (stoks, (char) c);
+        while ((c = *curr_ch++) != '\0' && (isalnum (c) || c == '_')) OS_TOP_ADD_BYTE (stoks, (char) c);
         curr_ch--;
         OS_TOP_ADD_BYTE (stoks, '\0');
         yylval.ref = OS_TOP_BEGIN (stoks);
@@ -398,9 +398,9 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   curr_ch = grammar_name;
   yyparse (g);
   /* sort array of syntax terminals by names. */
-  num = VLO_LENGTH (sterms) / sizeof (struct sterm);
+  num = (int) (VLO_LENGTH (sterms) / sizeof (struct sterm));
   arr = (struct sterm *) VLO_BEGIN (sterms);
-  qsort (arr, num, sizeof (struct sterm), sterm_name_cmp);
+  qsort (arr, (size_t) num, sizeof (struct sterm), sterm_name_cmp);
   /* Check different codes for the same syntax terminal and remove duplicates. */
   for (i = j = 0, prev = NULL; i < num; i++) {
     term = arr + i;
@@ -416,10 +416,10 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
     } else if (prev->code != -1)
       prev->code = term->code;
   }
-  VLO_SHORTEN (sterms, (num - j) * sizeof (struct sterm));
+  VLO_SHORTEN (sterms, (size_t) (num - j) * sizeof (struct sterm));
   num = j;
   /* sort array of syntax terminals by order number. */
-  qsort (arr, num, sizeof (struct sterm), sterm_num_cmp);
+  qsort (arr, (size_t) num, sizeof (struct sterm), sterm_num_cmp);
   for (i = 0; i < (int) (VLO_LENGTH (assocs) / sizeof (struct sassoc *)); i++) {
     struct sassoc *assoc = ((struct sassoc **)VLO_BEGIN (assocs))[i];
     assoc->used_p = false;

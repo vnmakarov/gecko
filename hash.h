@@ -14,9 +14,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__x86_64__) || defined(__i386__) || defined(__PPC64__) || defined(__s390__) \
-  || defined(__m32c__) || defined(cris) || defined(__CR16__) || defined(__vax__)        \
-  || defined(__m68k__) || defined(__aarch64__) || defined(_M_AMD64) || defined(_M_IX86)
+#if defined(__x86_64__) || defined(__i386__) || defined(__PPC64__) || defined(__s390__) || defined(__m32c__) \
+  || defined(cris) || defined(__CR16__) || defined(__vax__) || defined(__m68k__) || defined(__aarch64__)     \
+  || defined(_M_AMD64) || defined(_M_IX86)
 #define HASH_UNALIGNED_ACCESS 1
 #else
 #define HASH_UNALIGNED_ACCESS 0
@@ -32,8 +32,7 @@ static inline uint64_t get_key_part (const uint8_t *v, size_t len, int relax_p) 
   if (relax_p || LENDIAN) {
 #if HASH_UNALIGNED_ACCESS
     if (len == 8) return *(uint64_t *) v;
-    if (len == 7)
-      return *(uint32_t *) v | (uint64_t) *(uint16_t *) (v + 4) << 32 | (uint64_t) v[6] << 48;
+    if (len == 7) return *(uint32_t *) v | (uint64_t) *(uint16_t *) (v + 4) << 32 | (uint64_t) v[6] << 48;
     if (len == 6) return *(uint32_t *) v | (uint64_t) *(uint16_t *) (v + 4) << 32;
     if (len == 5) return *(uint32_t *) v | (uint64_t) v[4] << 32;
     if (len == 4) return *(uint32_t *) v;
@@ -43,7 +42,7 @@ static inline uint64_t get_key_part (const uint8_t *v, size_t len, int relax_p) 
 #endif
   }
   uint64_t tail = 0;
-  for (int i = len - 1; i >= 0; i--) tail = tail << 8 | (uint64_t) v[i];
+  for (ptrdiff_t i = (ptrdiff_t) len - 1; i >= 0; i--) tail = tail << 8 | (uint64_t) v[i];
   return tail;
 }
 

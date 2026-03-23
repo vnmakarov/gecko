@@ -69,8 +69,8 @@
 #define _IMAGINARY 368
 
 struct lex {
-  short code;
-  short column;
+  int code;
+  int column;
   int line;
   const char *id;
   struct lex *next;

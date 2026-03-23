@@ -77,14 +77,14 @@ struct gp_alt { /* alternative translations: */
   struct gp_tree_node *first, *second;
 };
 
-struct gp_opt {    /* context-dependent alternative translations: */
-  int context_num; /* the option context number */
+struct gp_opt {       /* context-dependent alternative translations: */
+  size_t context_num; /* the option context number */
   struct gp_tree_node *first, *second;
 };
 
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
-  unsigned num;                /* node number */
+  size_t num;                  /* node number */
   union {                      /* the node itself */
     struct gp_nil nil;
     struct gp_term term;
@@ -182,7 +182,7 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
      up in GP_CREATE_GRAMMAR.  Using the default function results in returning only one translation
      by GP_PARSE. */
 
-typedef void *(*gp_parse_alloc_func_t) (int);
+typedef void *(*gp_parse_alloc_func_t) (size_t);
 typedef void (*gp_parse_free_func_t) (void *);
 extern gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_alloc_func_t fn);
 extern gp_parse_free_func_t gp_set_parse_free (struct grammar *g, gp_parse_free_func_t fn);

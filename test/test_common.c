@@ -4,6 +4,14 @@
 
 #define GP_TEST_ANSIC_H_ /* FIXME: avoid inclusion of ansic.h via ansic.c */
 
+#include "hash.h"
+
+#ifdef __GNUC__
+#define UNUSED __attribute__ ((unused))
+#else
+#define UNUSED
+#endif
+
 struct lex {
   short code;
   short column;
@@ -21,23 +29,20 @@ static int line = 1;
 
 static hash_table_t table;
 
-static uint64_t hash (hash_table_entry_t el) {
+static uint64_t str_hash (hash_table_entry_t el) {
   const char *id = (char *) el;
-  uint64_t result, i;
-
-  for (result = i = 0; *id++ != '\0'; i++) result += ((unsigned char) *id << (i % CHAR_BIT));
-  return result;
+  return hash (id, strlen (id), 42);
 }
 
-static bool eq (hash_table_entry_t el1, hash_table_entry_t el2) {
+static bool str_eq (hash_table_entry_t el1, hash_table_entry_t el2) {
   return strcmp ((char *) el1, (char *) el2) == 0;
 }
 
 static void initiate_typedefs (gp_allocator_t *alloc) {
-  table = create_hash_table (alloc, 50000, hash, eq);
+  table = create_hash_table (alloc, 50000, str_hash, str_eq);
 }
 
-static void add_typedef (const char *id, int level) { /* Now we ignore level */
+static UNUSED void add_typedef (const char *id, int level) { /* Now we ignore level */
   hash_table_entry_t *entry_ptr;
   assert (level == 0);
   entry_ptr = find_hash_table_entry (table, id, 1);
@@ -50,7 +55,7 @@ static void add_typedef (const char *id, int level) { /* Now we ignore level */
 #endif
 }
 
-static inline int find_typedef (const char *id, int level) {
+static inline int find_typedef (const char *id, int level UNUSED) {
   hash_table_entry_t *entry_ptr;
   entry_ptr = find_hash_table_entry (table, id, 0);
 #ifdef DEBUG

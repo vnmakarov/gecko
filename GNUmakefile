@@ -67,7 +67,7 @@ else
   GP_LIBS=-lm -ldl
   COPTFLAGS = -O3 -DNDEBUG
   CDEBFLAGS =
-  CDEB2FLAGS = -Wall -Wextra -Wshadow -g3 -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
+  CDEB2FLAGS = -Wall -Wextra -Wshadow -Wconversion -g3 -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
   LD2FLAGS =  -fsanitize=address -fsanitize=undefined  -fno-sanitize=alignment
   CFLAGS += $(COPTFLAGS)
   CPPFLAGS = -I$(SRC_DIR)
@@ -138,7 +138,7 @@ clean-gecko:
 
 test: CFLAGS:=$(subst $(COPTFLAGS),$(CDEB2FLAGS),$(CFLAGS))
 test: $(BUILD_DIR)/sgramm.c
-test: simple-test more-tests
+test: simple-test leakage-test more-tests
 
 simple-test:
 	$(CC) $(CFLAGS) $(SRC_DIR)/gecko.c -DGP_TEST -o $(BUILD_DIR)/gp-test$(EXE)
@@ -148,6 +148,11 @@ simple-test:
 	$(BUILD_DIR)/gp-test$(EXE) 3 2 && echo +++simple ambig description is OK
 	$(RM) $(BUILD_DIR)/gp-test$(EXE)
 
+leakage-test:
+	$(CC) $(CFLAGS) -I$(SRC_DIR) $(SRC_DIR)/gecko.c $(SRC_DIR)/test/test_gecko.c -o $(BUILD_DIR)/gp-leakage-test$(EXE)
+	$(BUILD_DIR)/gp-leakage-test$(EXE) 1 < $(SRC_DIR)/gecko.c 2>&1 | grep -F -v "Syntax error" && echo +++leakage test is OK
+	$(RM) $(BUILD_DIR)/gp-leakage-test$(EXE)
+	
 more-tests:
 	$(SRC_DIR)/test/test.sh
 

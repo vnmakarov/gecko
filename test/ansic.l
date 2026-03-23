@@ -153,11 +153,10 @@ yywrap()
 void
 comment(void)
 {
-	char c, c1;
+	int c, c1;
 
 loop:
-	while ((c = input()) != '*' && c != 0)
-		/*putchar(c)*/;
+	while ((c = input()) != '*' && c != 0);
 
 	if ((c1 = input()) != '/' && c != 0)
 	{
@@ -165,8 +164,6 @@ loop:
 		goto loop;
 	}
 
-	if (c != 0)
-		/*putchar(c1)*/;
 }
 
 void
