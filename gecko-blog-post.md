@@ -601,16 +601,16 @@ disambiguation), you can use `gp_get_alt_node` and
 
 ```c
 void *my_merge(struct grammar *g, struct gp_tree_node *node1,
-               struct gp_tree_node *node2, int context_num) {
-    return context_num < 0 ? gp_get_alt_node(g, node1, node2)
-                           : gp_get_opt_node(g, node1, node2, context_num);
+               struct gp_tree_node *node2, size_t context_num) {
+    return context_num == 0 ? gp_get_alt_node(g, node1, node2)
+                            : gp_get_opt_node(g, node1, node2, context_num);
 }
 ```
 
 This creates `GP_ALT` or `GP_OPT` nodes in the parse tree that
 represent all possible interpretations. The `context_num` argument
-defines the merge context. A negative value indicates a
-context-independent alternative. A non-negative value indicates
+defines the merge context. A positive value indicates a
+context-independent alternative. A positive value indicates
 correlated alternatives --- in such cases, `GP_OPT`
 (context-dependent alternative) nodes should be used instead of
 `GP_ALT` to preserve the correct pairing of alternatives (see the

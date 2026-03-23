@@ -71,7 +71,7 @@ The generalized node of the parse tree. All parse tree nodes use this structure 
 ```c
 struct gp_tree_node {
   enum gp_tree_node_type type; /* the type of node */
-  unsigned num;                /* node number */
+  size_t num;                  /* node number */
   union {
     struct gp_nil nil;
     struct gp_term term;
@@ -120,7 +120,7 @@ A context-dependent alternative node representing correlated ambiguous parses.
 
 | Field         | Type                    | Description                                  |
 |---------------|-------------------------|----------------------------------------------|
-| `context_num` | `int`                   | Context number identifying correlated options |
+| `context_num` | `size_t`                | Context number identifying correlated options |
 | `first`       | `struct gp_tree_node *` | First alternative translation                |
 | `second`      | `struct gp_tree_node *` | Second alternative translation               |
 
@@ -338,7 +338,7 @@ gp_parse_alloc_func_t gp_set_parse_alloc(struct grammar *g,
 
 Set the memory allocation function for parse tree nodes. Default is `malloc`. Must not be `NULL`.
 
-**Type:** `typedef void *(*gp_parse_alloc_func_t)(int);`
+**Type:** `typedef void *(*gp_parse_alloc_func_t)(size_t);`
 
 #### `gp_set_parse_free`
 
@@ -435,8 +435,8 @@ gp_node_merge_func_t gp_set_node_merge_func(struct grammar *grammar,
 
 Set the parse node merge function used when merging stacks during GLR parsing. The function receives the grammar,
 two parse tree nodes of a symbol from stacks being merged, and a `context_num` argument that defines the context
-for the merge (see `gp_parse` for details). A negative `context_num` indicates a context-independent alternative;
-a non-negative value indicates a context-dependent alternative where options with the same `context_num` are
+for the merge (see `gp_parse` for details). Zero `context_num` indicates a context-independent alternative;
+a positive value indicates a context-dependent alternative where options with the same `context_num` are
 correlated. The function returns the result node. `NULL` sets the default function, which always returns the first
 node. Using the default function causes `gp_parse` to return only one translation.
 
@@ -445,7 +445,7 @@ node. Using the default function causes `gp_parse` to return only one translatio
 typedef void *(*gp_node_merge_func_t)(struct grammar *grammar,
                                       struct gp_tree_node *node1,
                                       struct gp_tree_node *node2,
-                                      int context_num);
+                                      size_t context_num);
 ```
 
 ### Parsing
@@ -479,8 +479,8 @@ Consider merging two stacks with two different translations for two stack elemen
 `...a...b...` and `...c...d...`.  Using the result stack `...alt(a,c)...alt(b,d)...` with regular
 alternative nodes would imply 4 possible choices (ac, ad, bc, bd) instead of the two correct ones (ac, bd).
 Therefore, for such cases the parser uses option (context-dependent alternative, `GP_OPT`) nodes for the merged
-stack: `...opt(a,c)...opt(b,d)...`.  The node merge function receives a non-negative `context_num` for these
-cases (and a negative `context_num` for context-independent alternatives).  To correctly traverse the parse tree,
+stack: `...opt(a,c)...opt(b,d)...`.  The node merge function receives a positive `context_num` for these
+cases (and zero `context_num` for context-independent alternatives).  To correctly traverse the parse tree,
 you should always choose the same alternative (`first` or `second`) for option nodes with the same `context_num`.
 By correctly traversing the tree you can eliminate option nodes by transforming the parse tree to contain only
 alternative nodes.  Fortunately, options in the parse tree are impossible for grammars of most programming
@@ -499,11 +499,11 @@ if you want to keep all possible alternatives during stack merging.
 
 ```c
 struct gp_tree_node *gp_get_opt_node(struct grammar *g, struct gp_tree_node *first,
-                                     struct gp_tree_node *second, int context_num);
+                                     struct gp_tree_node *second, size_t context_num);
 ```
 
 Analogous to `gp_get_alt_node` but returns a `GP_OPT` (context-dependent alternative) node with the given
-`context_num`.  Use this in the node merge function when `context_num` is non-negative to preserve correct
+`context_num`.  Use this in the node merge function when `context_num` is positive to preserve correct
 alternative semantics (see `gp_parse` for details).
 
 ### Parse Tree Operations

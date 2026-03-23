@@ -199,7 +199,7 @@ extern int gp_set_debug_level (struct grammar *grammar, int level);
 extern int gp_set_recovery_match (struct grammar *grammar, int n_toks);
 
 typedef void *(*gp_node_merge_func_t) (struct grammar *grammar, struct gp_tree_node *node1,
-                                       struct gp_tree_node *node2, int context_num);
+                                       struct gp_tree_node *node2, size_t context_num);
 extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_node_merge_func_t func);
 
 /* Parse input according to the read grammar.  Returns the error code (which is also available via
@@ -216,7 +216,7 @@ extern gp_node_merge_func_t gp_set_node_merge_func (struct grammar *grammar, gp_
    alternative) nodes for the merged stack: `...opt(a,c)...opt(b,d)...`.  To generate the alternative with
    the right semantics (context-dependent or -independent), the merge function has an argument `context_num`
    which defines the corresponding context.  For a context-independent alternative, this number will be
-   negative.  To correctly traverse the parse tree, you should always choose the same alternative (`first`
+   zero.  To correctly traverse the parse tree, you should always choose the same alternative (`first`
    or `second`) for options with the same `context_num`.  By correctly traversing the tree you can get rid
    of option nodes by transforming the parse tree to contain only alternative nodes.  Fortunately, options
    in the parse tree are impossible for grammars of most programming languages.
@@ -234,7 +234,7 @@ extern struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_n
                                              struct gp_tree_node *second);
 /* Analogous to the previous function but for GP_OPT node. */
 extern struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                             struct gp_tree_node *second, int context_num);
+                                             struct gp_tree_node *second, size_t context_num);
 
 #ifndef NO_GP_DEBUG_PRINT
 /* Print translation of ROOT parsed for GRAMMAR. */

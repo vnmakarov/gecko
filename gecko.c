@@ -116,7 +116,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   void *rule_guard_arg; /* arg passed to rule guards */
 
-  int contexts_num; /* next context number */
+  size_t contexts_num; /* last context number */
 
   vlo_t all_nodes;       /* all parse tree nodes */
   bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
@@ -948,7 +948,7 @@ static void error_func_for_allocate (void *g) { /* Process allocation errors. */
 }
 
 static void *default_node_merge (struct grammar *g GP_UNUSED, struct gp_tree_node *node1,
-                                 struct gp_tree_node *node2 GP_UNUSED, int context_num GP_UNUSED) {
+                                 struct gp_tree_node *node2 GP_UNUSED, size_t context_num GP_UNUSED) {
   return node1;
 }
 
@@ -1962,9 +1962,9 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
 }
 
 static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                                 struct gp_tree_node *second, ptrdiff_t context_num) {
+                                                 struct gp_tree_node *second, size_t context_num) {
   struct gp_tree_node *node = &g->temp_node;
-  if (context_num < 0) {
+  if (context_num == 0) {
     node->type = GP_ALT;
     node->val.alt.first = first;
     node->val.alt.second = second;
@@ -1978,7 +1978,7 @@ static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tr
   struct gp_tree_node *res = (struct gp_tree_node *) *entry;
   if (res != NULL) return res;
 #ifndef NO_GP_DEBUG_PRINT
-  context_num >= 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
+  context_num > 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
 #endif
   res = (*g->parse_alloc) (sizeof (struct gp_tree_node));
   *res = *node;
@@ -1990,11 +1990,12 @@ static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tr
 
 struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
                                       struct gp_tree_node *second) {
-  return gp_get_alt_opt_node (g, first, second, -1);
+  return gp_get_alt_opt_node (g, first, second, 0);
 }
 
 struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                      struct gp_tree_node *second, int context_num) {
+                                      struct gp_tree_node *second, size_t context_num) {
+  assert (context_num > 0);
   return gp_get_alt_opt_node (g, first, second, context_num);
 }
 
@@ -2130,8 +2131,8 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_
 static FORCE_INLINE void merge_nodes (struct grammar *g, struct stack *to, struct stack *from,
                                       int n_diff_attr) {
   if (n_diff_attr <= 0) return;
-  int context_num = -1;
-  if (n_diff_attr > 1) context_num = g->contexts_num++;
+  size_t context_num = 0;
+  if (n_diff_attr > 1) context_num = ++g->contexts_num;
   stack_el_t *to_addr = (stack_el_t *) VLO_BEGIN (to->els);
   stack_el_t *from_addr = (stack_el_t *) VLO_BEGIN (from->els);
   for (int k = (int) (VLO_LENGTH (to->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
@@ -2147,7 +2148,7 @@ static FORCE_INLINE void merge_nodes (struct grammar *g, struct stack *to, struc
     }
     to_el->anode_attr = g->node_merge (g, to_el->anode_attr, from_el->anode_attr, context_num);
   }
-  if (context_num >= 0) to->ambiguity = 2;
+  if (context_num > 0) to->ambiguity = 2;
 }
 
 static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) { /* merge identical STACKS */
@@ -3219,8 +3220,8 @@ static const char *ambig
     "  ;\n";
 
 static void *node_merge (struct grammar *g, struct gp_tree_node *node1, struct gp_tree_node *node2,
-                         int context_num) {
-  if (context_num) return gp_get_alt_node (g, node2, node1);
+                         size_t context_num) {
+  if (context_num == 0) return gp_get_alt_node (g, node2, node1);
   return gp_get_opt_node (g, node2, node1, context_num);
 }
 
