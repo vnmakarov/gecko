@@ -208,6 +208,7 @@ static void parse (void)
 |YAEP                  |  5.53         |   7.67        |   5.77          |  13.40       |  154                 |
 |Gecko                 |  0.73         |   0.80        |   0.84          |   1.59       |   74                 |
 
+  * Note: YAEP and Gecko generate AST for the test while ElkHound generates nothing and works only as a recognizer.
 
 ## Gecko internals overview
 

@@ -795,6 +795,8 @@ Gecko is approximately **13x faster than ElkHound** and **7.5x faster than
 YAEP** on this test. This demonstrates that Gecko's stack merging and
 hash-consing techniques work extremely well even under heavy ambiguity (see the next section).
 
+Note: YAEP and Gecko generate AST for the test while ElkHound generates nothing and works only as a recognizer.
+
 ## How Gecko works inside
 
 Understanding Gecko's internal architecture helps explain its performance
