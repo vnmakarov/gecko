@@ -38,12 +38,13 @@
 #define error_message gp_error_message
 #endif
 
+#ifdef YAEP
+static void *test_parse_alloc (int size) {
+#else
 static void *test_parse_alloc (size_t size) {
-  void *result;
-
-  result = malloc (size);
+#endif
+  void *result = malloc (size);
   assert (result != NULL);
-
   return result;
 }
 
