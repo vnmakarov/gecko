@@ -10,14 +10,18 @@ author: Vladimir Makarov
 # Gecko: A Fast, Standalone GLR Parser Library in C
 
 Parsing is the backbone of every programming language implementation,
-and the choice of parser technology has far-reaching consequences for
-the language designer. LALR(1) parsers like YACC and Bison have
-dominated for decades, but they force grammar authors into contortions
-to avoid conflicts. Generalized parsers --- those that handle the full
-class of context-free grammars, including ambiguous ones --- have
-traditionally been considered too slow for production use.
+and the choice of parser technology has far-reaching consequences for the
+language designer. [LALR(1)](https://en.wikipedia.org/wiki/LALR_parser) parsers
+like [YACC](https://invisible-island.net/byacc) and
+[Bison](https://www.gnu.org/software/bison/) have dominated for
+decades, but they force grammar authors into contortions to avoid
+conflicts. Generalized parsers --- those that handle the full class of
+[context-free grammars](https://en.wikipedia.org/wiki/Context-free_grammar),
+including [ambiguous](https://en.wikipedia.org/wiki/Ambiguous_grammar) ones
+--- have traditionally been considered too slow for production use.
 
-Gecko is a new GLR parser library that challenges that assumption. It
+Gecko is a new [GLR](https://en.wikipedia.org/wiki/GLR_parser) parser library
+that challenges that assumption. It
 handles **any** context-free grammar, provides **automatic syntax
 error recovery** with no grammar modifications, and still runs at
 speeds competitive with YACC on unambiguous grammars.
@@ -28,19 +32,25 @@ performance.
 
 ## Why another parser?
 
-The world of parser generators is crowded. YACC and Bison have been around
-since the 1970s. More recently, PEG parsers, parser combinators, and various
-Earley-based tools have appeared. So why build yet another parser?
+The world of parser generators is crowded. YACC and Bison have been
+around since the 1970s. More recently,
+[PEG](https://en.wikipedia.org/wiki/Parsing_expression_grammar)
+parsers, [parser
+combinators](https://en.wikipedia.org/wiki/Parser_combinator),
+and various
+[Earley](https://en.wikipedia.org/wiki/Earley_parser)-based
+tools have appeared. So why build yet another parser?
 
 During my career I wrote several compiler-compilers. The first one was
 an LALR(1) parser written in 1985 in Pascal (you can try to find its
 description in the Russian journal "Programming" for 1985). The next
 one was [MSTA](https://github.com/cocom-org/msta), written in the
-nineties. It was an LALR(k)/LR(k) parser with many additional
-optimizations that made it faster than YACC/Bison. Using it I found
-that speed is not the most important feature of a parser, especially
-with faster modern CPUs, and that LR(k) is not enough for real
-language grammars.
+nineties. It was an
+LALR(k)/[LR(k)](https://en.wikipedia.org/wiki/LR_parser) parser with
+many additional optimizations that made it faster than
+YACC/Bison. Using it I found that speed is not the most important
+feature of a parser, especially with faster modern CPUs, and that
+LR(k) is not enough for real language grammars.
 
 Therefore, about ten years ago I wrote
 [YAEP](https://github.com/vnmakarov/yaep): an Earley parser that can
@@ -60,7 +70,7 @@ provides**:
    ambiguous grammars
 2. **Library form** --- embeddable in any C program, with no external code
    generation step
-3. **Operator precedence/associativity** --- the same mechanism that YACC
+3. **Operator [precedence](https://en.wikipedia.org/wiki/Order_of_operations)/[associativity](https://en.wikipedia.org/wiki/Operator_associativity)** --- the same mechanism that YACC
    users have relied on for decades
 4. **Automatic error recovery** --- no `error` tokens, no grammar
    modifications, just correct parse trees with minimal token skipping
@@ -73,22 +83,25 @@ Let's look at each of these in detail.
 
 ### Small and simple
 
-Gecko core code is roughly 2900 lines of C (SLOC).  It uses 6 header-only
-utility libraries (custom allocators, bitmaps, hashing, hash tables, variable-length objects,
-and object stacks) which is about 900 lines. So Gecko's entire implementation
-is roughly **3,800 lines of C** (SLOC). The compiled x86-64 code weighs in
-at about **90KB**. There are no external dependencies beyond the C standard
-library.  This makes Gecko trivial to embed in any project --- just drop in
-the source files and compile.
+Gecko core code is roughly 2900 lines of C
+([SLOC](https://en.wikipedia.org/wiki/Source_lines_of_code)).  It uses
+6 header-only utility libraries (custom allocators, bitmaps, hashing,
+hash tables, variable-length objects, and object stacks) which is
+about 900 lines. So Gecko's entire implementation is roughly **3,800
+lines of C** (SLOC). The compiled x86-64 code weighs in at about
+**90KB**. There are no external dependencies beyond the C standard
+library.  This makes Gecko trivial to embed in any project --- just
+drop in the source files and compile.
 
 ### Full context-free grammar support
 
 YACC and Bison are limited to LALR(1) grammars.  Bison claims GLR
 support, but I was unable to make it work with ambiguous grammars.
 Using `%glr-parser` with an ambiguous C grammar (the same one used by
-Gecko and ElkHound for benchmarking) reports a syntax error on the
-third line. With the simplest ambiguous grammar `E : E '+' E | 'a'`
-it reports a syntax error on the 23rd token.
+Gecko and [ElkHound](https://github.com/WeiDUorg/elkhound) for
+benchmarking) reports a syntax error on the third line. With the
+simplest ambiguous grammar `E : E '+' E | 'a'` it reports a syntax
+error on the 23rd token.
 
 Gecko, by contrast, can parse inputs described by **any context-free
 grammar**, including ambiguous ones. This is particularly useful for
@@ -104,7 +117,8 @@ tree, rather than requiring feedback hacks between scanner and parser.
 ### Simple syntax-directed translation
 
 Gecko doesn't use semantic actions the way YACC does. Instead, it generates
-**abstract syntax trees (ASTs)** as output using a concise notation in the
+[**abstract syntax trees (ASTs)**](https://en.wikipedia.org/wiki/Abstract_syntax_tree)
+as output using a concise notation in the
 grammar rules. Each rule's right-hand side can specify which children
 contribute to the AST node:
 
@@ -258,7 +272,8 @@ syntactically valid according to the grammar. The parser reports which
 tokens were involved in the error through a user-configurable error
 callback.
 
-Consider a simple expression grammar and the input `a+a*(a*+a)` --- note the
+Consider a simple expression grammar (see section "simple syntax-directed translation" above)
+and the input `a+a*(a*+a)` --- note the
 extra `*` before `+a)`. Gecko will detect the error at the `+` token (after
 `a*`), determine that skipping the second `*` operator yields a valid continuation,
 and produce a parse tree as if the input had been `a+a*(a+a)`. The error
@@ -463,6 +478,12 @@ int main(void)
 }
 ```
 
+Build the example with
+
+```
+gcc -O2 -I/usr/local/include example.c /usr/local/lib/libgecko.a
+```
+
 A few things to note:
 
 1. **`gp_create_grammar()`** allocates and initializes the grammar object.
@@ -488,6 +509,8 @@ A few things to note:
    the rule guard function (see below).
 
 5. **`gp_fin(g)`** frees all resources associated with the grammar.
+
+6. `/usr/local` is the default directory where Gecko is installed by `make install`.
 
 ## Configuration and customization
 
@@ -542,7 +565,7 @@ gp_set_debug_level(g, 3);
 ```
 
 Debug levels range from 0 (silent) to 6 (extremely verbose):
-- **Level 1:** Statistics (number of SLR sets, parse tree nodes, etc.)
+- **Level 1:** Statistics (number of [SLR](https://en.wikipedia.org/wiki/SLR_grammar) sets, parse tree nodes, etc.)
 - **Level 2:** Additionally print the result translation (AST)
 - **Level 3:** Print read tokens, SLR set actions and conflicts, and
   high-level error recovery information
@@ -599,7 +622,7 @@ void *my_merge(struct grammar *g, struct gp_tree_node *node1,
 
 This creates `GP_ALT` or `GP_OPT` nodes in the parse tree that
 represent all possible interpretations. The `context_num` argument
-defines the merge context. A positive value indicates a
+defines the merge context. A zero value indicates a
 context-independent alternative. A positive value indicates
 correlated alternatives --- in such cases, `GP_OPT`
 (context-dependent alternative) nodes should be used instead of
@@ -608,9 +631,11 @@ parse tree section below for details).
 
 ## The parse tree
 
-Gecko's parse tree is a DAG (directed acyclic graph) of `struct
-gp_tree_node` values. Each node has a `type` field and a `num` field (a
-unique node number), plus a C union containing the type-specific data:
+Generally speaking, Gecko's parse tree is actually a DAG ([directed acyclic
+graph](https://en.wikipedia.org/wiki/Directed_acyclic_graph)) of `struct
+gp_tree_node` values. Each node has a `type` field and a `num` field
+(a unique node number), plus a C union containing the type-specific
+data:
 
 - **`GP_NIL`** --- an empty node, used for empty translations
 - **`GP_TERM`** --- a terminal node, containing the terminal `code` and
@@ -667,6 +692,108 @@ Or, if you provided a custom `parse_free` function, all parse tree memory
 will be freed through that. Setting `parse_free` to `NULL` disables
 automatic freeing entirely, which is useful if you're using arena allocation
 and plan to free everything at once.
+
+## Comparison with other parser technologies
+
+Here is a summary of how Gecko compares with the major alternatives:
+
+|                                          | YACC    | Bison   | ElkHound | YAEP     | Gecko    |
+|------------------------------------------|---------|---------|----------|----------|----------|
+| Library                                  | No      | No      | No       | Yes      | Yes      |
+| CFG grammar                              | LALR(1) | LALR(1) | Ambiguous| Ambiguous| Ambiguous|
+| Operator grammar (priority/associativity)| Yes     | Yes     | Yes      | No       | Yes      |
+| Speed independent of grammar size        | Yes     | Yes     | Yes      | No       | Yes      |
+| Syntax error recovery                    | Yes     | Yes     | No       | Yes      | Yes      |
+| Automatic error recovery                 | No      | No      | ---      | No       | Yes      |
+| Actions                                  | Yes     | Yes     | Yes      | No       | Yes*     |
+| Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
+| Generation of all translations           | ---     | ---     | Yes      | Yes      | Yes      |
+| Generation of minimal cost translation   | ---     | ---     | No       | Yes      | No       |
+| Reentrant (thread-safe)                  | Yes**   | Yes**   | Yes      | No       | Yes      |
+
+(\*) See rule guard functions.
+(\**) Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
+
+Key differentiators:
+
+- **Gecko and YAEP are the only libraries** --- everything else requires a
+  separate code generation step
+- **Gecko is the only parser with automatic error recovery** --- all others
+  require manual grammar modifications
+- **Gecko is the only GLR parser with operator grammar support** in this
+  comparison (YAEP doesn't support it)
+- **YAEP can generate minimal-cost translations** for ambiguous grammars,
+  which Gecko doesn't support. YAEP is also faster when generating all
+  possible translations for highly ambiguous grammars and produces a much
+  smaller DAG for those translations
+
+## Benchmark results
+
+Performance claims are meaningless without data. Gecko includes a
+comprehensive benchmark suite (`make bench`) that compares it against
+[YACC](https://invisible-island.net/byacc),
+[ElkHound](https://github.com/WeiDUorg/elkhound) (a well-known GLR
+parser), and [YAEP](https://github.com/vnmakarov/yaep) (a fast Earley
+parser).
+
+### Test setup
+
+The benchmarks use an **ANSI C grammar** as the test grammar. For
+Gecko, ElkHound, and YAEP, the grammar is slightly ambiguous because
+typenames use the same token type as identifiers. For YACC, typenames
+are a separate token type (since YACC can't handle the ambiguity).
+
+Two test files are used:
+1. **1.5 million lines** of C code (100,000 sieve functions)
+2. **500,000 lines** of C code (an old version of GCC, all files combined)
+
+Parsing time includes scanning time, but I found that even for the
+fastest parsers scanning takes at most 30% of the overall parsing time.
+
+The benchmarks were run on four different architectures:
+- AMD Ryzen 9900X (Fedora 43)
+- Apple M4 (Fedora 41)
+- Intel 285K (Fedora 42)
+- IBM Power10 (RHEL 10)
+
+### C grammar results: 1.5M lines (100K sieve functions)
+
+![C Grammar: 1.5M Lines (100K Sieve Functions) -- Parse Time and Peak Memory](bench_sieve.png)
+
+On this test, YAEP has unusually good results because it uses dynamic
+programming that speeds up parsing of files with repeating patterns. The
+second test (whole old GCC code as one file) is more representative of real-world parsing.
+
+### C grammar results: ~500K lines (whole old GCC)
+
+![C Grammar: ~500K Lines (Old GCC) -- Parse Time and Peak Memory](bench_gcc.png)
+
+This is the more interesting benchmark. On realistic C code:
+
+- **Gecko is only 5--12% slower than YACC** across all architectures, while
+  handling a grammar that YACC cannot even accept (the ambiguous version)
+- **Gecko is 2--2.5x faster than ElkHound** and uses comparable memory
+- **Gecko is 2--3x faster than YAEP** and uses 3--4x less memory
+- Gecko can parse roughly **2 million lines of C per second** on an
+  AMD 9900X
+
+To put this in perspective: Gecko parses the entire old GCC source
+tree in **0.29 seconds** on modern hardware. The numbers for `gcc
+-fsyntax-only` and `clang -fsyntax-only`, which only do fast
+hand-written recursive descent parsing and basic semantic analysis,
+show that parsing is not the bottleneck of the compilers. A 10% Gecko
+parser slowdown will not be critical.
+
+### Highly ambiguous grammar
+
+For the truly ambiguous grammar `E = E + E | a` with input `a(+a){200}`
+(200 plus operators), Gecko's GLR engine shows its strength:
+
+![Highly Ambiguous Grammar (E=E+E|a, 200 ops) -- Parse Time and Memory](bench_ambig.png)
+
+Gecko is approximately **13x faster than ElkHound** and **7.5x faster than
+YAEP** on this test. This demonstrates that Gecko's stack merging and
+hash-consing techniques work extremely well even under heavy ambiguity (see the next section).
 
 ## How Gecko works inside
 
@@ -767,104 +894,6 @@ parsing of long inputs, especially with ambiguous grammars where many
 intermediate nodes are created and then become unreachable as stacks
 are merged or discarded.
 
-## Benchmark results
-
-Performance claims are meaningless without data. Gecko includes a
-comprehensive benchmark suite (`make bench`) that compares it against YACC,
-ElkHound (a well-known GLR parser), and YAEP (a fast Earley parser).
-
-### Test setup
-
-The benchmarks use an **ANSI C grammar** as the test grammar. For
-Gecko, ElkHound, and YAEP, the grammar is slightly ambiguous because
-typenames use the same token type as identifiers. For YACC, typenames
-are a separate token type (since YACC can't handle the ambiguity).
-
-Two test files are used:
-1. **1.5 million lines** of C code (100,000 sieve functions)
-2. **500,000 lines** of C code (an old version of GCC, all files combined)
-
-All tokens are pre-scanned to isolate parsing time from scanning time.
-
-The benchmarks were run on four different architectures:
-- AMD Ryzen 9900X (Fedora 43)
-- Apple M4 (Fedora 41)
-- Intel 285K (Fedora 42)
-- IBM Power10 (RHEL 10)
-
-### C grammar results: 1.5M lines (100K sieve functions)
-
-![C Grammar: 1.5M Lines (100K Sieve Functions) -- Parse Time and Peak Memory](bench_sieve.png)
-
-On this test, YAEP has unusually good results because it uses dynamic
-programming that speeds up parsing of files with repeating patterns. The
-second test is more representative of real-world parsing.
-
-### C grammar results: ~500K lines (whole old GCC)
-
-![C Grammar: ~500K Lines (Old GCC) -- Parse Time and Peak Memory](bench_gcc.png)
-
-This is the more interesting benchmark. On realistic C code:
-
-- **Gecko is only 5--12% slower than YACC** across all architectures, while
-  handling a grammar that YACC cannot even accept (the ambiguous version)
-- **Gecko is 2--2.5x faster than ElkHound** and uses comparable memory
-- **Gecko is 2--3x faster than YAEP** and uses 3--4x less memory
-- Gecko can parse roughly **2 million lines of C per second** on an
-  AMD 9900X
-
-To put this in perspective: Gecko parses the entire old GCC source
-tree in **0.29 seconds** on modern hardware. The numbers for `gcc
--fsyntax-only` and `clang -fsyntax-only`, which only do fast
-hand-written recursive descent parsing and basic semantic analysis,
-show that parsing is not the bottleneck of the compilers. A 10% Gecko
-parser slowdown will not be critical.
-
-### Highly ambiguous grammar
-
-For the truly ambiguous grammar `E = E + E | a` with input `a(+a){200}`
-(200 plus operators), Gecko's GLR engine shows its strength:
-
-![Highly Ambiguous Grammar (E=E+E|a, 200 ops) -- Parse Time and Memory](bench_ambig.png)
-
-Gecko is approximately **13x faster than ElkHound** and **7.5x faster than
-YAEP** on this test. This demonstrates that Gecko's stack merging and
-hash-consing techniques work extremely well even under heavy ambiguity.
-
-## Comparison with other parser technologies
-
-Here is a summary of how Gecko compares with the major alternatives:
-
-|                                          | YACC    | Bison   | ElkHound | YAEP     | Gecko    |
-|------------------------------------------|---------|---------|----------|----------|----------|
-| Library                                  | No      | No      | No       | Yes      | Yes      |
-| CFG grammar                              | LALR(1) | LALR(1) | Ambiguous| Ambiguous| Ambiguous|
-| Operator grammar (priority/associativity)| Yes     | Yes     | Yes      | No       | Yes      |
-| Speed independent of grammar size        | Yes     | Yes     | Yes      | No       | Yes      |
-| Syntax error recovery                    | Yes     | Yes     | No       | Yes      | Yes      |
-| Automatic error recovery                 | No      | No      | ---      | No       | Yes      |
-| Actions                                  | Yes     | Yes     | Yes      | No       | Yes*     |
-| Simple syntax-directed translation       | No      | No      | No       | Yes      | Yes      |
-| Generation of all translations           | ---     | ---     | Yes      | Yes      | Yes      |
-| Generation of minimal cost translation   | ---     | ---     | No       | Yes      | No       |
-| Reentrant (thread-safe)                  | Yes**   | Yes**   | Yes      | No       | Yes      |
-
-(\*) See rule guard functions.
-(\**) Needs non-POSIX extensions `%pure-parser` or `%define api.pure`.
-
-Key differentiators:
-
-- **Gecko and YAEP are the only libraries** --- everything else requires a
-  separate code generation step
-- **Gecko is the only parser with automatic error recovery** --- all others
-  require manual grammar modifications
-- **Gecko is the only GLR parser with operator grammar support** in this
-  comparison (YAEP doesn't support it)
-- **YAEP can generate minimal-cost translations** for ambiguous grammars,
-  which Gecko doesn't support. YAEP is also faster when generating all
-  possible translations for highly ambiguous grammars and produces a much
-  smaller DAG for those translations
-
 ## Building and installing
 
 Getting started with Gecko is straightforward:
@@ -886,45 +915,6 @@ To run the ElkHound benchmarks, pass the ElkHound build directory:
 ```bash
 make bench ELKHOUND_DIR=/path/to/elkhound
 ```
-
-## Real-world application: parsing ANSI C
-
-The Gecko test suite includes a complete ANSI C grammar with a Flex-based
-lexer. This serves both as a test and as a practical example of how to use
-Gecko for a real programming language.
-
-The C grammar demonstrates several Gecko features working together:
-
-**Operator precedence** for expression parsing. Instead of the traditional
-cascade of nonterminals (`multiplicative_expression`,
-`additive_expression`, `shift_expression`, etc.), the Gecko version can
-use a single `logical_OR_expression` nonterminal with operator declarations:
-
-```
-LEFT '*' '/' '%'
-LEFT '+' '-'
-LEFT LEFT_OP RIGHT_OP
-LEFT '<' '>' LE_OP GE_OP
-LEFT EQ_OP NE_OP
-LEFT '&'
-LEFT '^'
-LEFT '|'
-LEFT AND_OP
-LEFT OR_OP
-RIGHT ELSE
-```
-
-This replaces roughly 10 levels of nonterminal cascading with 11 lines of
-declarations. The grammar is shorter, easier to read, and impossible to
-get wrong (no accidentally swapped precedence levels).
-
-**Ambiguous typedef handling.** The grammar uses a single `IDENTIFIER`
-token for both regular identifiers and typenames, creating genuine
-ambiguity that Gecko resolves through its GLR mechanism. This eliminates
-the scanner-parser feedback loop that every YACC-based C parser requires.
-
-**Automatic error recovery.** The grammar contains no `error` tokens
-anywhere. Syntax errors in the input are handled automatically.
 
 ## Design philosophy
 
@@ -963,12 +953,10 @@ Gecko is a good fit when:
 
 Gecko might not be the best choice when:
 
-- You need **semantic actions** during parsing (Gecko uses rule guards instead)
+- You need sophisticated **semantic actions** during parsing (Gecko uses primitive rule guards instead)
 - You need **minimal-cost translations** for highly ambiguous grammars
-  (consider YAEP)
+  or you need a guarantee that parsing complexity is no more than quadratic in input length (consider YAEP)
 - You need a parser in a language other than C (Gecko is C-only)
-- Your grammar is simple enough that a recursive descent parser would be
-  equally clear and fast
 
 ## Getting the code
 
@@ -989,7 +977,7 @@ handling the full class of context-free grammars. Its automatic error
 recovery eliminates one of the most painful aspects of working with
 traditional parser generators.
 
-At 3,500 lines of C and 80KB of compiled code, Gecko is small enough to
+At 3,800 lines of C and 90KB of compiled code, Gecko is small enough to
 understand and fast enough for production use. The final result is quite
 satisfactory, though I expect to continue improving it as new use cases
 and requirements arise.
