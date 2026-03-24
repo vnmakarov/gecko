@@ -90,13 +90,11 @@ static void parse (void)
   int ambiguity;
 
   if ((g = gp_create_grammar ()) == NULL) {
-      fprintf (stderr, "gp_create_grammar: No memory\n");
-      exit (1);
+    fprintf (stderr, "gp_create_grammar: No memory\n"); exit (1);
   }
   if (gp_parse_grammar (g, true, description) != 0) {
-      fprintf (stderr, "%s\n", gp_error_message (g));
-      exit (1);
-    }
+    fprintf (stderr, "%s\n", gp_error_message (g)); exit (1);
+  }
   if (gp_parse (g, read_token_func, &root, &ambiguity, NULL))
     fprintf (stderr, "gp_parse: %s\n", gp_error_message (g));
   gp_fin (g);
@@ -141,8 +139,9 @@ static void parse (void)
     for a small number needed to give feedback to the scanner on how to treat
     the next identifier (as a typename or regular identifier).
 * Scanning test files:
-  * We prepare all tokens beforehand in order to exclude scanning time from our benchmark.
   * For YACC, at the scanning stage we do not yet distinguish identifiers and typenames.
+  * Parsing time includes scanning time, but even for the fastest parsers scanning takes at most 30% of
+    the overall parsing time.
 * Tests:
   * The first test is 100K sieve functions, so the resulting file size was 1.5M C lines.
   * The second test is a pre-release version of gcc-4.0 for i686 with all the source
@@ -251,4 +250,3 @@ static void parse (void)
     `gp_set_recovery_match`) of tokens without a gap or when we have a final stack that consumed `EOF`
   * The minimal cost stacks (or one minimal cost stack if we have one stack before the error recovery)
     become the start stacks after the recovery
-
