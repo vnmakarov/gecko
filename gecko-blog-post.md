@@ -72,12 +72,13 @@ Let's look at each of these in detail.
 
 ### Small and simple
 
-Gecko's entire implementation is roughly **3,800 lines of C** (SLOC). The
-compiled x86-64 code weighs in at about **90KB**. There are no external
-dependencies beyond the C standard library and a few accompanying header-only
-utility libraries (custom allocators, hash tables, variable-length objects,
-and object stacks). This makes Gecko trivial to embed in any project --- just
-drop in the source files and compile.
+Gecko core code is roughly 2900 lines of C (SLOC).  It uses 6 header-only
+utility libraries (custom allocators, bitmaps, hashing, hash tables, variable-length objects,
+and object stacks) which is about 900 lines. So Gecko's entire implementation
+is roughly **3,800 lines of C** (SLOC). The compiled x86-64 code weighs in
+at about **90KB**. There are no external dependencies beyond the C standard
+library.  This makes Gecko trivial to embed in any project --- just drop in
+the source files and compile.
 
 ### Full context-free grammar support
 
@@ -124,7 +125,7 @@ The `#` notation after each alternative specifies the translation:
 - `# plus (0 2)` means "create an abstract node named `plus` whose children
   are the translations of RHS symbols at positions 0 and 2"
 - `# 1` means "the translation is the translation of the RHS symbol at
-  index 1" (skipping the parentheses)
+  index 1" (skipping the left parenthesis)
 
 This approach is simpler than YACC-style actions for many use cases:
 you get a clean AST without writing any C code in the grammar. The
@@ -240,7 +241,7 @@ reduce on), Gecko's recovery algorithm kicks in:
 
 2. **Find minimal-cost success.** Recovery succeeds when a candidate stack
    successfully consumes a configurable number of consecutive tokens
-   (default: 3, set via `gp_set_recovery_match`) without encountering
+   (default: 3, can be changed via `gp_set_recovery_match`) without encountering
    another error, or when a candidate reaches EOF.
 
 3. **Resume normal parsing.** The minimal-cost stack(s) become the new
@@ -305,7 +306,7 @@ later have higher precedence. This is identical to YACC/Bison semantics.
 
 ```
 lhs : rhs_symbol_1 rhs_symbol_2 ... # translation
-    | alternative_rhs ...            # translation
+    | alternative_rhs ...           # translation
     ;
 ```
 
@@ -315,7 +316,7 @@ terminals.
 
 Gecko requires the grammar axiom (start symbol) to have exactly one rule.
 Therefore, when using `gp_read_grammar`, you typically add an explicit
-start rule such as `$S : E` that has a single alternative. When using
+start rule such as `$S : E` that has a single alternative (see programmatic grammar construction). When using
 `gp_parse_grammar`, Gecko adds such a rule automatically.
 
 ### Translation specifications
@@ -478,7 +479,7 @@ A few things to note:
    returns the next token's code and attribute. It returns a negative
    value at end of input. On success, `root` points to the parse tree
    and `ambiguity` indicates the ambiguity level. 0 means no
-   ambiguity. 1 means the grammar is ambiguous on the input. 2 means
+   ambiguity. 1 means the grammar is found to be ambiguous on the input. 2 means
    the final stack was produced by merging stacks where terminal
    attributes or abstract nodes differed, which would result in
    context-dependent alternative (`GP_OPT`) nodes in the parse tree if
@@ -521,7 +522,7 @@ The default function prints the error nonterminal and token
 representations. In a real compiler, you would set this to print file
 names, line numbers, and column numbers extracted from the token
 attributes. You would also translate nonterminal names into more
-readable form (e.g., `stmt` into `statement`).
+readable form (e.g., nonterminal `stmt` used in grammar into `statement`).
 
 ### Error recovery tuning
 
@@ -608,7 +609,7 @@ parse tree section below for details).
 
 Gecko's parse tree is a DAG (directed acyclic graph) of `struct
 gp_tree_node` values. Each node has a `type` field and a `num` field (a
-unique node number), plus a union containing the type-specific data:
+unique node number), plus a C union containing the type-specific data:
 
 - **`GP_NIL`** --- an empty node, used for empty translations
 - **`GP_TERM`** --- a terminal node, containing the terminal `code` and
@@ -635,7 +636,7 @@ for example, the C grammar does not exhibit this behavior.
 To correctly traverse the parse tree, you should always choose the
 same alternative (`first` or `second`) for option nodes with the same
 `context_num`. By doing so, it is possible to eliminate option nodes
-and transform the parse tree to contain only alternative nodes, but
+and transform the parse tree to contain only context-independent alternative nodes, but
 this is a non-trivial task. If your grammar requires this, consider
 using [YAEP](https://github.com/vnmakarov/yaep), which handles this
 automatically.
