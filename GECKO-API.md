@@ -37,6 +37,7 @@ recovery and syntax-directed translation.
 | `GP_NONTERM_DERIVATION`            | 19    | Nonterminal derivation issue         |
 | `GP_LOOP_NONTERM`                  | 20    | Looping nonterminal                  |
 | `GP_INVALID_TOKEN_CODE`            | 21    | Invalid token code                   |
+| `GP_BAD_RULE_GUARDS`               | 22    | Rule guards prevent any parse advance|
 
 ## Enumerations
 

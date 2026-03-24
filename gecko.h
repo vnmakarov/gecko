@@ -47,6 +47,7 @@ struct grammar;
 #define GP_NONTERM_DERIVATION 19
 #define GP_LOOP_NONTERM 20
 #define GP_INVALID_TOKEN_CODE 21
+#define GP_BAD_RULE_GUARDS 22
 
 enum gp_assoc { GP_NON_ASSOC, GP_LEFT_ASSOC, GP_RIGHT_ASSOC };
 

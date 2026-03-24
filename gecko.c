@@ -952,13 +952,19 @@ static void *default_node_merge (struct grammar *g GP_UNUSED, struct gp_tree_nod
   return node1;
 }
 
-static void *parse_alloc_default (size_t size) {
-  void *result = malloc (size);
-  if (result == NULL) exit (1);
+static void *parse_alloc_default (size_t size) { return malloc (size); }
+
+static FORCE_INLINE void *parse_alloc (struct grammar *g, size_t size) {
+  void *result = g->parse_alloc (size);
+  if (result == NULL) error (g, GP_NO_MEMORY, "no memory for parse tree");
   return result;
 }
 
 static void parse_free_default (void *mem) { free (mem); }
+
+static FORCE_INLINE void parse_free (struct grammar *g, void *mem) {
+  if (mem != NULL && g->parse_free != NULL) g->parse_free (mem);
+}
 
 static void syntax_error_default (const char *err_nonterm_repr, bool after_p, const char *err_tok_repr,
                                   void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
@@ -1555,7 +1561,8 @@ static uint64_t node_hash (hash_table_entry_t n) {
     break;
   default:
     assert (node->type == GP_NIL);
-    return h = hash64 ((uint64_t) node->val.term.code, 6); /* nil node exists in one instance */
+    h = hash64 ((uint64_t) node->val.term.code, 6); /* nil node exists in one instance */
+    break;
   }
   return hash_finish (h);
 }
@@ -1717,15 +1724,15 @@ static struct stack *stack_create (struct grammar *g, struct stack *base) {
 }
 
 /* Max free stacks to speedup stack allocation */
-#define MAX_FREE_STACKS 1000
+#define MAX_FREE_STACKS 200
 
 static void stack_free (struct grammar *g, struct stack *stack) {
   if (stack->recovery != NULL) recovery_info_free (g, stack->recovery);
 #ifndef NO_GP_DEBUG_PRINT
   g->n_curr_stack_els -= VLO_LENGTH (stack->els) / sizeof (stack_el_t);
 #endif
-  if (VLO_LENGTH (g->free_stacks) < MAX_FREE_STACKS) { /* keep free stack in cache */
-    VLO_ADD_MEMORY (g->free_stacks, &stack, sizeof (stack));
+  if (VLO_LENGTH (g->free_stacks) / sizeof (struct stack *) < MAX_FREE_STACKS) {
+    VLO_ADD_MEMORY (g->free_stacks, &stack, sizeof (stack)); /* keep free stack in cache */
   } else {
     VLO_DELETE (stack->els);
     gp_free (g->alloc, stack);
@@ -1912,7 +1919,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int c
 #if !defined(NO_GP_DEBUG_PRINT)
   g->n_parse_term_nodes++;
 #endif
-  term_node = (*g->parse_alloc) (sizeof (struct gp_tree_node));
+  term_node = parse_alloc (g, sizeof (struct gp_tree_node));
   *term_node = *node;
   *entry = term_node;
   term_node->num = g->n_parse_nodes++;
@@ -1922,7 +1929,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int c
 
 static FORCE_INLINE struct gp_tree_node *get_empty_node (struct grammar *g) {
   if (g->empty_node == NULL) {
-    g->empty_node = (struct gp_tree_node *) g->parse_alloc (sizeof (struct gp_tree_node));
+    g->empty_node = (struct gp_tree_node *) parse_alloc (g, sizeof (struct gp_tree_node));
     g->empty_node->type = GP_NIL;
     g->empty_node->num = 0; /* always zero */
     VLO_ADD_MEMORY (g->all_nodes, &g->empty_node, sizeof (struct gp_tree_node *));
@@ -1951,10 +1958,10 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
 #if !defined(NO_GP_DEBUG_PRINT)
   g->n_parse_abstract_nodes++;
 #endif
-  anode = (*g->parse_alloc) (sizeof (struct gp_tree_node));
+  anode = parse_alloc (g, sizeof (struct gp_tree_node));
   *anode = *node;
   anode->num = g->n_parse_nodes++;
-  anode->val.anode.children = g->parse_alloc ((size_t) children_num * sizeof (struct gp_tree_node *));
+  anode->val.anode.children = parse_alloc (g, (size_t) children_num * sizeof (struct gp_tree_node *));
   memcpy (anode->val.anode.children, children, (size_t) children_num * sizeof (struct gp_tree_node *));
   *entry = anode;
   VLO_ADD_MEMORY (g->all_nodes, &anode, sizeof (struct gp_tree_node *));
@@ -1980,7 +1987,7 @@ static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tr
 #ifndef NO_GP_DEBUG_PRINT
   context_num > 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
 #endif
-  res = (*g->parse_alloc) (sizeof (struct gp_tree_node));
+  res = parse_alloc (g, sizeof (struct gp_tree_node));
   *res = *node;
   res->num = g->n_parse_nodes++;
   *entry = res;
@@ -2014,7 +2021,7 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, si
     return get_empty_node (g);
   }
   if (rule->caller_anode == NULL) {
-    rule->caller_anode = ((char *) (*g->parse_alloc) (strlen (rule->anode) + 1));
+    rule->caller_anode = ((char *) parse_alloc (g, strlen (rule->anode) + 1));
     VLO_ADD_MEMORY (g->caller_anode_names, &rule->caller_anode, sizeof (rule->caller_anode));
     strcpy (rule->caller_anode, rule->anode);
   }
@@ -2074,7 +2081,7 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
 static uint64_t stack_hash (hash_table_entry_t s) { /* Hash of the stack. */
   struct stack *stack = ((struct stack *) s);
   uint64_t result = hash_init (88);
-  for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (stack->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     result = hash_step (result, (uint64_t) (ptrdiff_t) el->set);
   }
@@ -2085,7 +2092,7 @@ static bool stack_eq (hash_table_entry_t s1, hash_table_entry_t s2) { /* Equalit
   struct stack *stack1 = ((struct stack *) s1);
   struct stack *stack2 = ((struct stack *) s2);
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
-  for (int i = 0; i < (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (stack1->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el1 = &((stack_el_t *) VLO_BEGIN (stack1->els))[i];
     stack_el_t *el2 = &((stack_el_t *) VLO_BEGIN (stack2->els))[i];
     if (el1->set != el2->set) return false;
@@ -2118,7 +2125,7 @@ static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_
   stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (stack1->els);
   stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (stack2->els);
   int n = 0;
-  for (int i = (int) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
+  for (ptrdiff_t i = (ptrdiff_t) (VLO_LENGTH (stack1->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
     stack_el_t *el1 = &stack_addr1[i], *el2 = &stack_addr2[i];
     if (el1->set != el2->set) return false;
     if (el1->anode_attr != el2->anode_attr) n++;
@@ -2135,7 +2142,7 @@ static FORCE_INLINE void merge_nodes (struct grammar *g, struct stack *to, struc
   if (n_diff_attr > 1) context_num = ++g->contexts_num;
   stack_el_t *to_addr = (stack_el_t *) VLO_BEGIN (to->els);
   stack_el_t *from_addr = (stack_el_t *) VLO_BEGIN (from->els);
-  for (int k = (int) (VLO_LENGTH (to->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
+  for (ptrdiff_t k = (ptrdiff_t) (VLO_LENGTH (to->els) / sizeof (stack_el_t)) - 1; k >= 0; k--) {
     stack_el_t *to_el = &to_addr[k], *from_el = &from_addr[k];
     if (to_el->anode_attr == from_el->anode_attr) continue;
     if (to_el->attr_p) {
@@ -2195,7 +2202,7 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) { /* me
 #ifndef NO_GP_DEBUG_PRINT
 
 static void print_stack_els (FILE *f, struct stack *stack) {
-  for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (stack->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     struct symb *symb = el->set->symb;
     fprintf (f, " [%lld]s%lld:%s", (long long) el->ntoks, (long long) el->set->num, symb->repr);
@@ -2205,7 +2212,7 @@ static void print_stack_els (FILE *f, struct stack *stack) {
       fprintf (f, ":n%llu", (unsigned long long) anode->num);
     } else if (strcmp (symb->repr, END_MARKER_NAME) != 0) {
       assert (symb->term_p);
-      fprintf (f, ":a%llx", (long long) el->anode_attr);
+      fprintf (f, ":a%llx", (unsigned long long) el->anode_attr);
     }
   }
   fprintf (f, "\n");
@@ -2299,7 +2306,7 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
       if (LIKELY (!action->shift_p)) { /* reduce */
         struct rule *r = action->u.rule;
         if (r->guard_num >= 0 && g->rule_guard != NULL && !g->rule_guard (r->guard_num, g->rule_guard_arg)) {
-          if (i != actions_num - 1) stack_free (g, stack);
+          stack_free (g, stack);
           continue;
         }
         set = stack_reduce (g, stack, action->u.rule);
@@ -2336,14 +2343,14 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
    Return the single stack if ONE_STACK_P, otherwise return NULL.  Report the syntax error. */
 static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct symb *error_term,
                                     void *error_attr) {
-  for (int i = 0; i < (int) (VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->failed_stacks))[i];
     stack_free (g, stack);
   }
   VLO_NULLIFY (g->failed_stacks);
   ptrdiff_t min_cost = -1, buff_token_ind = -1;
   bool eof_stack_p = false;
-  for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (g->new_stacks) / sizeof (struct stack *); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
     struct set *set = stack_get_top_set (stack);
     struct symb *symb = set->symb;
@@ -2363,12 +2370,13 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   bool error_after_p = false;
   const char *error_nonterm = NULL;
   struct stack *single_stack = NULL;
-  for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (g->new_stacks) / sizeof (struct stack *); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
     struct set *set = stack_get_top_set (stack);
     struct symb *symb = set->symb;
     ptrdiff_t cost = stack->recovery->u.info.cost;
     bool eof_p = symb == g->end_marker;
+    assert (stack->recovery->u.info.nonterm != NULL);
     if (stack->recovery->u.info.buff_token_ind != buff_token_ind || cost != min_cost || eof_p != eof_stack_p
         || (!eof_p && stack->recovery->u.info.n_matched_toks < g->recovery_token_matches)) {
       stack_free (g, stack);
@@ -2442,7 +2450,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
       print_stacks (stderr, "   Failed recovery stacks", &g->failed_stacks, 0);
 #endif
     ptrdiff_t max_buff_ind = 0;
-    for (int i = 0; i < (int) (VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *)); i++) {
+    for (size_t i = 0; i < VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->failed_stacks))[i];
       if (stack->recovery == NULL) stack_init_recovery (g, stack, (ptrdiff_t) g->curr_buff_token_ind);
       int curr_code = token_buff_get (g, stack->recovery->u.info.buff_token_ind, &attr);
@@ -2457,7 +2465,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
           new_stack->recovery->u.info.n_matched_toks = 0;
           ptrdiff_t ntoks1 = ((stack_el_t *) VLO_BEGIN (stack->els))[j + 1].ntoks;
           ptrdiff_t ntoks2 = ((stack_el_t *) VLO_BEGIN (stack->els))[len - 1].ntoks;
-          new_stack->recovery->u.info.cost += ntoks2 - ntoks1 + 1;  // ???
+          new_stack->recovery->u.info.cost += ntoks2 - ntoks1 + 1;
           VLO_SHORTEN (new_stack->els, (size_t) (len - j - 1) * sizeof (stack_el_t));
           VLO_ADD_MEMORY (g->new_stacks, &new_stack, sizeof (new_stack));
           break;
@@ -2485,7 +2493,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
     if (UNLIKELY (g->debug_level > 3))
       print_stacks (stderr, "   Current recovery stacks", &g->curr_stacks, 0);
 #endif
-    for (int i = 0; i < (int) (VLO_LENGTH (g->curr_stacks) / sizeof (struct stack *)); i++) {
+    for (size_t i = 0; i < VLO_LENGTH (g->curr_stacks) / sizeof (struct stack *); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[i];
       int curr_code = token_buff_get (g, stack->recovery->u.info.buff_token_ind, &attr);
       struct symb *term = term_find_by_code (g, curr_code);
@@ -2498,9 +2506,11 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
     if (UNLIKELY (g->debug_level > 3)) print_stacks (stderr, "   New recovery stacks", &g->new_stacks, 0);
 #endif
     struct stack *min_cost_stack = NULL;
+    if (VLO_LENGTH (g->new_stacks) == 0 && VLO_LENGTH (g->failed_stacks) == 0)
+      error (g, GP_BAD_RULE_GUARDS, "grammar is overconstrained by rule guards -- can do nothing");
     /* True when eof was reached or a minimal cost stack matched at least recovery_token_matches or
        stack matched at least MAX_RECOVERY_TOKEN_MATCH tokens.  */
-    for (int i = 0; i < (int) (VLO_LENGTH (g->new_stacks) / sizeof (struct stack *)); i++) {
+    for (size_t i = 0; i < VLO_LENGTH (g->new_stacks) / sizeof (struct stack *); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
       stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
       int n_matched_toks = stack->recovery->u.info.n_matched_toks;
@@ -2550,7 +2560,7 @@ static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
 }
 
 static void gc_mark_stack (struct grammar *g, struct stack *stack) {
-  for (int i = 0; i < (int) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (stack->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     if (!el->attr_p && el->anode_attr != NULL) gc_mark_parse_tree (g, el->anode_attr);
   }
@@ -2563,7 +2573,7 @@ static void gc (struct grammar *g, vlo_t *stacks) {
 #endif
   /* Mark: */
   bitmap_clear (&g->marked_nodes);
-  for (int i = 0; i < (int) (VLO_LENGTH (*stacks) / sizeof (struct stack *)); i++) {
+  for (size_t i = 0; i < VLO_LENGTH (*stacks) / sizeof (struct stack *); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (*stacks))[i];
     gc_mark_stack (g, stack);
   }
@@ -2573,8 +2583,8 @@ static void gc (struct grammar *g, vlo_t *stacks) {
   int n = 0, removed = 0;
   if (g->debug_level > 3) fprintf (stderr, "GC: Removed nodes:\n");
 #endif
-  int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
-  for (int i = 0; i < nodes_num; i++) {
+  size_t nodes_num = VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *);
+  for (size_t i = 0; i < nodes_num; i++) {
     struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
     if (bitmap_bit_p (&g->marked_nodes, node->num)) {
       ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[last++] = node;
@@ -2591,8 +2601,8 @@ static void gc (struct grammar *g, vlo_t *stacks) {
       }
 #endif
       remove_element_from_hash_table_entry (g->nodes_htab, node);
-      if (node->type == GP_ANODE) g->parse_free (node->val.anode.children);
-      g->parse_free (node);
+      if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
+      parse_free (g, node);
     }
   }
   VLO_SHORTEN (g->all_nodes, VLO_LENGTH (g->all_nodes) - last * sizeof (struct gp_tree_node *));
@@ -2614,8 +2624,9 @@ static void gc (struct grammar *g, vlo_t *stacks) {
 #ifndef NO_GP_DEBUG_PRINT
   if (g->debug_level > 3 && n != 0) fprintf (stderr, "\n");
   if (g->debug_level > 2)
-    fprintf (stderr, "++++GC finish: before nodes %d, kept %llu, removed %d; node htab size = %u\n",
-             nodes_num, (unsigned long long) last, removed, (unsigned) hash_table_size (g->nodes_htab));
+    fprintf (stderr, "++++GC finish: before nodes %llu, kept %llu, removed %d; node htab size = %u\n",
+             (unsigned long long) nodes_num, (unsigned long long) last, removed,
+             (unsigned) hash_table_size (g->nodes_htab));
 #endif
 }
 
@@ -2992,20 +3003,20 @@ struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. *
 
 static void grammar_finish (struct grammar *g) { /* Free memory allocated for the grammar data */
   bitmap_destroy (&g->marked_nodes);
-  int nodes_num = (int) (VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *));
+  size_t nodes_num = VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *);
   if (g->parse_free != NULL) {
-    for (int i = 0; i < nodes_num; i++) {  // nodes existing in case of an error
+    for (size_t i = 0; i < nodes_num; i++) {  // nodes existing in case of an error
       struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
-      if (node->type == GP_ANODE) g->parse_free (node->val.anode.children);
-      g->parse_free (node);
+      if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
+      parse_free (g, node);
     }
   }
   VLO_DELETE (g->all_nodes);
   VLO_DELETE (g->temp_vlo);
   if (g->parse_free != NULL) {
-    for (int i = 0; i < (int) (VLO_LENGTH (g->caller_anode_names) / sizeof (char *)); i++) {
+    for (size_t i = 0; i < VLO_LENGTH (g->caller_anode_names) / sizeof (char *); i++) {
       char *name = ((char **) VLO_BEGIN (g->caller_anode_names))[i];
-      g->parse_free (name);
+      parse_free (g, name);
     }
   }
   VLO_DELETE (g->caller_anode_names);
@@ -3054,8 +3065,8 @@ void gp_free_tree (struct grammar *g, struct gp_tree_node *root) {
   while (VLO_LENGTH (g->temp_nodes_vlo) != 0) {
     struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BOUND (g->temp_nodes_vlo))[-1];
     VLO_SHORTEN (g->temp_nodes_vlo, sizeof (struct gp_tree_node *));
-    if (node->type == GP_ANODE) g->parse_free (node->val.anode.children);
-    g->parse_free (node);
+    if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
+    parse_free (g, node);
   }
 }
 
