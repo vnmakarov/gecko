@@ -32,14 +32,15 @@ The world of parser generators is crowded. YACC and Bison have been around
 since the 1970s. More recently, PEG parsers, parser combinators, and various
 Earley-based tools have appeared. So why build yet another parser?
 
-During my career I wrote several compiler-compilers. The first one
-was an LALR(1) parser written in 1985 in Pascal (you can try to find
-its description in the Russian journal "Programming" for 1985). The
-next one was MSTA, written in the nineties. It was an LALR(k)/LR(k)
-parser with many additional optimizations that made it faster than
-YACC/Bison. Using it I found that speed is not the most important
-feature of a parser, especially with faster modern CPUs, and that
-LR(k) is not enough for real language grammars.
+During my career I wrote several compiler-compilers. The first one was
+an LALR(1) parser written in 1985 in Pascal (you can try to find its
+description in the Russian journal "Programming" for 1985). The next
+one was [MSTA](https://github.com/cocom-org/msta), written in the
+nineties. It was an LALR(k)/LR(k) parser with many additional
+optimizations that made it faster than YACC/Bison. Using it I found
+that speed is not the most important feature of a parser, especially
+with faster modern CPUs, and that LR(k) is not enough for real
+language grammars.
 
 Therefore, about ten years ago I wrote
 [YAEP](https://github.com/vnmakarov/yaep): an Earley parser that can
