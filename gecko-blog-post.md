@@ -344,8 +344,8 @@ functions:
 
 ```c
 const char *read_terminal(int *code, int *priority, enum gp_assoc *assoc) {
-    // Return terminal name, set code, priority, and associativity
-    // Return NULL when done
+    // Return terminal name, set code, priority, and associativity.
+    // Return NULL when done.
 }
 ```
 
@@ -354,58 +354,50 @@ const char *read_terminal(int *code, int *priority, enum gp_assoc *assoc) {
 ```c
 const char *read_rule(const char ***rhs, const char **abs_node, int **transl,
                       int *guard_num) {
-    // Return LHS name, set RHS array, abstract node name, translation, guard number
-    // Return NULL when done
+    // Return LHS name, set RHS array, abstract node name, translation,
+    // and guard number. Return NULL when done.
 }
 ```
 
-Here is a complete example of programmatic grammar construction for a simple
-expression grammar:
+Assume we have a simple expression grammar:
+
+```
+LEFT '+';
+E : 'a'       # 1
+  | E '+' E   # plus (0 2)
+  | '(' E ')' # 1
+  ;
+```
+
+A complete example of programmatic grammar construction for the grammar would be
 
 ```c
 static int nterm = 0;
-
 const char *read_terminal(int *code, int *priority, enum gp_assoc *assoc) {
     nterm++;
-    *priority = -1;
-    *assoc = GP_NON_ASSOC;
+    *priority = -1; *assoc = GP_NON_ASSOC;
     switch (nterm) {
     case 1: *code = 'a'; return "a";
-    case 2: *code = '+'; return "+";
-    case 3: *code = '*'; return "*";
-    case 4: *code = '('; return "(";
-    case 5: *code = ')'; return ")";
-    default: return NULL;
+    case 2: *assoc = GP_LEFT_ASSOC; *code = '+'; return "+";
+    case 3: *code = '('; return "(";
+    case 4: *code = ')'; return ")";
+    default: return 0;
     }
 }
 
 static int nrule = 0;
-
 const char *read_rule(const char ***rhs, const char **anode, int **transl,
                       int *guard_num) {
-    static const char *rhs_1[] = {"T", NULL};
-    static int tr_1[] = {0, -1};
-    static const char *rhs_2[] = {"E", "+", "T", NULL};
-    static int tr_2[] = {0, 2, -1};
-    static const char *rhs_3[] = {"F", NULL};
-    static int tr_3[] = {0, -1};
-    static const char *rhs_4[] = {"T", "*", "F", NULL};
-    static int tr_4[] = {0, 2, -1};
-    static const char *rhs_5[] = {"a", NULL};
-    static int tr_5[] = {0, -1};
-    static const char *rhs_6[] = {"(", "E", ")", NULL};
-    static int tr_6[] = {1, -1};
-
+    typedef const char *str;
     nrule++;
-    *guard_num = -1;
+    *guard_num = -1; *anode = 0;
     switch (nrule) {
-    case 1: *rhs = rhs_1; *anode = NULL; *transl = tr_1; return "$S";
-    case 2: *rhs = rhs_2; *anode = "plus"; *transl = tr_2; return "E";
-    case 3: *rhs = rhs_3; *anode = NULL; *transl = tr_3; return "T";
-    case 4: *rhs = rhs_4; *anode = "mult"; *transl = tr_4; return "T";
-    case 5: *rhs = rhs_5; *anode = NULL; *transl = tr_5; return "F";
-    case 6: *rhs = rhs_6; *anode = NULL; *transl = tr_6; return "F";
-    default: return NULL;
+    case 1: *rhs = (str[]){"E", 0}; *transl = (int[]){0, -1}; return "$S";
+    case 2: *rhs = (str[]){"a", 0}; *transl = (int[]){0, -1}; return "E";
+    case 3: *anode = "plus"; *rhs = (str[]){"E", "+", "E", 0};
+      *transl = (int[]){0, 2, -1}; return "E";
+    case 4: *rhs = (str[]){"(", "E", ")", 0}; *transl = (int[]){1, -1}; return "E";
+    default: return 0;
     }
 }
 ```
@@ -453,21 +445,17 @@ static int read_token_func(void **attr) {
 
 int main(void)
 {
-    struct grammar *g;
-    struct gp_tree_node *root;
-    int ambiguity;
+    struct grammar *g; struct gp_tree_node *root; int ambiguity;
 
     if ((g = gp_create_grammar()) == NULL) {
-        fprintf(stderr, "gp_create_grammar: No memory\n");
-        exit(1);
+      fprintf(stderr, "gp_create_grammar: No memory\n"); exit(1);
     }
     if (gp_parse_grammar(g, true, description) != 0) {
-        fprintf(stderr, "%s\n", gp_error_message(g));
-        exit(1);
+      fprintf(stderr, "%s\n", gp_error_message(g)); exit(1);
     }
     gp_set_debug_level(g, 2);
     if (gp_parse(g, read_token_func, &root, &ambiguity, NULL))
-        fprintf(stderr, "gp_parse: %s\n", gp_error_message(g));
+      fprintf(stderr, "gp_parse: %s\n", gp_error_message(g));
     gp_fin(g);
     return 0;
 }
