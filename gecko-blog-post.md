@@ -255,7 +255,7 @@ reduce on), Gecko's recovery algorithm kicks in:
    token of the original stack.
 
 2. **Find minimal-cost success.** Recovery succeeds when a candidate stack
-   successfully consumes a configurable number of consecutive tokens
+   with minimal cost successfully consumes a configurable number of consecutive tokens
    (default: 5, can be changed via `gp_set_recovery_match`) without encountering
    another error, or when a candidate reaches EOF.
 
@@ -551,7 +551,7 @@ readable form (e.g., nonterminal `stmt` used in grammar into `statement`).
 ### Error recovery tuning
 
 ```c
-gp_set_recovery_match(g, 5);  // Require 5 consecutive tokens after recovery
+gp_set_recovery_match(g, 7);  // Require 7 matched tokens for recovery
 ```
 
 The default is 5. Higher values produce more conservative recovery (fewer
