@@ -90,8 +90,8 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   vlo_t sets_vlo; /* used to build sets */
 
-  /* The set being created. It is defined only when new_set_ready_p is true. */
-  struct set *new_set;
+  struct set *eof_set; /* set with situation axiom: start . $eof */
+  struct set *new_set; /* set being created: defined only when new_set_ready_p is true */
   /* The following says that new_set its members are defined. Before this the access
      to data of the set being formed are possible only through the following variables. */
   bool new_set_ready_p;
@@ -167,7 +167,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 static void error (struct grammar *g, int code, const char *format, ...);
 
 /* The default number of tokens successfully matched to stop error recovery alternative (state). */
-#define DEFAULT_RECOVERY_TOKEN_MATCHES 3
+#define DEFAULT_RECOVERY_TOKEN_MATCHES 5
 
 /* This page is abstract data `grammar symbols'. */
 
@@ -776,7 +776,7 @@ struct action {
 
 typedef unsigned short trans_el_t;
 struct set {                      /* the grammar state: */
-  ptrdiff_t num;                  /* unique number of the state */
+  size_t num;                     /* unique number of the state */
   size_t n_start_sits, n_sits;    /* numbers of (start) situations in the following array */
   size_t n_actions;               /* len of array actions */
   struct symb *symb;              /* symb shifting which resulted into this state */
@@ -809,6 +809,7 @@ static void set_init (struct grammar *g) { /* initialize work with sets: */
   OS_CREATE (g->set_sits_os, g->alloc, 2048);
   OS_CREATE (g->sets_os, g->alloc, 0);
   g->set_tab = create_hash_table (g->alloc, 8192, set_hash, set_eq);
+  g->eof_set = NULL;
   g->n_sets = g->n_sets_start_sits = 0;
   g->n_goto_vects = g->n_goto_vect_len = 0;
   g->n_actions = g->n_action_vects = g->n_action_vect_len = 0;
@@ -867,7 +868,7 @@ static bool set_insert (struct grammar *g) {
     return false;
   }
   OS_TOP_FINISH (g->sets_os);
-  g->new_set->num = (ptrdiff_t) g->n_sets;
+  g->new_set->num = g->n_sets++;
   g->new_set->goto_map = NULL;
   g->new_set->action_map = NULL;
   g->new_set->actions = NULL;
@@ -906,7 +907,7 @@ static void set_print (struct grammar *g, FILE *f, struct set *set, bool nonstar
     n_start_sits = n_sits = g->new_n_start_sits;
     sits = g->new_sits;
   } else {
-    num = set->num;
+    num = (ptrdiff_t) set->num;
     n_sits = set->n_sits;
     sits = set->sits;
     n_start_sits = set->n_start_sits;
@@ -1531,6 +1532,9 @@ static struct set *build_sets (struct grammar *g) { /* Return the 1st set: */
     struct set *set = ((struct set **) VLO_BOUND (g->sets_vlo))[-1];
     VLO_SHORTEN (g->sets_vlo, sizeof (struct set *));
     build_goto_map_and_actions (g, set);
+    unsigned int actions_num;
+    struct action *actions = get_actions (g, set, g->end_marker->u.term.term_num, &actions_num);
+    if (actions_num == 1 && actions[0].shift_p) g->eof_set = set;
   }
   VLO_DELETE (g->sets_vlo);
   return start_set;
@@ -1829,7 +1833,7 @@ static void token_buff_print (struct grammar *g, FILE *f) {
 }
 
 static void print_read (struct grammar *g, FILE *f, struct symb *term, size_t stacks_num) {
-  fprintf (f, "  Read %s (%llu, #stacks: %llu, #nodes: all=%llu)", term->repr,
+  fprintf (f, "--Read %s (%llu, #stacks: %llu, #nodes: all=%llu)", term->repr,
            (unsigned long long) g->read_tokens, (unsigned long long) stacks_num,
            (unsigned long long) g->n_parse_nodes);
   if (g->debug_level < 3) {
@@ -2081,6 +2085,14 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
 static uint64_t stack_hash (hash_table_entry_t s) { /* Hash of the stack. */
   struct stack *stack = ((struct stack *) s);
   uint64_t result = hash_init (88);
+  if (stack->recovery != NULL) {
+    result = hash_step (result, (uint64_t) stack->recovery->u.info.after_p);
+    result = hash_step (result, (uint64_t) stack->recovery->u.info.n_matched_toks);
+    result = hash_step (result, (uint64_t) stack->recovery->u.info.buff_token_ind);
+    result = hash_step (result, (uint64_t) stack->recovery->u.info.cost);
+    result = hash_step (result, (uint64_t) stack->recovery->u.info.err_ntoks);
+    result = hash_step (result, (uint64_t) stack->recovery->u.info.nonterm);
+  }
   for (size_t i = 0; i < VLO_LENGTH (stack->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     result = hash_step (result, (uint64_t) (ptrdiff_t) el->set);
@@ -2092,6 +2104,17 @@ static bool stack_eq (hash_table_entry_t s1, hash_table_entry_t s2) { /* Equalit
   struct stack *stack1 = ((struct stack *) s1);
   struct stack *stack2 = ((struct stack *) s2);
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
+  if ((stack1->recovery == NULL && stack2->recovery != NULL)
+      || (stack1->recovery != NULL && stack2->recovery == NULL))
+    return false;
+  if (stack1->recovery != NULL) {
+    if (stack1->recovery->u.info.after_p != stack2->recovery->u.info.after_p) return false;
+    if (stack1->recovery->u.info.n_matched_toks != stack2->recovery->u.info.n_matched_toks) return false;
+    if (stack1->recovery->u.info.buff_token_ind != stack2->recovery->u.info.buff_token_ind) return false;
+    if (stack1->recovery->u.info.cost != stack2->recovery->u.info.cost) return false;
+    if (stack1->recovery->u.info.err_ntoks != stack2->recovery->u.info.err_ntoks) return false;
+    if (stack1->recovery->u.info.nonterm != stack2->recovery->u.info.nonterm) return false;
+  }
   for (size_t i = 0; i < VLO_LENGTH (stack1->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el1 = &((stack_el_t *) VLO_BEGIN (stack1->els))[i];
     stack_el_t *el2 = &((stack_el_t *) VLO_BEGIN (stack2->els))[i];
@@ -2119,9 +2142,8 @@ static void stack_tab_fin (struct grammar *g) { /* Finalalize work with the stac
 
 /* Return true if stacks with set points of view are equal.  Return different node/attributes of the
    corresponding stack els through N_DIFF_ATTR. */
-static bool stack_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_attr) {
+static bool stack_els_eq_p (struct stack *stack1, struct stack *stack2, int *n_diff_attr) {
   if (VLO_LENGTH (stack1->els) != VLO_LENGTH (stack2->els)) return false;
-  assert (stack1->recovery == NULL && stack2->recovery == NULL);
   stack_el_t *stack_addr1 = (stack_el_t *) VLO_BEGIN (stack1->els);
   stack_el_t *stack_addr2 = (stack_el_t *) VLO_BEGIN (stack2->els);
   int n = 0;
@@ -2172,7 +2194,7 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) { /* me
         ((struct stack **) VLO_BEGIN (*stacks))[last++] = curr;
       } else {
         int n_diff_attr;
-        bool eq_p = stack_eq_p (curr, tab_stack, &n_diff_attr);
+        bool eq_p = stack_els_eq_p (curr, tab_stack, &n_diff_attr);
         assert (eq_p);
         if (tab_stack->ambiguity == 0) tab_stack->ambiguity = 1;
         merge_p = true;
@@ -2187,7 +2209,7 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) { /* me
       struct stack *curr2 = ((struct stack **) VLO_BEGIN (*stacks))[j];
       if (curr2 == NULL) continue;
       int n_diff_attr;
-      if (!stack_eq_p (curr, curr2, &n_diff_attr)) continue;
+      if (!stack_els_eq_p (curr, curr2, &n_diff_attr)) continue;
       if (curr->ambiguity == 0) curr->ambiguity = 1;
       merge_p = true;
       ((struct stack **) VLO_BEGIN (*stacks))[j] = NULL;
@@ -2334,15 +2356,14 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
   }
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 5))
-    print_stacks (stderr, "    Result stacks after processing the stack", &g->new_stacks, new_els_num);
+    print_stacks (stderr, "+++Result stacks after processing the stack", &g->new_stacks, new_els_num);
 #endif
   return shift_p;
 }
 
-/* Finish error recovery: Keep new stacks only with minimal cost (or only one stack if ONE_STACK_P).
-   Return the single stack if ONE_STACK_P, otherwise return NULL.  Report the syntax error. */
-static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct symb *error_term,
-                                    void *error_attr) {
+/* Finish error recovery: Keep new stacks only with at least one matched token. Return the single stack
+   if there is only one stack, otherwise return NULL.  Report the syntax error. */
+static struct stack *recovery_stop (struct grammar *g, struct symb *error_term, void *error_attr) {
   for (size_t i = 0; i < VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->failed_stacks))[i];
     stack_free (g, stack);
@@ -2364,7 +2385,7 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   }
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 3))
-    print_stacks (stderr, "    Stacks before error recovery stop", &g->new_stacks, 0);
+    print_stacks (stderr, "+++Stacks before error recovery stop", &g->new_stacks, 0);
 #endif
   size_t n = 0;
   bool error_after_p = false;
@@ -2374,38 +2395,30 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
     struct set *set = stack_get_top_set (stack);
     struct symb *symb = set->symb;
-    ptrdiff_t cost = stack->recovery->u.info.cost;
     bool eof_p = symb == g->end_marker;
     assert (stack->recovery->u.info.nonterm != NULL);
-    if (stack->recovery->u.info.buff_token_ind != buff_token_ind || cost != min_cost || eof_p != eof_stack_p
-        || (!eof_p && stack->recovery->u.info.n_matched_toks < g->recovery_token_matches)) {
+    if (stack->recovery->u.info.buff_token_ind != buff_token_ind || eof_p != eof_stack_p
+        || (!eof_p && stack->recovery->u.info.n_matched_toks == 0)) {
       stack_free (g, stack);
-    } else if (one_stack_p && single_stack == NULL) {
+    } else {
       single_stack = stack;
       error_after_p = stack->recovery->u.info.after_p;
       error_nonterm = stack->recovery->u.info.nonterm->repr;
       stack_free_recovery (g, stack);
       ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
-    } else if (!one_stack_p) {
-      error_after_p = stack->recovery->u.info.after_p;
-      error_nonterm = stack->recovery->u.info.nonterm->repr;
-      stack_free_recovery (g, stack);
-      ((struct stack **) VLO_BEGIN (g->new_stacks))[n++] = stack;
-    } else {
-      stack_free (g, stack);
     }
   }
   assert (error_nonterm != NULL);
   VLO_SHORTEN (g->new_stacks, VLO_LENGTH (g->new_stacks) - n * sizeof (struct stack *));
+  if (VLO_LENGTH (g->new_stacks) > sizeof (struct stack *)) single_stack = NULL;
   assert (buff_token_ind >= 0);
   g->curr_buff_token_ind = (size_t) buff_token_ind;
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 2)) {
     fprintf (stderr, "<<<%s error recovery stop (buff token ind =%lld, error nonterm =%s%s)>>>\n",
-             one_stack_p ? "Single stack" : "Multi-stack", (long long) buff_token_ind, error_nonterm,
+             single_stack != NULL ? "Single stack" : "Multi-stack", (long long) buff_token_ind, error_nonterm,
              error_after_p ? "+" : "");
-    if (g->debug_level > 3)
-      print_stacks (stderr, "    Result stacks after error recovery", &g->new_stacks, 0);
+    if (g->debug_level > 3) print_stacks (stderr, "+++Result stacks after error recovery", &g->new_stacks, 0);
   }
 #endif
   buff_token_ind -= g->recovery_token_matches;
@@ -2418,38 +2431,35 @@ static struct stack *recovery_stop (struct grammar *g, bool one_stack_p, struct 
   return single_stack;
 }
 
-/* Threshold used to stop recovery even if the stack is not minimal cost stack.
-   It is just to avoid in recovery and recovery stack explosion.  */
-#define MAX_RECOVERY_TOKEN_MATCH 20
-
-/* Make syntax error recovery and set up final new_stacks and return the final single_stack if ONE_STACK_P.
+/* Make syntax error recovery and set up final new_stacks and return the final single stack (if there is only
+   one stack).
 
    Error recovery algorithm in brief: for each failed stack, we reject current stack token and add new stack
    derived from the stack by popping the top elements until the new stack has an action on the current token
    of the original stack.  We stop error recovery when we have a stack which is a minimal cost stack which
    successfully consumed recovery_token_matches tokens without a gap or which is a final stack which
-   consumed EOF.  The minimal cost stacks (or one minimal cost stack if we have one stack before the error
-   recovery) are start stacks after the recovery.
+   consumed EOF.  The stacks which matched at least one token are start stacks after the recovery.
 
    The error recovery algorithm guarantees that Gecko always produces parse trees corresponding to
    syntactically correct inputs.  Simply some tokens before and after error token are ignored. */
-static struct stack *recovery (struct grammar *g, int code, void *attr, bool one_stack_p) {
+static struct stack *recovery (struct grammar *g, int code, void *attr) {
   assert (VLO_LENGTH (g->failed_stacks) != 0 && VLO_LENGTH (g->new_stacks) == 0
           && VLO_LENGTH (g->curr_stacks) == 0);
 #ifndef NO_GP_DEBUG_PRINT
-  if (UNLIKELY (g->debug_level > 2))
-    fprintf (stderr, "<<<%s error recovery start>>>\n", one_stack_p ? "Single stack" : "Multi-stack");
+  if (UNLIKELY (g->debug_level > 2)) fprintf (stderr, "<<<Error recovery start>>>\n");
 #endif
   struct symb *error_term = term_find_by_code (g, code);
   void *error_attr = attr;
   token_buff_add (g, code, attr, false);
   bool stop_p = false;
   do {
+    merge_stacks (g, &g->failed_stacks);
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 3))
-      print_stacks (stderr, "   Failed recovery stacks", &g->failed_stacks, 0);
+      print_stacks (stderr, "+++Failed recovery stacks", &g->failed_stacks, 0);
 #endif
     ptrdiff_t max_buff_ind = 0;
+    struct stack *eof_stack = NULL;
     for (size_t i = 0; i < VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->failed_stacks))[i];
       if (stack->recovery == NULL) stack_init_recovery (g, stack, (ptrdiff_t) g->curr_buff_token_ind);
@@ -2472,7 +2482,10 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
         }
       }
       if (curr_code == END_MARKER_CODE) {
-        stack_free (g, stack);
+        if (eof_stack == NULL)
+          eof_stack = stack;
+        else
+          stack_free (g, stack);
       } else { /* skip curr stack term: */
         stack->recovery->u.info.buff_token_ind++;
         stack->recovery->u.info.cost++;
@@ -2491,7 +2504,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
     SWAP (g->curr_stacks, g->new_stacks, temp_vlo);
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 3))
-      print_stacks (stderr, "   Current recovery stacks", &g->curr_stacks, 0);
+      print_stacks (stderr, "+++Current recovery stacks", &g->curr_stacks, 0);
 #endif
     for (size_t i = 0; i < VLO_LENGTH (g->curr_stacks) / sizeof (struct stack *); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[i];
@@ -2503,31 +2516,44 @@ static struct stack *recovery (struct grammar *g, int code, void *attr, bool one
     }
     VLO_NULLIFY (g->curr_stacks);
 #ifndef NO_GP_DEBUG_PRINT
-    if (UNLIKELY (g->debug_level > 3)) print_stacks (stderr, "   New recovery stacks", &g->new_stacks, 0);
+    if (UNLIKELY (g->debug_level > 3)) print_stacks (stderr, "+++New recovery stacks", &g->new_stacks, 0);
 #endif
     struct stack *min_cost_stack = NULL;
-    if (VLO_LENGTH (g->new_stacks) == 0 && VLO_LENGTH (g->failed_stacks) == 0)
-      error (g, GP_BAD_RULE_GUARDS, "grammar is overconstrained by rule guards -- can do nothing");
-    /* True when eof was reached or a minimal cost stack matched at least recovery_token_matches or
-       stack matched at least MAX_RECOVERY_TOKEN_MATCH tokens.  */
+    if (VLO_LENGTH (g->new_stacks) == 0 && VLO_LENGTH (g->failed_stacks) == 0) {
+      if (eof_stack == NULL) {
+        error (g, GP_BAD_RULE_GUARDS, "grammar is overconstrained by rule guards -- can do nothing");
+      } else {
+        assert (VLO_LENGTH (eof_stack->els) >= 2 * sizeof (stack_el_t));
+        VLO_SHORTEN (eof_stack->els, VLO_LENGTH (eof_stack->els) - 2 * sizeof (stack_el_t));
+        stack_el_t *el = &((stack_el_t *) VLO_BOUND (eof_stack->els))[-1];
+        el->attr_p = false;
+        el->ntoks = 0;
+        el->set = g->eof_set;
+        el->anode_attr = get_empty_node (g);
+        VLO_ADD_MEMORY (g->new_stacks, &eof_stack, sizeof (eof_stack));
+        eof_stack = NULL;
+      }
+    }
+    if (eof_stack != NULL) stack_free (g, eof_stack);
+    merge_stacks (g, &g->new_stacks);
+    bool expand_p = true;
+    /* True when eof was reached or a minimal cost stack matched at least recovery_token_matches.  */
     for (size_t i = 0; i < VLO_LENGTH (g->new_stacks) / sizeof (struct stack *); i++) {
       struct stack *stack = ((struct stack **) VLO_BEGIN (g->new_stacks))[i];
       stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
-      int n_matched_toks = stack->recovery->u.info.n_matched_toks;
-      if (el->set->symb == g->end_marker
-          || (g->recovery_token_matches < MAX_RECOVERY_TOKEN_MATCH
-              && n_matched_toks >= MAX_RECOVERY_TOKEN_MATCH)) {
+      if (el->set->symb == g->end_marker) {
+        expand_p = false;
         stop_p = true;
         break;
-      }
-      if (min_cost_stack == NULL || stack->recovery->u.info.cost < min_cost_stack->recovery->u.info.cost) {
+      } else if (min_cost_stack == NULL
+                 || stack->recovery->u.info.cost < min_cost_stack->recovery->u.info.cost) {
         min_cost_stack = stack;
         stop_p = stack->recovery->u.info.n_matched_toks >= g->recovery_token_matches;
       }
     }
-    token_buff_expand (g, (size_t) max_buff_ind);
+    if (expand_p) token_buff_expand (g, (size_t) max_buff_ind);
   } while (!stop_p);
-  return recovery_stop (g, one_stack_p, error_term, error_attr);
+  return recovery_stop (g, error_term, error_attr);
 }
 
 static FORCE_INLINE void gc_mark_anode (struct grammar *g, struct gp_tree_node *anode) {
@@ -2655,7 +2681,6 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 2)) print_read (g, stderr, term_symb, 1);
 #endif
-  bool one_stack_p;
   size_t gc_nodes_threshold = GC_START_NODES_THRESHOLD;
   for (;;) {
     if (single_stack != NULL) {
@@ -2666,7 +2691,6 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
         struct action *actions = get_actions (g, set, term, &actions_num);
         if (actions_num != 1) {
           single_stack = NULL;
-          one_stack_p = actions_num == 0;
           goto multi_stack;
         }
 #ifndef NO_GP_DEBUG_PRINT
@@ -2676,7 +2700,6 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
           struct rule *r = actions[0].u.rule;
           if (r->guard_num >= 0 && g->rule_guard != NULL
               && !g->rule_guard (r->guard_num, g->rule_guard_arg)) {
-            one_stack_p = false;
             goto multi_stack; /* no actions: goto error recovery */
           }
           set = stack_reduce (g, single_stack, r);
@@ -2700,7 +2723,6 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
         }
       }
     }
-    one_stack_p = false;
   multi_stack: /* error recovery start through this too */
     assert (VLO_LENGTH (g->new_stacks) == 0);
     while (VLO_LENGTH (g->failed_stacks) != 0) {
@@ -2715,7 +2737,7 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
       if (process_term_for_stack (g, curr_stack, term, attr)) shift_p = true;
     }
     if (!shift_p) { /* error: */
-      single_stack = recovery (g, code, attr, one_stack_p);
+      single_stack = recovery (g, code, attr);
       code = token_buff_get (g, (ptrdiff_t) g->curr_buff_token_ind - 1, &attr); /* last read token */
     }
     assert (VLO_LENGTH (g->new_stacks) != 0 && VLO_LENGTH (g->curr_stacks) == 0);
@@ -2724,11 +2746,11 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
     if (merge_stacks (g, &g->curr_stacks)) {
 #ifndef NO_GP_DEBUG_PRINT
       if (UNLIKELY (g->debug_level > 4))
-        print_stacks (stderr, "  Parsing stacks after node merging", &g->curr_stacks, 0);
+        print_stacks (stderr, "+++Parsing stacks after node merging", &g->curr_stacks, 0);
 #endif
     } else {
 #ifndef NO_GP_DEBUG_PRINT
-      if (UNLIKELY (g->debug_level > 4)) print_stacks (stderr, "  New parsing stacks", &g->curr_stacks, 0);
+      if (UNLIKELY (g->debug_level > 4)) print_stacks (stderr, "+++New parsing stacks", &g->curr_stacks, 0);
 #endif
     }
     if (code == END_MARKER_CODE) {

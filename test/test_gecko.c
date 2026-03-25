@@ -150,14 +150,17 @@ static void test_syntax_error (int err_tok_num, void *err_tok_attr, int start_ig
              start_ignored_tok_num);
 }
 #else
+
+#ifndef FNAME
+#define FNAME ""
+#endif
 static void test_syntax_error (const char *err_nonterm, bool after_p, const char *err_tok_repr,
-                               void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
-                               void *stop_tok_attr GP_UNUSED) {
-  if (stop_tok_repr == NULL)
-    fprintf (stderr, "Syntax error %s %s on token %s\n", after_p ? "after" : "in", err_nonterm, err_tok_repr);
-  else
-    fprintf (stderr, "Syntax error %s %s on token %s and stopping on token %s\n", after_p ? "after" : "in",
-             err_nonterm, err_tok_repr, stop_tok_repr);
+                               void *err_tok_attr, const char *stop_tok_repr, void *stop_tok_attr GP_UNUSED) {
+  fprintf (stderr, "%s:%d: syntax error %s %s on token %s", FNAME, (int) (size_t) err_tok_attr,
+           after_p ? "after" : "in", err_nonterm, err_tok_repr);
+  if (stop_tok_repr != NULL)
+    fprintf (stderr, " and stopping on token %s (ln %d)", stop_tok_repr, (int) (size_t) stop_tok_attr);
+  fprintf (stderr, "\n");
 }
 #endif
 

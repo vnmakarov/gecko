@@ -2437,7 +2437,8 @@ comment(void)
 	int c, c1;
 
 loop:
-	while ((c = input()) != '*' && c != 0);
+	while ((c = input()) != '*' && c != 0)
+	  if (c == '\n') line++;
 
 	if ((c1 = input()) != '/' && c != 0)
 	{

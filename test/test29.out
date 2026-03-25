@@ -1,9 +1,9 @@
 Syntax error in E on token '+' (pos=7) and stopping on token '+' (pos=7)
-     11: ABSTRACT: mult ( 3 7 )
-      3: ABSTRACT: plus ( 1 2 )
+      9: ABSTRACT: plus ( 1 8 )
       1: TERMINAL: code=97, repr='a'
+      8: ABSTRACT: mult ( 2 6 )
       2: TERMINAL: code=97, repr='a'
-      7: ABSTRACT: plus ( 4 5 )
+      6: ABSTRACT: mult ( 4 5 )
       4: TERMINAL: code=97, repr='a'
       5: TERMINAL: code=97, repr='a'
 

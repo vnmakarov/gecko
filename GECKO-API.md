@@ -408,7 +408,7 @@ Set the debug output level (only effective if compiled without `NO_GP_DEBUG_PRIN
 int gp_set_recovery_match(struct grammar *grammar, int n_toks);
 ```
 
-Set how many subsequent tokens must be successfully shifted to confirm that error recovery is complete. Default is 3.
+Set how many subsequent tokens must be successfully shifted to confirm that error recovery is complete. Default is 5.
 
 #### `gp_set_rule_guard`
 
