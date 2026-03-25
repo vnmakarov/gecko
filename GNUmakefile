@@ -149,8 +149,9 @@ simple-test:
 	$(RM) $(BUILD_DIR)/gp-test$(EXE)
 
 leakage-test:
-	$(CC) $(CFLAGS) -I$(SRC_DIR) $(SRC_DIR)/gecko.c $(SRC_DIR)/test/test_gecko.c -o $(BUILD_DIR)/gp-leakage-test$(EXE)
-	$(BUILD_DIR)/gp-leakage-test$(EXE) 1 < $(SRC_DIR)/gecko.c 2>&1 | grep -F -v "Syntax error" && echo +++leakage test is OK
+	$(CC) $(CFLAGS) -DFNAME="\"gecko.c\"" -I$(SRC_DIR) $(SRC_DIR)/gecko.c $(SRC_DIR)/test/test_gecko.c\
+	                -o $(BUILD_DIR)/gp-leakage-test$(EXE)
+	$(BUILD_DIR)/gp-leakage-test$(EXE) 1 < $(SRC_DIR)/gecko.c 2>&1 | grep -F -v "syntax error" && echo +++leakage test is OK
 	$(RM) $(BUILD_DIR)/gp-leakage-test$(EXE)
 	
 more-tests:
