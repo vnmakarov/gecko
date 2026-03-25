@@ -249,5 +249,4 @@ static void parse (void)
     by popping the top elements until the new stack has an action on the current token of the original stack
   * We stop error recovery when we have a minimal cost stack that successfully consumed a given number (defined by
     `gp_set_recovery_match`) of tokens without a gap or when we have a final stack that consumed `EOF`
-  * The minimal cost stacks (or one minimal cost stack if we have one stack before the error recovery)
-    become the start stacks after the recovery
+  * All stacks that matched at least one token become the start stacks after the recovery

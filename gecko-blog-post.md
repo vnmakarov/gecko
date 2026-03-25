@@ -256,11 +256,11 @@ reduce on), Gecko's recovery algorithm kicks in:
 
 2. **Find minimal-cost success.** Recovery succeeds when a candidate stack
    successfully consumes a configurable number of consecutive tokens
-   (default: 3, can be changed via `gp_set_recovery_match`) without encountering
+   (default: 5, can be changed via `gp_set_recovery_match`) without encountering
    another error, or when a candidate reaches EOF.
 
-3. **Resume normal parsing.** The minimal-cost stack(s) become the new
-   starting point for continued parsing.
+3. **Resume normal parsing.** All stacks that matched at least one token
+   become the new starting point for continued parsing.
 
 ### The key guarantee
 
@@ -554,7 +554,7 @@ readable form (e.g., nonterminal `stmt` used in grammar into `statement`).
 gp_set_recovery_match(g, 5);  // Require 5 consecutive tokens after recovery
 ```
 
-The default is 3. Higher values produce more conservative recovery (fewer
+The default is 5. Higher values produce more conservative recovery (fewer
 false recoveries, but potentially more tokens skipped). The optimal value
 depends on your grammar and expected input.
 
