@@ -92,16 +92,16 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   struct set *eof_set; /* set with situation axiom: start . $eof */
   struct set *new_set; /* set being created: defined only when new_set_ready_p is true */
-  /* The following says that new_set its members are defined. Before this the access
+  /* The following says that new_set and its members are defined. Before this the access
      to data of the set being formed are possible only through the following variables. */
   bool new_set_ready_p;
-  /* To optimize code we use the following variables to access to data of new set. They are always defined
+  /* To optimize code we use the following variables to access data of new set. They are always defined
      and correspondingly situations and the current number of start situations of the set being formed. */
   struct sit **new_sits;
   size_t new_n_start_sits;
   size_t n_sets, n_sets_start_sits;         /* # of unique sets and their start situations */
   size_t n_goto_vects, n_goto_vect_len;     /* goto vects and their length */
-  size_t n_actions;                         /* actions number*/
+  size_t n_actions;                         /* actions number */
   size_t n_action_vects, n_action_vect_len; /* action vects and their length */
   os_t set_sits_os;                         /* container of situations of being formed sets */
   os_t sets_os;                             /* container of sets */
@@ -194,7 +194,7 @@ struct symb {       /* symbol of the grammar: */
   bool term_p;       /* true if it is a terminal */
   bool access_p;     /* true if the symbol is accessible (derived) from the axiom */
   bool derivation_p; /* true if it is a term or it is a nonterm which derives a term string */
-  bool empty_p;      /* true if it is nonterminal which may derivate empty string */
+  bool empty_p;      /* true if it is nonterminal which may derive empty string */
   int num;           /* order number of the symbol */
 };
 
@@ -229,7 +229,7 @@ static bool symb_code_eq (hash_table_entry_t s1, hash_table_entry_t s2) {
   return symb1->u.term.code == symb2->u.term.code;
 }
 
-/* Initialize work with symbols and returns storage for the symbols. */
+/* Initialize work with symbols and return storage for the symbols. */
 static struct symbs *symb_init (struct grammar *g) {
   void *mem = gp_malloc (g->alloc, sizeof (struct symbs));
   struct symbs *result = (struct symbs *) mem;
@@ -273,7 +273,7 @@ static FORCE_INLINE struct symb *term_find_by_code (struct grammar *g, int code)
   return symb;
 }
 
-/* Create new terminal symbol and return reference for it. The symbol should be not in the tables.
+/* Create new terminal symbol and return reference for it. The symbol should not be in the tables.
    The function should create own copy of name for the new symbol. */
 static struct symb *symb_add_term (struct grammar *g, const char *name, int code, int priority,
                                    enum gp_assoc assoc) {
@@ -343,8 +343,8 @@ static struct symb *term_get (struct grammar *g, int n) { /* return N-th term (i
   return symb;
 }
 
-static struct symb *nonterm_get (struct grammar *g,
-                                 int n) { /* return N-th symbol (if any) or NULL otherwise */
+/* Return N-th nonterm (if any) or NULL otherwise. */
+static struct symb *nonterm_get (struct grammar *g, int n) {
   if (n < 0 || (VLO_LENGTH (g->symbs->nonterms_vlo) / sizeof (struct symb *) <= (size_t) n)) return NULL;
   struct symb *symb = ((struct symb **) VLO_BEGIN (g->symbs->nonterms_vlo))[n];
   assert (!symb->term_p && symb->u.nonterm.nonterm_num == n);
@@ -361,9 +361,9 @@ static void symb_print (FILE *f, struct symb *symb, int code_p) {
 
 #endif /* #ifndef NO_GP_DEBUG_PRINT */
 
-#define TERM_CODE_TRANS_VECT_SIZE 10000
+#define TERM_CODE_TRANS_VECT_SIZE 10000 /* Max length of vector: terminal code->terminal symbol */
 
-static void symb_finish_adding_terms (struct grammar *g) {
+static void symb_finish_adding_terms (struct grammar *g) { /* Set up term_code_trans_vect */
   int i, max_code, min_code;
   struct symb *symb;
   for (min_code = max_code = i = 0; (symb = term_get (g, i)) != NULL; i++) {
@@ -485,8 +485,8 @@ static inline term_set_el_t *term_set_from_table (struct grammar *g, int num) {
 }
 
 #ifndef NO_GP_DEBUG_PRINT
-static void term_set_print (struct grammar *g, FILE *f,
-                            term_set_el_t *set) { /* print terminal SET into file F */
+/* print terminal SET into file F */
+static void term_set_print (struct grammar *g, FILE *f, term_set_el_t *set) {
   for (int i = 0; i < g->symbs->n_terms; i++)
     if (term_set_test (g, set, i)) {
       fprintf (f, " ");
@@ -495,8 +495,8 @@ static void term_set_print (struct grammar *g, FILE *f,
 }
 #endif
 
-static void term_set_fin (struct grammar *g,
-                          struct term_sets *term_sets) { /* finalize work with terminal sets */
+/* Finalize work with terminal sets. */
+static void term_set_fin (struct grammar *g, struct term_sets *term_sets) {
   if (term_sets == NULL) return;
   VLO_DELETE (term_sets->tab_term_set_vlo);
   OS_DELETE (term_sets->term_set_os);
@@ -531,7 +531,7 @@ struct rule {                 /* rule of the grammar: */
 };
 
 struct rules {             /* container for the abstract data */
-  int n_rules, n_rhs_lens; /* number of all rules and their summary rhs length */
+  int n_rules, n_rhs_lens; /* number of all rules and their total rhs length */
   struct rule *first_rule; /* the first rule */
   struct rule *curr_rule;  /* rule being formed */
   vlo_t rules_vlo;         /* all references to rules are placed in this object: */
@@ -552,7 +552,7 @@ static struct rules *rule_init (struct grammar *g) {
   return result;
 }
 
-/* Create new rule with LHS empty rhs. */
+/* Create new rule with LHS, empty rhs, and abstract node name ANODE, and GUARD_NUM. */
 static struct rule *rule_new_start (struct grammar *g, struct symb *lhs, const char *anode, int guard_num) {
   struct rule *rule;
   struct symb *empty;
@@ -604,7 +604,7 @@ static void rule_new_symb_add (struct grammar *g, struct symb *symb) {
   g->rules->n_rhs_lens++;
 }
 
-/* Create and initialize situation cache (it should be called at end of forming each rule).  */
+/* Create and initialize situation cache (it should be called at the end of forming each rule).  */
 static void rule_new_stop (struct grammar *g) {
   int i;
 
@@ -615,12 +615,11 @@ static void rule_new_stop (struct grammar *g) {
   for (i = 0; i < g->rules->curr_rule->rhs_len; i++) g->rules->curr_rule->order[i] = -1;
 }
 
-static struct rule *rule_get (struct grammar *g, int num) {
+#ifndef NO_GP_DEBUG_PRINT
+static struct rule *rule_get (struct grammar *g, int num) { /* return NUM-th rule */
   assert (VLO_LENGTH (g->rules->rules_vlo) > sizeof (struct rule *) * (size_t) num);
   return ((struct rule **) VLO_BEGIN (g->rules->rules_vlo))[num];
 }
-
-#ifndef NO_GP_DEBUG_PRINT
 
 /* Print RULE with its translation (if TRANS_P) to file F. */
 static void rule_print (FILE *f, struct rule *rule, bool trans_p, bool newln_p) {
@@ -758,23 +757,22 @@ static void sit_fin (struct grammar *g) { /* Finalize work with situations. */
   OS_DELETE (g->sits_os);
 }
 
-struct action_desc {
-  unsigned actions_num;   /* number of actions for given nonterm */
+struct action_desc {      /* description of LR set actions on some term: */
+  unsigned actions_num;   /* number of actions for given term */
   unsigned actions_start; /* index of first term action, defined for actions_num != 0 */
 };
 
-struct action {
-  bool shift_p;
+struct action { /* a LR set action: */
+  bool shift_p; /* true if action is a shift, otherwise it is a reduce */
   int term_num; /* action on given term */
   union {
-    struct set *set; /* shift set */
-    struct rule *rule;
+    struct set *set;   /* result set on shift */
+    struct rule *rule; /* rule for reduce */
   } u;
 };
 
 /* This page is abstract data `sets'. */
 
-typedef unsigned short trans_el_t;
 struct set {                      /* the grammar state: */
   size_t num;                     /* unique number of the state */
   size_t n_start_sits, n_sits;    /* numbers of (start) situations in the following array */
@@ -786,8 +784,7 @@ struct set {                      /* the grammar state: */
   struct action *actions;         /* action number -> action */
 };
 
-/* Hash of set. */
-static uint64_t set_hash (hash_table_entry_t s) {
+static uint64_t set_hash (hash_table_entry_t s) { /* hash of set */
   struct set *set = (struct set *) s;
   return sits_hash (set->n_start_sits, set->sits);
 }
@@ -815,6 +812,7 @@ static void set_init (struct grammar *g) { /* initialize work with sets: */
   g->n_actions = g->n_action_vects = g->n_action_vect_len = 0;
 }
 
+/* Return vector of actions for SET on TERM, set up actions number via ACTIONS_NUM. */
 static FORCE_INLINE struct action *get_actions (struct grammar *g, struct set *set, int term,
                                                 unsigned *actions_num) {
   assert (term >= 0 && term < g->symbs->n_terms);
@@ -850,8 +848,8 @@ static inline void set_new_add_nonstart_sit (struct grammar *g, struct sit *sit)
   g->new_sits[g->new_set->n_sits++] = sit;
 }
 
-/* The new set should contain only start situations.  Insert set into the set table new_set will be
-   set to the table set. If the function returns true then there was no such table set yet. */
+/* The new set should contain only start situations.  Insert set into the set table.  new_set will be
+   set to the table set.  If the function returns true then there was no such table set yet. */
 static bool set_insert (struct grammar *g) {
   OS_TOP_EXPAND (g->sets_os, sizeof (struct set));
   g->new_set = (struct set *) OS_TOP_BEGIN (g->sets_os);
@@ -892,9 +890,7 @@ static void *set_calloc (struct grammar *g, size_t size) { /* allocate and store
 }
 
 #ifndef NO_GP_DEBUG_PRINT
-
-/* Print SET to file F. If NONSTART_P is true then print all situations. The situations are printed
-   with the lookahead set if LOOKAHEAD_P. */
+/* Print SET to file F. If NONSTART_P is true then print all situations. */
 static void set_print (struct grammar *g, FILE *f, struct set *set, bool nonstart_p) {
   ptrdiff_t num;
   size_t n_start_sits, n_sits;
@@ -923,7 +919,6 @@ static void set_print (struct grammar *g, FILE *f, struct set *set, bool nonstar
   }
   fprintf (f, "\n");
 }
-
 #endif /* #ifndef NO_GP_DEBUG_PRINT */
 
 static void set_fin (struct grammar *g) { /* finalize work with sets: */
@@ -935,7 +930,6 @@ static void set_fin (struct grammar *g) { /* finalize work with sets: */
 /* Store error CODE and message. The function makes long jump after that. */
 static void error (struct grammar *g, int code, const char *format, ...) {
   va_list arguments;
-
   g->error_code = code;
   va_start (arguments, format);
   vsprintf (g->error_message, format, arguments);
@@ -955,7 +949,7 @@ static void *default_node_merge (struct grammar *g GP_UNUSED, struct gp_tree_nod
 
 static void *parse_alloc_default (size_t size) { return malloc (size); }
 
-static FORCE_INLINE void *parse_alloc (struct grammar *g, size_t size) {
+static FORCE_INLINE void *parse_alloc (struct grammar *g, size_t size) { /* a wrapper with check */
   void *result = g->parse_alloc (size);
   if (result == NULL) error (g, GP_NO_MEMORY, "no memory for parse tree");
   return result;
@@ -963,7 +957,7 @@ static FORCE_INLINE void *parse_alloc (struct grammar *g, size_t size) {
 
 static void parse_free_default (void *mem) { free (mem); }
 
-static FORCE_INLINE void parse_free (struct grammar *g, void *mem) {
+static FORCE_INLINE void parse_free (struct grammar *g, void *mem) { /* a wrapper with check */
   if (mem != NULL && g->parse_free != NULL) g->parse_free (mem);
 }
 
@@ -1139,7 +1133,7 @@ static void check_grammar (struct grammar *g, int strict_p) {
 
 #define END_MARKER_CODE (-1) /* Should be negative. */
 
-static void empty_grammar (struct grammar *g);
+static void empty_grammar (struct grammar *g); /* forward declaration */
 
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p,
@@ -1258,6 +1252,8 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
 
 #include "sgramm.c"
 
+/* Some Gecko API functions: */
+
 gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_alloc_func_t fn) {
   assert (g != NULL);
   if (fn == NULL) error (g, GP_WRONG_ARG, "null parse_alloc func");
@@ -1324,18 +1320,18 @@ static inline void expand_new_start_set (struct grammar *g) {
 #endif
 }
 
-struct symb_sit {
-  struct symb *symb;
-  size_t sit_num;
+struct symb_sit {    /* tuple (symb, SLR-situation): */
+  struct symb *symb; /* symbol after dot in the situation */
+  size_t sit_num;    /* the situation number */
 };
 
-static int symb_sit_cmp (const void *el1, const void *el2) {
+static int symb_sit_cmp (const void *el1, const void *el2) { /* used to sort the tuples by their symbols */
   const struct symb_sit *e1 = (const struct symb_sit *) el1, *e2 = (const struct symb_sit *) el2;
   if (e1->symb == e2->symb) return 0;
   return e1->symb->num - e2->symb->num;
 }
 
-static int action_cmp (const void *el1, const void *el2) {
+static int action_cmp (const void *el1, const void *el2) { /* used to sort actions */
   const struct action *e1 = (const struct action *) el1, *e2 = (const struct action *) el2;
   int diff = e1->term_num - e2->term_num;
   if (diff != 0) return diff;
@@ -1345,7 +1341,7 @@ static int action_cmp (const void *el1, const void *el2) {
 }
 
 #ifndef NO_GP_DEBUG_PRINT
-static void print_action (struct grammar *g, FILE *f, struct action *a) {
+static void print_action (struct grammar *g, FILE *f, struct action *a) { /* Print action A into F */
   struct symb *term = ((struct symb **) VLO_BEGIN (g->symbs->terms_vlo))[a->term_num];
   fprintf (f, "%s : ", term->repr);
   if (a->shift_p) {
@@ -1359,6 +1355,7 @@ static void print_action (struct grammar *g, FILE *f, struct action *a) {
 }
 #endif
 
+/* Remove conflicts in ACTIONS whose initial and final number passed via ACTIONS_NUM. */
 static void remove_priority_conflict_actions (struct grammar *g, struct action *actions,
                                               size_t *actions_num) {
   struct symb *term = term_get (g, actions[0].term_num);
@@ -1390,6 +1387,7 @@ static void remove_priority_conflict_actions (struct grammar *g, struct action *
   *actions_num = new_num;
 }
 
+/* Build SET actions and goto map. */
 static void build_goto_map_and_actions (struct grammar *g, struct set *set) {
   VLO_NULLIFY (g->symb_sits);
   VLO_NULLIFY (g->actions_vlo);
@@ -1505,7 +1503,7 @@ static void build_goto_map_and_actions (struct grammar *g, struct set *set) {
 #endif
 }
 
-static void build_empty_action_map (struct grammar *g) {
+static void build_empty_action_map (struct grammar *g) { /* initialize empty_action_map: */
   g->empty_action_map = set_calloc (g, sizeof (struct action_desc) * (size_t) g->symbs->n_terms);
   for (int i = 0; i < g->symbs->n_terms; i++) {
     g->empty_action_map[i].actions_num = 0;
@@ -1515,7 +1513,7 @@ static void build_empty_action_map (struct grammar *g) {
   g->n_action_vect_len += (size_t) g->symbs->n_terms;
 }
 
-static struct set *build_sets (struct grammar *g) { /* Return the 1st set: */
+static struct set *build_sets (struct grammar *g) { /* build grammar SLR-sets and return the 1st set: */
   build_empty_action_map (g);
   VLO_CREATE (g->sets_vlo, g->alloc, 0);
   set_new_set_start (g);
@@ -1540,7 +1538,7 @@ static struct set *build_sets (struct grammar *g) { /* Return the 1st set: */
   return start_set;
 }
 
-static uint64_t node_hash (hash_table_entry_t n) {
+static uint64_t node_hash (hash_table_entry_t n) { /* hash of parse node N: */
   struct gp_tree_node *node = (struct gp_tree_node *) n;
   uint64_t h;
   switch (node->type) {
@@ -1571,6 +1569,7 @@ static uint64_t node_hash (hash_table_entry_t n) {
   return hash_finish (h);
 }
 
+/* Return true if parse nodes N1 and N2 are equal. */
 static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
   struct gp_tree_node *node1 = (struct gp_tree_node *) n1, *node2 = (struct gp_tree_node *) n2;
   if (node1 == node2) return true;
@@ -1596,12 +1595,12 @@ static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
   }
 }
 
+/* Initialize, clear, and finalize the parse tree nodes table: */
+
 static void tree_nodes_init (struct grammar *g) {
   g->nodes_htab = create_hash_table (g->alloc, 300, node_hash, node_eq_p);
 }
-
 static void tree_nodes_reset (struct grammar *g) { empty_hash_table (g->nodes_htab); }
-
 static void tree_nodes_finish (struct grammar *g) { delete_htab_update_statistics (g, g->nodes_htab); }
 
 #define SWAP(a, b, t) \
@@ -1611,26 +1610,28 @@ static void tree_nodes_finish (struct grammar *g) { delete_htab_update_statistic
     b = t;            \
   } while (false)
 
-struct recovery_info {
+struct recovery_info { /* stack data used for syntax error recovery: */
   union {
     struct {
-      bool after_p;       /* true if error occurred after nonterm */
-      int n_matched_toks; /* number of last matched toks */
-      ptrdiff_t buff_token_ind;
-      ptrdiff_t cost;
-      ptrdiff_t err_ntoks;  /* how many tokens were read before the error token */
-      struct symb *nonterm; /* the most nested nonterm covering the error */
+      bool after_p;             /* true if error occurred after nonterm */
+      int n_matched_toks;       /* number of last matched toks */
+      ptrdiff_t buff_token_ind; /* index of the current input token in the input buffer for the stack */
+      ptrdiff_t cost;           /* cost of the recovery for given stack */
+      ptrdiff_t err_ntoks;      /* how many tokens were read before the error token */
+      /* the topmost nonterm on the stack when error occurred (if after_p) or the most nested nonterm covering
+         the error: */
+      struct symb *nonterm;
     } info;
     struct recovery_info *next; /* used for freed infos */
   } u;
 };
 
-static void recovery_info_init (struct grammar *g) {
+static void recovery_info_init (struct grammar *g) { /* Init work with recovery data: */
   OS_CREATE (g->recovery_infos, g->alloc, 0);
   g->free_recovery_infos = NULL;
 }
 
-static struct recovery_info *recovery_info_get_free (struct grammar *g) {
+static struct recovery_info *recovery_info_get_free (struct grammar *g) { /* get free error recovery data: */
   struct recovery_info *info = g->free_recovery_infos;
   if (info != NULL) {
     g->free_recovery_infos = info->u.next;
@@ -1642,36 +1643,38 @@ static struct recovery_info *recovery_info_get_free (struct grammar *g) {
   return info;
 }
 
-static void recovery_info_free (struct grammar *g, struct recovery_info *info) {
+static void recovery_info_free (struct grammar *g, struct recovery_info *info) { /* free recovery INFO: */
   info->u.next = g->free_recovery_infos;
   g->free_recovery_infos = info;
 }
 
+/* Return new recovery data which is copy of recovery data INFO: */
 static struct recovery_info *recovery_info_copy (struct grammar *g, struct recovery_info *info) {
   struct recovery_info *res = recovery_info_get_free (g);
   *res = *info;
   return res;
 }
 
+/* Finalize work with error recovery data. */
 static void recovery_info_finish (struct grammar *g) { OS_DELETE (g->recovery_infos); }
 
-#define TOKS_BIT_NUM (sizeof (size_t) * 8 - 1)
+#define TOKS_BIT_NUM (sizeof (size_t) * 8 - 1) /* bit field width for ntoks */
 
-typedef struct {
-  bool attr_p : 1;
+typedef struct {               /* the stack element: */
+  bool attr_p : 1;             /* true if ANODE_ATTR refers to the term attribute instead of node */
   size_t ntoks : TOKS_BIT_NUM; /* read tokens before the state */
-  struct set *set;
-  void *anode_attr; /* abstract node or term attr if attr_p */
+  struct set *set;             /* the corresponding SLR-set */
+  void *anode_attr;            /* abstract node or term attr if attr_p */
 } stack_el_t;
 
-struct stack {
-  int ambiguity;
-  size_t num;
-  struct recovery_info *recovery;
-  vlo_t els;
+struct stack {                    /* a parse stack: */
+  int ambiguity;                  /* ambiguity found on the stack */
+  size_t num;                     /* unique stack number */
+  struct recovery_info *recovery; /* stack recovery data */
+  vlo_t els;                      /* container of the stack elements */
 };
 
-static void stack_init (struct grammar *g) {
+static void stack_init (struct grammar *g) { /* initialize work with the stacks: */
   static_assert (TOKS_BIT_NUM < sizeof (size_t) * 8);
   VLO_CREATE (g->free_stacks, g->alloc, 16);
   g->n_stacks = 0;
@@ -1681,13 +1684,11 @@ static void stack_init (struct grammar *g) {
   recovery_info_init (g);
 }
 
-static void stack_vlo_free (struct grammar *g, vlo_t *stack_vlo) {
+static void stack_vlo_free (struct grammar *g, vlo_t *stack_vlo) { /* free all stacks in STACK_VLO: */
   VLO_ADD_MEMORY (g->free_stacks, VLO_BEGIN (*stack_vlo), VLO_LENGTH (*stack_vlo));
 }
 
-static void stack_reset (struct grammar *g GP_UNUSED) {}
-
-static void stack_finish (struct grammar *g) {
+static void stack_finish (struct grammar *g) { /* finish all work with the stacks: */
   for (size_t i = 0; i < VLO_LENGTH (g->free_stacks) / sizeof (struct stack *); i++) {
     struct stack *stack = ((struct stack **) VLO_BEGIN (g->free_stacks))[i];
     VLO_DELETE (stack->els);
@@ -1697,6 +1698,7 @@ static void stack_finish (struct grammar *g) {
   recovery_info_finish (g);
 }
 
+/* Create and return new stack.  For non-null stack BASE, copy all stack data into the new stack. */
 static struct stack *stack_create (struct grammar *g, struct stack *base) {
   struct stack *stack;
   if (VLO_LENGTH (g->free_stacks) == 0) {
@@ -1727,10 +1729,9 @@ static struct stack *stack_create (struct grammar *g, struct stack *base) {
   return stack;
 }
 
-/* Max free stacks to speedup stack allocation */
-#define MAX_FREE_STACKS 200
+#define MAX_FREE_STACKS 200 /* Max free stacks to speedup stack allocation */
 
-static void stack_free (struct grammar *g, struct stack *stack) {
+static void stack_free (struct grammar *g, struct stack *stack) { /* free STACK: */
   if (stack->recovery != NULL) recovery_info_free (g, stack->recovery);
 #ifndef NO_GP_DEBUG_PRINT
   g->n_curr_stack_els -= VLO_LENGTH (stack->els) / sizeof (stack_el_t);
@@ -1743,11 +1744,12 @@ static void stack_free (struct grammar *g, struct stack *stack) {
   }
 }
 
-struct token_buff_el {
-  int code;   /* token code */
-  void *attr; /* token attribute */
+struct token_buff_el { /* element of the input token buffer: */
+  int code;            /* token code */
+  void *attr;          /* token attribute */
 };
 
+/* Allocate and initialize STACK recovery data, use BUFF_TOKEN_IND as index of the current input token. */
 static void stack_init_recovery (struct grammar *g, struct stack *stack, ptrdiff_t buff_token_ind) {
   assert (stack->recovery == NULL);
   stack->recovery = recovery_info_get_free (g);
@@ -1761,12 +1763,13 @@ static void stack_init_recovery (struct grammar *g, struct stack *stack, ptrdiff
   if (UNLIKELY (diff < 0)) stack->recovery->u.info.err_ntoks += diff + 1;
 }
 
-static void stack_free_recovery (struct grammar *g, struct stack *stack) {
+static void stack_free_recovery (struct grammar *g, struct stack *stack) { /* free recovery data of STACK: */
   assert (stack->recovery != NULL);
   recovery_info_free (g, stack->recovery);
   stack->recovery = NULL;
 }
 
+/* Return the number of input tokens in the buffer. */
 static FORCE_INLINE size_t token_buff_len (struct grammar *g) {
   return VLO_LENGTH (g->token_buff) / sizeof (struct token_buff_el);
 }
@@ -1824,7 +1827,7 @@ static int token_read (struct grammar *g, void **attr) {
 }
 
 #ifndef NO_GP_DEBUG_PRINT
-static void token_buff_print (struct grammar *g, FILE *f) {
+static void token_buff_print (struct grammar *g, FILE *f) { /* print the input buffer: */
   for (size_t i = 0; i < VLO_LENGTH (g->token_buff) / sizeof (struct token_buff_el); i++) {
     struct token_buff_el *el = &((struct token_buff_el *) VLO_BEGIN (g->token_buff))[i];
     struct symb *term = term_find_by_code (g, el->code);
@@ -1832,6 +1835,7 @@ static void token_buff_print (struct grammar *g, FILE *f) {
   }
 }
 
+/* Print debug info after reading TERM where the number of current stack is STACKS_NUM. */
 static void print_read (struct grammar *g, FILE *f, struct symb *term, size_t stacks_num) {
   fprintf (f, "--Read %s (%llu, #stacks: %llu, #nodes: all=%llu)", term->repr,
            (unsigned long long) g->read_tokens, (unsigned long long) stacks_num,
@@ -1846,10 +1850,11 @@ static void print_read (struct grammar *g, FILE *f, struct symb *term, size_t st
 }
 #endif
 
+/* Read input tokens and store them in the input buffer until the buffer has MAX_BUFF_IND+1 tokens. */
 static void token_buff_expand (struct grammar *g, size_t max_buff_ind) {
   for (size_t len = token_buff_len (g); len <= max_buff_ind; len++) {
     void *attr;
-    int new_code = token_buff_read (g, &attr);
+    int new_code GP_UNUSED = token_buff_read (g, &attr);
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 2))
       print_read (g, stderr, term_find_by_code (g, new_code),
@@ -1858,19 +1863,21 @@ static void token_buff_expand (struct grammar *g, size_t max_buff_ind) {
   }
 }
 
-static void token_buff_init (struct grammar *g) {
+static void token_buff_init (struct grammar *g) { /* init work with the input buffer: */
   g->curr_buff_token_ind = 0;
   VLO_CREATE (g->token_buff, g->alloc, 0);
 }
 
-static void token_buff_reset (struct grammar *g) {
+static void token_buff_reset (struct grammar *g) { /* clear the input buffer: */
   g->curr_buff_token_ind = 0;
   VLO_NULLIFY (g->token_buff);
 }
 
+/* Finish work with the input buffer. */
 static void token_buff_finish (struct grammar *g) { VLO_DELETE (g->token_buff); }
 
-static void push_init_set (struct grammar *g, struct stack *stack, struct set *set) {
+/* Push element with the grammar start SET to STACK. */
+static void push_init_set (struct grammar *g GP_UNUSED, struct stack *stack, struct set *set) {
   VLO_EXPAND (stack->els, sizeof (stack_el_t));
   stack_el_t *el = &((stack_el_t *) VLO_BOUND (stack->els))[-1];
   el->set = set;
@@ -1883,15 +1890,18 @@ static void push_init_set (struct grammar *g, struct stack *stack, struct set *s
 #endif
 }
 
+/* Return pointer to the top STACK element. */
 static FORCE_INLINE stack_el_t *stack_get_top_el (struct stack *stack) {
   assert (VLO_LENGTH (stack->els) != 0);
   return &((stack_el_t *) VLO_BOUND (stack->els))[-1];
 }
 
+/* Return pointer to the top STACK element set. */
 static FORCE_INLINE struct set *stack_get_top_set (struct stack *stack) {
   return stack_get_top_el (stack)->set;
 }
 
+/* Push an element to the STACK after shift with result SET.  ATTR is attribute of the shift token. */
 static FORCE_INLINE struct set *stack_shift (struct grammar *g, struct stack *stack, struct set *set,
                                              void *attr) {
   assert (set->symb->term_p);
@@ -1931,6 +1941,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int c
   return term_node;
 }
 
+/* Return empty node (GP_NIL), create it if there is no such node yet. */
 static FORCE_INLINE struct gp_tree_node *get_empty_node (struct grammar *g) {
   if (g->empty_node == NULL) {
     g->empty_node = (struct gp_tree_node *) parse_alloc (g, sizeof (struct gp_tree_node));
@@ -1944,11 +1955,13 @@ static FORCE_INLINE struct gp_tree_node *get_empty_node (struct grammar *g) {
   return g->empty_node;
 }
 
+/* Return term node (GP_TERM) for stack element EL referring to the token attribute. */
 static FORCE_INLINE struct gp_tree_node *get_stack_term_node (struct grammar *g, stack_el_t *el) {
   assert (el->attr_p && el->set->symb->term_p);
   return get_term_node (g, el->set->symb->u.term.code, el->anode_attr);
 }
 
+/* Return abstract node (GP_ANODE) with given NAME, and CHILDREN. Create it if necessary.  */
 static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int children_num,
                                        struct gp_tree_node **children) {
   struct gp_tree_node *node = &g->temp_node;
@@ -1972,8 +1985,10 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   return anode;
 }
 
-static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
-                                                 struct gp_tree_node *second, size_t context_num) {
+/* Return alternative node (GP_ALT) if CONTEXT_NUM == 0 or context-dependent alternative node (GP_OPT) with
+   given fields. Create it if necessary. */
+static struct gp_tree_node *get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
+                                              struct gp_tree_node *second, size_t context_num) {
   struct gp_tree_node *node = &g->temp_node;
   if (context_num == 0) {
     node->type = GP_ALT;
@@ -1999,19 +2014,23 @@ static struct gp_tree_node *gp_get_alt_opt_node (struct grammar *g, struct gp_tr
   return res;
 }
 
+/* API: Return alternative node (GP_ALT) with given fields.  Create it if necessary. */
 struct gp_tree_node *gp_get_alt_node (struct grammar *g, struct gp_tree_node *first,
                                       struct gp_tree_node *second) {
-  return gp_get_alt_opt_node (g, first, second, 0);
+  return get_alt_opt_node (g, first, second, 0);
 }
 
+/* API: Return context-dependent alternative node (GP_OPT) with given fields.  Create it if necessary. */
 struct gp_tree_node *gp_get_opt_node (struct grammar *g, struct gp_tree_node *first,
                                       struct gp_tree_node *second, size_t context_num) {
   assert (context_num > 0);
-  return gp_get_alt_opt_node (g, first, second, context_num);
+  return get_alt_opt_node (g, first, second, context_num);
 }
 
-static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, size_t stack_len,
-                                   struct rule *rule) {
+/* Return parse tree node when reducing stack with STACK_ADDR and STACK_LEN for RULE. Allocate and create
+   abstract node, abstract node name, and children term nodes if necessary. */
+static NO_INLINE struct gp_tree_node *get_reduce_node (struct grammar *g, stack_el_t *stack_addr,
+                                                       size_t stack_len, struct rule *rule) {
   int rhs_len = rule->rhs_len;
   if (rule->anode == NULL) {
     assert (rule->trans_len == 1);
@@ -2044,6 +2063,7 @@ static NO_INLINE void *get_transl (struct grammar *g, stack_el_t *stack_addr, si
   return get_anode (g, rule->caller_anode, rule->trans_len, children);
 }
 
+/* Reduce STACK by RULE and create node representing the rule translation if necessary and return it. */
 static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *stack, struct rule *rule) {
   int rhs_len = rule->rhs_len;
   int nonterm_num = rule->lhs_nonterm_num;
@@ -2062,7 +2082,8 @@ static FORCE_INLINE struct set *stack_reduce (struct grammar *g, struct stack *s
   }
   VLO_SHORTEN (stack->els, sizeof (stack_el_t) * (size_t) rhs_len);
   void *anode_attr = get_empty_node (g);
-  if (rule->anode != NULL || rule->trans_len != 0) anode_attr = get_transl (g, stack_addr, stack_len, rule);
+  if (rule->anode != NULL || rule->trans_len != 0)
+    anode_attr = get_reduce_node (g, stack_addr, stack_len, rule);
   assert (anode_attr != NULL);
   struct set *goto_set = set->goto_map[nonterm_num];
   VLO_EXPAND (stack->els, sizeof (stack_el_t));
@@ -2136,7 +2157,7 @@ static void stack_tab_init (struct grammar *g) { /* Initialize work with the sta
   g->stack_htab = create_hash_table (g->alloc, 2 * MERGE_HTAB_THRESHOLD, stack_hash, stack_eq);
 }
 
-static void stack_tab_fin (struct grammar *g) { /* Finalalize work with the stack table. */
+static void stack_tab_fin (struct grammar *g) { /* Finalize work with the stack table. */
   delete_htab_update_statistics (g, g->stack_htab);
 }
 
@@ -2223,7 +2244,7 @@ static FORCE_INLINE bool merge_stacks (struct grammar *g, vlo_t *stacks) { /* me
 
 #ifndef NO_GP_DEBUG_PRINT
 
-static void print_stack_els (FILE *f, struct stack *stack) {
+static void print_stack_els (FILE *f, struct stack *stack) { /* Print stack elements into F: */
   for (size_t i = 0; i < VLO_LENGTH (stack->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
     struct symb *symb = el->set->symb;
@@ -2240,7 +2261,7 @@ static void print_stack_els (FILE *f, struct stack *stack) {
   fprintf (f, "\n");
 }
 
-static void print_stack (FILE *f, struct stack *stack) {
+static void print_stack (FILE *f, struct stack *stack) { /* Print all info about STACK into F: */
   fprintf (f, "      {#%llu}", (unsigned long long) stack->num);
   if (stack->recovery != NULL) {
     struct symb *nonterm = stack->recovery->u.info.nonterm;
@@ -2252,6 +2273,7 @@ static void print_stack (FILE *f, struct stack *stack) {
   print_stack_els (f, stack);
 }
 
+/* Print single STACK elements and ACTION (it is never called in recovery mode). */
 static void print_single_stack (struct grammar *g, FILE *f, struct stack *stack, struct action *action) {
   assert (stack->recovery == NULL);
   fprintf (f, "  Single stack after [");
@@ -2260,6 +2282,7 @@ static void print_single_stack (struct grammar *g, FILE *f, struct stack *stack,
   print_stack_els (f, stack);
 }
 
+/* Print all stacks starting with index START in STACKS. Print TITLE before. */
 static void print_stacks (FILE *f, const char *title, vlo_t *stacks, size_t start) {
   fprintf (f, "%s:\n", title);
   for (size_t i = start; i < VLO_LENGTH (*stacks) / sizeof (struct stack *); i++)
@@ -2267,7 +2290,8 @@ static void print_stacks (FILE *f, const char *title, vlo_t *stacks, size_t star
 }
 #endif
 
-static void set_recovery_nonterm (struct stack *stack, bool reduce_p) {
+/* Update recovery nonterm of STACK after a reduce (if REDUCE_P) or a shift.  */
+static void update_recovery_nonterm (struct stack *stack, bool reduce_p) {
   assert (stack->recovery != NULL);
   stack_el_t *top_el = stack_get_top_el (stack);
   if (reduce_p && (stack->recovery->u.info.nonterm == NULL || stack->recovery->u.info.after_p)
@@ -2287,13 +2311,13 @@ static void set_recovery_nonterm (struct stack *stack, bool reduce_p) {
   }
 }
 
-/* Process START_STACK on term.  Add stacks produces by shifting to new_stacks and failed new stacks
+/* Process START_STACK on term.  Add stacks produced by shifting to new_stacks and failed new stacks
    (reduced but not shifted) to failed stacks. Current stacks are the same after the return.  Return true if
    there is any shifted stack, in other words a new stack.  */
 static bool process_term_for_stack (struct grammar *g, struct stack *start_stack, int term, void *attr) {
   bool shift_p = false;
   size_t len = VLO_LENGTH (g->curr_stacks);
-  size_t new_els_num = VLO_LENGTH (g->new_stacks) / sizeof (struct stack *);
+  size_t new_els_num GP_UNUSED = VLO_LENGTH (g->new_stacks) / sizeof (struct stack *);
   VLO_ADD_MEMORY (g->curr_stacks, &start_stack, sizeof (start_stack));
 #ifndef NO_GP_DEBUG_PRINT
   if (UNLIKELY (g->debug_level > 5)) {
@@ -2334,7 +2358,7 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
         set = stack_reduce (g, stack, action->u.rule);
         if (stack->recovery != NULL) {
           assert (!set->symb->term_p);
-          set_recovery_nonterm (stack, true);
+          update_recovery_nonterm (stack, true);
         }
         VLO_ADD_MEMORY (g->curr_stacks, &stack, sizeof (stack));
       } else { /* shift */
@@ -2346,7 +2370,7 @@ static bool process_term_for_stack (struct grammar *g, struct stack *start_stack
         if (stack->recovery != NULL) {
           stack->recovery->u.info.n_matched_toks++;
           stack->recovery->u.info.buff_token_ind++;
-          set_recovery_nonterm (stack, false);
+          update_recovery_nonterm (stack, false);
         }
       }
     }
@@ -2431,6 +2455,18 @@ static struct stack *recovery_stop (struct grammar *g, struct symb *error_term, 
   return single_stack;
 }
 
+#define MAX_MERGE_AND_TRUNC_STACKS 200 /* maximal stacks number after merge_and_trunc_stacks */
+
+/* Merge stacks with truncation to MAX_MERGE_AND_TRUNC_STACKS. */
+static void merge_and_trunc_stacks (struct grammar *g, vlo_t *stacks) {
+  merge_stacks (g, stacks);
+  while (VLO_LENGTH (*stacks) > MAX_MERGE_AND_TRUNC_STACKS * sizeof (struct stack *)) {
+    struct stack *stack = ((struct stack **) VLO_BOUND (*stacks))[-1];
+    VLO_SHORTEN (*stacks, sizeof (struct stack *));
+    stack_free (g, stack);
+  }
+}
+
 /* Make syntax error recovery and set up final new_stacks and return the final single stack (if there is only
    one stack).
 
@@ -2453,7 +2489,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr) {
   token_buff_add (g, code, attr, false);
   bool stop_p = false;
   do {
-    merge_stacks (g, &g->failed_stacks);
+    merge_and_trunc_stacks (g, &g->failed_stacks);
 #ifndef NO_GP_DEBUG_PRINT
     if (UNLIKELY (g->debug_level > 3))
       print_stacks (stderr, "+++Failed recovery stacks", &g->failed_stacks, 0);
@@ -2535,7 +2571,7 @@ static struct stack *recovery (struct grammar *g, int code, void *attr) {
       }
     }
     if (eof_stack != NULL) stack_free (g, eof_stack);
-    merge_stacks (g, &g->new_stacks);
+    merge_and_trunc_stacks (g, &g->new_stacks);
     bool expand_p = true;
     /* True when eof was reached or a minimal cost stack matched at least recovery_token_matches.  */
     for (size_t i = 0; i < VLO_LENGTH (g->new_stacks) / sizeof (struct stack *); i++) {
@@ -2556,6 +2592,9 @@ static struct stack *recovery (struct grammar *g, int code, void *attr) {
   return recovery_stop (g, error_term, error_attr);
 }
 
+/* Garbage collection of parse tree nodes: */
+
+/* Mark parse node ANODE. */
 static FORCE_INLINE void gc_mark_anode (struct grammar *g, struct gp_tree_node *anode) {
   if (!bitmap_set_bit_p (&g->marked_nodes, anode->num)
       || (anode->type != GP_ANODE && anode->type != GP_ALT && anode->type != GP_OPT))
@@ -2563,6 +2602,7 @@ static FORCE_INLINE void gc_mark_anode (struct grammar *g, struct gp_tree_node *
   VLO_ADD_MEMORY (g->temp_vlo, &anode, sizeof (struct gp_tree_node *));
 }
 
+/* Mark parse all nodes reachable from ANODE. */
 static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
   if (!bitmap_set_bit_p (&g->marked_nodes, anode->num)
       || (anode->type != GP_ANODE && anode->type != GP_ALT && anode->type != GP_OPT))
@@ -2585,6 +2625,7 @@ static void gc_mark_parse_tree (struct grammar *g, struct gp_tree_node *anode) {
   }
 }
 
+/* Mark parse nodes referenced from STACK. */
 static void gc_mark_stack (struct grammar *g, struct stack *stack) {
   for (size_t i = 0; i < VLO_LENGTH (stack->els) / sizeof (stack_el_t); i++) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
@@ -2592,6 +2633,7 @@ static void gc_mark_stack (struct grammar *g, struct stack *stack) {
   }
 }
 
+/* Free all parse nodes not reachable from STACKS. */
 static void gc (struct grammar *g, vlo_t *stacks) {
   assert (g->parse_free != NULL);
 #ifndef NO_GP_DEBUG_PRINT
@@ -2656,8 +2698,7 @@ static void gc (struct grammar *g, vlo_t *stacks) {
 #endif
 }
 
-/* Start threshold to initiate parse tree nodes GC */
-#define GC_START_NODES_THRESHOLD 1000
+#define GC_START_NODES_THRESHOLD 1000 /* Start threshold to initiate parse tree nodes GC */
 
 /* Major function to make parsing. Return true if we parsed successfully. */
 static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **transl) {
@@ -2790,7 +2831,6 @@ finish:
   stack_vlo_free (g, &g->curr_stacks);
   VLO_NULLIFY (g->new_stacks);
   VLO_NULLIFY (g->curr_stacks);
-  stack_reset (g);
   token_buff_reset (g);
   tree_nodes_reset (g);
   return res;
@@ -2798,7 +2838,7 @@ finish:
 
 #ifndef NO_GP_DEBUG_PRINT
 
-struct print_arg {
+struct print_arg { /* parse traverse arg used to print parse tree (DAG): */
   struct grammar *g;
   FILE *f;
 };
@@ -2837,19 +2877,16 @@ static bool print_node (struct gp_tree_node *node, struct gp_tree_node *father G
   return true;
 }
 
-/* Print parse tree with ROOT. */
-static void print_parse (struct grammar *g, FILE *f, struct gp_tree_node *root) {
+/* API: Print parse tree with ROOT. */
+void gp_print_translation (struct grammar *g, FILE *f, struct gp_tree_node *root) {
   struct print_arg arg = {g, f};
   gp_traverse_tree (g, root, print_node, NULL, &arg);
   fprintf (f, "\n");
 }
 
-void gp_print_translation (struct grammar *g, FILE *f, struct gp_tree_node *root) {
-  print_parse (g, f, root);
-}
-
 #endif
 
+/* API function used for parsing.  It also prints debug info. */
 int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node **root, int *ambiguity,
               void *arg) {
   assert (g != NULL);
@@ -2869,7 +2906,7 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   if (g->debug_level > 0) {
     if (ok_p && g->debug_level > 1) {
       fprintf (stderr, "Translation:\n");
-      print_parse (g, stderr, result);
+      gp_print_translation (g, stderr, result);
     }
     fprintf (stderr, "%sGrammar: #terms = %d, #nonterms = %d, ", *ambiguity != 0 ? "AMBIGUOUS " : "",
              g->symbs->n_terms, g->symbs->n_nonterms);
@@ -2909,11 +2946,12 @@ int gp_parse (struct grammar *g, int (*read) (void **attr), struct gp_tree_node 
   return ok_p ? 0 : g->error_code;
 }
 
-struct traverse_el { /* element of stack used for traversing */
-  bool post_p;       /* the element corresponds to node post-processing */
-  struct gp_tree_node *node, *father;
+struct traverse_el {                  /* element of stack used for traversing: */
+  bool post_p;                        /* the element corresponds to node post-processing */
+  struct gp_tree_node *node, *father; /* parse node and its father */
 };
 
+/* Push on the traverse stack traverse element with NODE, FATHER, and POST_P if necessary.  */
 static FORCE_INLINE void consider_traverse (struct grammar *g, struct gp_tree_node *node,
                                             struct gp_tree_node *father, bool post_p) {
   if (!bitmap_set_bit_p (&g->marked_nodes, node->num)) return; /* already pushed */
@@ -2928,6 +2966,7 @@ static FORCE_INLINE void consider_traverse (struct grammar *g, struct gp_tree_no
   VLO_ADD_MEMORY (g->temp_vlo, &el, sizeof (el)); /* for preorder */
 }
 
+/* API: parse tree traverse function. */
 void gp_traverse_tree (struct grammar *g, struct gp_tree_node *root, gp_preorder_func_t preorder,
                        gp_postorder_func_t postorder, void *arg) {
   if (root == NULL) return;
@@ -2964,7 +3003,7 @@ void gp_traverse_tree (struct grammar *g, struct gp_tree_node *root, gp_preorder
   }
 }
 
-static void grammar_init (struct grammar *g) {
+static void grammar_init (struct grammar *g) { /* initialize grammar G: */
   g->undefined_p = true;
   g->error_code = 0;
   *g->error_message = '\0';
@@ -3000,7 +3039,7 @@ static void grammar_init (struct grammar *g) {
   stack_tab_init (g);
 }
 
-struct grammar *gp_create_grammar (void) { /* Allocate memory for new grammar. */
+struct grammar *gp_create_grammar (void) { /* API: Allocate memory for new grammar. */
   gp_allocator_t *allocator;
 
   allocator = gp_alloc_new (NULL, NULL, NULL, NULL);
@@ -3027,7 +3066,7 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   bitmap_destroy (&g->marked_nodes);
   size_t nodes_num = VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *);
   if (g->parse_free != NULL) {
-    for (size_t i = 0; i < nodes_num; i++) {  // nodes existing in case of an error
+    for (size_t i = 0; i < nodes_num; i++) { /* nodes existing in case of an error */
       struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
       if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
       parse_free (g, node);
@@ -3060,7 +3099,7 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   tree_nodes_finish (g);
 }
 
-void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
+void gp_fin (struct grammar *g) { /* API: free memory allocated for the grammar. */
   if (g != NULL) {
     grammar_finish (g);
     gp_allocator_t *allocator = g->alloc;
@@ -3069,18 +3108,19 @@ void gp_fin (struct grammar *g) { /* Free memory allocated for the grammar. */
   }
 }
 
-static void empty_grammar (struct grammar *g) { /* Make grammar empty. */
+static void empty_grammar (struct grammar *g) { /* make grammar G empty: */
   grammar_finish (g);
   grammar_init (g);
 }
 
+/* Parse tree traverse pre function used to collect all nodes of the parse tree. */
 static bool collect_nodes (struct gp_tree_node *node, struct gp_tree_node *father GP_UNUSED, void *arg) {
   struct grammar *g = arg;
   VLO_ADD_MEMORY (g->temp_nodes_vlo, &node, sizeof (node));
   return true;
 }
 
-void gp_free_tree (struct grammar *g, struct gp_tree_node *root) {
+void gp_free_tree (struct grammar *g, struct gp_tree_node *root) { /* API: free parse tree */
   if (g->parse_free == NULL) return;
   VLO_NULLIFY (g->temp_nodes_vlo);
   gp_traverse_tree (g, root, collect_nodes, NULL, g);
@@ -3195,6 +3235,7 @@ static void use_functions (int argc, char **argv) {
   gp_fin (g);
 }
 
+/* The function imported by Gecko (see comments in the interface file). */
 static int test_read_wrong_token (void **attr) {
   const char input[] = "b";
   ntok++;
@@ -3203,7 +3244,7 @@ static int test_read_wrong_token (void **attr) {
   return -1;
 }
 
-static const char *description
+static const char *description /* the test grammar */
   = "\n"
     "TERM;\n"
     "E : T         # 0\n"
@@ -3216,6 +3257,7 @@ static const char *description
     "  | '(' E ')' # 1\n"
     "  ;\n";
 
+/* Run test for the above grammar */
 static void use_description (int argc, char **argv, int (*read_fn) (void **)) {
   struct grammar *g;
   struct gp_tree_node *root1, *root2;
@@ -3237,7 +3279,7 @@ static void use_description (int argc, char **argv, int (*read_fn) (void **)) {
   gp_fin (g);
 }
 
-static int test_read_ambig (void **attr) {
+static int test_read_ambig (void **attr) { /* function to read token for ambiguous grammar test: */
   const char input[] = "a+a+a+a";
   ntok++;
   *attr = NULL;  // (void *) (ptrdiff_t) ntok;
@@ -3245,7 +3287,7 @@ static int test_read_ambig (void **attr) {
   return -1;
 }
 
-static const char *ambig
+static const char *ambig /* ambiguous grammar */
   = "\n"
     "TERM;\n"
     "E : E '+' E   # plus (0 2)\n"
@@ -3253,12 +3295,12 @@ static const char *ambig
     "  ;\n";
 
 static void *node_merge (struct grammar *g, struct gp_tree_node *node1, struct gp_tree_node *node2,
-                         size_t context_num) {
+                         size_t context_num) { /* node merge for ambiguous grammar: */
   if (context_num == 0) return gp_get_alt_node (g, node2, node1);
   return gp_get_opt_node (g, node2, node1, context_num);
 }
 
-static void use_ambig (int argc, char **argv) {
+static void use_ambig (int argc, char **argv) { /* run test using the ambiguous grammar: */
   struct grammar *g;
   struct gp_tree_node *root;
   int ambiguity;
@@ -3274,7 +3316,7 @@ static void use_ambig (int argc, char **argv) {
   gp_fin (g);
 }
 
-int main (int argc, char **argv) {
+int main (int argc, char **argv) { /* test driver: */
   if (argc <= 1 || atoi (argv[1]) == 1)
     use_description (argc, argv, test_read_token);
   else if (atoi (argv[1]) == 0)
