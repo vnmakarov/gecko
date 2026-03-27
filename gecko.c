@@ -2827,6 +2827,7 @@ finish:
   *ambiguity = final_stack->ambiguity;
   if (g->parse_free != NULL) gc (g, &g->curr_stacks); /* free all unused nodes */
   VLO_NULLIFY (g->all_nodes);
+  stack_vlo_free (g, &g->failed_stacks);
   VLO_NULLIFY (g->failed_stacks);
   stack_vlo_free (g, &g->curr_stacks);
   VLO_NULLIFY (g->new_stacks);
