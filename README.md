@@ -118,12 +118,12 @@ static void parse (void)
 * Test machines:
   * AMD Ryzen 9900X with 64GB memory under Fedora Core 43.
   * Apple M4 with 8GB memory under Fedora Core 41.
-  * Intel 285K with 32GB memory under Fedora Core 42.
+  * Intel 285 with 32GB memory under Fedora Core 42.
   * IBM Power10 with 2TB memory under RHEL10.
 * Tested parsers:
   * Berkeley YACC 1.9
-  * GCC-15.2.1 for AMD9900X and Intel 285K, GCC-14.2.1 for Apple M4, and GCC-11.5.0 for Power10
-  * Clang-21.1.8 for AMD9900X, Clang-20.0.8 for Intel 285K, Clang-19.1.5 for Apple M4, Clang-20.1.8 for Power10
+  * GCC-15.2.1 for AMD9900X and Intel 285, GCC-14.2.1 for Apple M4, and GCC-11.5.0 for Power10
+  * Clang-21.1.8 for AMD9900X, Clang-20.0.8 for Intel 285, Clang-19.1.5 for Apple M4, Clang-20.1.8 for Power10
   * YAEP as of Oct. 2015.
   * [ElkHound](https://github.com/WeiDUorg/elkhound) as of 2019-02-17 (a GLR parser)
 * Bison is claimed to be a GLR parser but I did not manage to use **ambiguous**
@@ -167,7 +167,7 @@ static void parse (void)
 * C grammar
   * First file (**1500K** lines) consisting of 100K sieve functions:
 
-|                      | AMD9900X(sec) | Apple M4(sec)  | Intel 285K(sec) | Power10(sec) | Max Memory MB  |
+|                      | AMD9900X(sec) | Apple M4(sec)  | Intel 285(sec)  | Power10(sec) | Max Memory MB  |
 |----------------------|--------------:|---------------:|----------------:|-------------:|---------------:|
 |gcc -fsyntax-only     |   2.93        |   2.73         |  2.58           |  7.07        |   1144         |
 |gcc -O0               |  43.66        |  49.48         | 45.66           |112.73        |   6200         |
@@ -185,7 +185,7 @@ static void parse (void)
       
   * Second file (~**500K** lines) -- a whole old gcc:
 
-|                      |  AMD9900X(sec) |  Apple M4(sec) | Intel 285K(sec)| Power10(sec)| Max Memory MB  |
+|                      |  AMD9900X(sec) |  Apple M4(sec) | Intel 285 (sec)| Power10(sec)| Max Memory MB  |
 |----------------------|---------------:|---------------:|---------------:|------------:|---------------:|
 |gcc -fsyntax-only     |   0.73         |   0.97         |   0.78         |   1.81      |    283         |
 |gcc -O0               |   8.52         |   8.98         |   8.44         |  19.06      |    881         |
@@ -202,7 +202,7 @@ static void parse (void)
 * Highly ambiguous grammar (E=E+E|a) with abstract tree generation
   * Input is `a(+a){200}`.  In other words, 200 operators `+` are used:
   
-|                      | AMD9900X(sec) | Apple M4(sec) | Intel 285K(sec) | Power10(sec) |Memory (parse only) MB|
+|                      | AMD9900X(sec) | Apple M4(sec) | Intel 285 (sec) | Power10(sec) |Memory (parse only) MB|
 |----------------------|--------------:|--------------:|----------------:|-------------:|---------------------:|
 |ElkHound              |  9.50         |  15.65        |  10.82          |  13.82       |  9.6                 |
 |YAEP                  |  5.53         |   7.67        |   5.77          |  13.40       |  154                 |
