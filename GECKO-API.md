@@ -177,7 +177,7 @@ int gp_read_grammar(struct grammar *g, bool strict_p,
                                               int *guard_num));
 ```
 
-Read terminals and rules into grammar `g` and check it depending on `strict_p`.  Returns zero on success,
+Read terminals and rules into grammar `g`, check the grammar depending on `strict_p`, and build SLR sets.  Returns zero on success,
 or an error code on failure (also available via `gp_error_code` and `gp_error_message`).
 
 **Parameters:**

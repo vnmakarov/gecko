@@ -105,7 +105,7 @@ extern int gp_error_code (struct grammar *g);
 /* Return the error message corresponding to the last occurred error code. */
 extern const char *gp_error_message (struct grammar *g);
 
-/* Read terminals/rules into grammar G and check it depending on STRICT_P.
+/* Read terminals/rules into grammar G, check it depending on STRICT_P, and build SLR sets.
    Returns zero if it is all ok.  Otherwise, returns the error code (also available
    via gp_error_code and gp_error_message).
 

@@ -1133,7 +1133,9 @@ static void check_grammar (struct grammar *g, int strict_p) {
 
 #define END_MARKER_CODE (-1) /* Should be negative. */
 
-static void empty_grammar (struct grammar *g); /* forward declaration */
+/* Forward declaration: */
+static void empty_grammar (struct grammar *g);
+static struct set *build_sets (struct grammar *g);
 
 /* Read terminals/rules. Return error code or 0. Return pointer in G to the grammar. */
 int gp_read_grammar (struct grammar *g, bool strict_p,
@@ -1246,6 +1248,7 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
     }
   }
 #endif
+  g->start_set = build_sets (g);
   g->undefined_p = false;
   return 0;
 }
@@ -2705,7 +2708,6 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
   g->read_tokens = 0;
   g->n_parse_nodes = 1; /* fix one for empty node */
   g->empty_node = NULL;
-  if (g->start_set == NULL) g->start_set = build_sets (g);
   struct stack *single_stack = stack_create (g, NULL);
   VLO_ADD_MEMORY (g->curr_stacks, &single_stack, sizeof (single_stack));
   push_init_set (g, single_stack, g->start_set);

@@ -215,7 +215,7 @@ static void parse (void)
 * Gecko uses custom allocators, hash tables, variable-length objects, and object stacks from accompanying header-only libraries
 * Grammar analysis computes symbol properties (empty, accessible, derives terminals), detects loops, and builds FIRST/FOLLOW
   sets via fixed-point iteration
-* Before starting parsing, Gecko constructs SLR(1) sets of the grammar
+* After analyzing grammar, Gecko constructs SLR(1) sets of the grammar
   * LR items (situations) are memoized -- each unique (rule, position) pair exists once
   * Each SLR set has a goto map (nonterminal → set) and action map (terminal → shift/reduce actions)
   * Priority/associativity conflict resolution is applied the same way for the action map as in YACC
