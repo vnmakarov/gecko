@@ -1,7 +1,7 @@
-     14: ABSTRACT: plus ( 0 13 )
+     16: ABSTRACT: plus ( 0 15 )
       0: EMPTY
-     13: ABSTRACT: mult ( 2 12 )
+     15: ABSTRACT: mult ( 2 13 )
       2: TERMINAL: code=98, repr='b'
-     12: ABSTRACT: plus ( 0 11 )
-     11: TERMINAL: code=100, repr='d'
+     13: ABSTRACT: plus ( 0 12 )
+     12: TERMINAL: code=100, repr='d'
 

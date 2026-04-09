@@ -121,7 +121,6 @@ struct grammar {    /* major structure which stores information about grammar: *
   vlo_t all_nodes;       /* all parse tree nodes */
   bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
 
-  hash_table_t nodes_htab;       /* internal htab for parse nodes to minimize number of allocated nodes */
   struct gp_tree_node temp_node; /* used for insertion of node into the table */
 
   /* Statistic numbers: all parse tree nodes, terminal nodes, abstract and alternative nodes: */
@@ -942,6 +941,9 @@ static void error_func_for_allocate (void *g) { /* Process allocation errors. */
   error (g, GP_NO_MEMORY, "no memory");
 }
 
+static struct gp_tree_node *get_alt_opt_node (struct grammar *, struct gp_tree_node *, struct gp_tree_node *,
+                                              size_t);
+
 static void *default_node_merge (struct grammar *g GP_UNUSED, struct gp_tree_node *node1,
                                  struct gp_tree_node *node2 GP_UNUSED, size_t context_num GP_UNUSED) {
   return node1;
@@ -1541,71 +1543,6 @@ static struct set *build_sets (struct grammar *g) { /* build grammar SLR-sets an
   return start_set;
 }
 
-static uint64_t node_hash (hash_table_entry_t n) { /* hash of parse node N: */
-  struct gp_tree_node *node = (struct gp_tree_node *) n;
-  uint64_t h;
-  switch (node->type) {
-  case GP_TERM:
-    h = hash64 ((uint64_t) node->val.term.code, 2);
-    h = hash_step (h, (uint64_t) node->val.term.attr);
-    break;
-  case GP_ANODE:
-    h = hash (node->val.anode.children,
-              sizeof (struct gp_tree_node *) * (size_t) node->val.anode.children_num, 3);
-    /* name exists in one instance */
-    h = hash_step (h, (uint64_t) node->val.anode.name);
-    break;
-  case GP_ALT:
-    h = hash64 ((uint64_t) node->val.alt.first, 4);
-    h = hash64 ((uint64_t) node->val.alt.second, h);
-    break;
-  case GP_OPT:
-    h = hash64 ((uint64_t) node->val.opt.context_num, 5);
-    h = hash64 ((uint64_t) node->val.opt.first, h);
-    h = hash64 ((uint64_t) node->val.opt.second, h);
-    break;
-  default:
-    assert (node->type == GP_NIL);
-    h = hash64 ((uint64_t) node->val.term.code, 6); /* nil node exists in one instance */
-    break;
-  }
-  return hash_finish (h);
-}
-
-/* Return true if parse nodes N1 and N2 are equal. */
-static bool node_eq_p (hash_table_entry_t n1, hash_table_entry_t n2) {
-  struct gp_tree_node *node1 = (struct gp_tree_node *) n1, *node2 = (struct gp_tree_node *) n2;
-  if (node1 == node2) return true;
-  if (node1->type != node2->type) return false;
-  switch (node1->type) {
-  case GP_TERM:
-    return (node1->val.term.code == node2->val.term.code && node1->val.term.attr == node2->val.term.attr);
-  case GP_ANODE:
-    if (node1->val.anode.children_num != node2->val.anode.children_num) return false;
-    if (node1->val.anode.name != node2->val.anode.name) return false; /* name exists in one instance */
-    return (memcmp (node1->val.anode.children, node2->val.anode.children,
-                    sizeof (struct gp_tree_node *) * (size_t) node1->val.anode.children_num)
-            == 0);
-  case GP_ALT:
-    return (node1->val.alt.first == node2->val.alt.first && node1->val.alt.second == node2->val.alt.second);
-  case GP_OPT:
-    return (node1->val.opt.context_num == node2->val.opt.context_num
-            && node1->val.opt.first == node2->val.opt.first
-            && node1->val.opt.second == node2->val.opt.second);
-  default:
-    assert (false); /* nil node exists in one instance */
-    return false;
-  }
-}
-
-/* Initialize, clear, and finalize the parse tree nodes table: */
-
-static void tree_nodes_init (struct grammar *g) {
-  g->nodes_htab = create_hash_table (g->alloc, 300, node_hash, node_eq_p);
-}
-static void tree_nodes_reset (struct grammar *g) { empty_hash_table (g->nodes_htab); }
-static void tree_nodes_finish (struct grammar *g) { delete_htab_update_statistics (g, g->nodes_htab); }
-
 #define SWAP(a, b, t) \
   do {                \
     t = a;            \
@@ -1926,19 +1863,10 @@ static FORCE_INLINE struct set *stack_shift (struct grammar *g, struct stack *st
 }
 
 static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int code, void *attr) {
-  struct gp_tree_node *node = &g->temp_node;
-  node->type = GP_TERM;
-  node->val.term.code = code;
-  node->val.term.attr = attr;
-  hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
-  struct gp_tree_node *term_node = (struct gp_tree_node *) *entry;
-  if (term_node != NULL) return term_node;
-#if !defined(NO_GP_DEBUG_PRINT)
-  g->n_parse_term_nodes++;
-#endif
-  term_node = parse_alloc (g, sizeof (struct gp_tree_node));
-  *term_node = *node;
-  *entry = term_node;
+  struct gp_tree_node *term_node = parse_alloc (g, sizeof (struct gp_tree_node));
+  term_node->type = GP_TERM;
+  term_node->val.term.code = code;
+  term_node->val.term.attr = attr;
   term_node->num = g->n_parse_nodes++;
   VLO_ADD_MEMORY (g->all_nodes, &term_node, sizeof (struct gp_tree_node *));
   return term_node;
@@ -1951,9 +1879,6 @@ static FORCE_INLINE struct gp_tree_node *get_empty_node (struct grammar *g) {
     g->empty_node->type = GP_NIL;
     g->empty_node->num = 0; /* always zero */
     VLO_ADD_MEMORY (g->all_nodes, &g->empty_node, sizeof (struct gp_tree_node *));
-    hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, g->empty_node, true);
-    assert (*entry == NULL);
-    *entry = g->empty_node;
   }
   return g->empty_node;
 }
@@ -1967,23 +1892,17 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (struct grammar *g,
 /* Return abstract node (GP_ANODE) with given NAME, and CHILDREN. Create it if necessary.  */
 static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int children_num,
                                        struct gp_tree_node **children) {
-  struct gp_tree_node *node = &g->temp_node;
-  node->type = GP_ANODE;
-  node->val.anode.name = name;
-  node->val.anode.children_num = children_num;
-  node->val.anode.children = children;
-  hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
-  struct gp_tree_node *anode = (struct gp_tree_node *) *entry;
-  if (anode != NULL) return anode;
+  struct gp_tree_node *anode = parse_alloc (g, sizeof (struct gp_tree_node));
 #if !defined(NO_GP_DEBUG_PRINT)
   g->n_parse_abstract_nodes++;
 #endif
-  anode = parse_alloc (g, sizeof (struct gp_tree_node));
-  *anode = *node;
+  anode->type = GP_ANODE;
+  anode->val.anode.name = name;
+  anode->val.anode.children_num = children_num;
+  anode->val.anode.children = children;
   anode->num = g->n_parse_nodes++;
   anode->val.anode.children = parse_alloc (g, (size_t) children_num * sizeof (struct gp_tree_node *));
   memcpy (anode->val.anode.children, children, (size_t) children_num * sizeof (struct gp_tree_node *));
-  *entry = anode;
   VLO_ADD_MEMORY (g->all_nodes, &anode, sizeof (struct gp_tree_node *));
   return anode;
 }
@@ -1992,27 +1911,21 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
    given fields. Create it if necessary. */
 static struct gp_tree_node *get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
                                               struct gp_tree_node *second, size_t context_num) {
-  struct gp_tree_node *node = &g->temp_node;
-  if (context_num == 0) {
-    node->type = GP_ALT;
-    node->val.alt.first = first;
-    node->val.alt.second = second;
-  } else {
-    node->val.opt.context_num = (size_t) context_num;
-    node->type = GP_OPT;
-    node->val.opt.first = first;
-    node->val.opt.second = second;
-  }
-  hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
-  struct gp_tree_node *res = (struct gp_tree_node *) *entry;
-  if (res != NULL) return res;
+  struct gp_tree_node *res = parse_alloc (g, sizeof (struct gp_tree_node));
 #ifndef NO_GP_DEBUG_PRINT
   context_num > 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
 #endif
-  res = parse_alloc (g, sizeof (struct gp_tree_node));
-  *res = *node;
+  if (context_num == 0) {
+    res->type = GP_ALT;
+    res->val.alt.first = first;
+    res->val.alt.second = second;
+  } else {
+    res->val.opt.context_num = (size_t) context_num;
+    res->type = GP_OPT;
+    res->val.opt.first = first;
+    res->val.opt.second = second;
+  }
   res->num = g->n_parse_nodes++;
-  *entry = res;
   VLO_ADD_MEMORY (g->all_nodes, &res, sizeof (struct gp_tree_node *));
   return res;
 }
@@ -2671,33 +2584,16 @@ static void gc (struct grammar *g, vlo_t *stacks) {
         }
       }
 #endif
-      remove_element_from_hash_table_entry (g->nodes_htab, node);
       if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
       parse_free (g, node);
     }
   }
   VLO_SHORTEN (g->all_nodes, VLO_LENGTH (g->all_nodes) - last * sizeof (struct gp_tree_node *));
-  if (hash_table_size (g->nodes_htab) > 4 * (size_t) last) { /* decrease nodes htab size */
-#ifndef NO_GP_DEBUG_PRINT
-    if (g->debug_level > 2)
-      fprintf (stderr, "++++GC node htab rebuilding: before size=%u, nodes %llu\n",
-               (unsigned) hash_table_size (g->nodes_htab), (unsigned long long) last);
-#endif
-    delete_htab_update_statistics (g, g->nodes_htab);
-    g->nodes_htab = create_hash_table (g->alloc, 3 * last / 2, node_hash, node_eq_p);
-    for (size_t i = 0; i < last; i++) {
-      struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
-      hash_table_entry_t *entry = find_hash_table_entry (g->nodes_htab, node, true);
-      assert (*entry == NULL);
-      *entry = node;
-    }
-  }
 #ifndef NO_GP_DEBUG_PRINT
   if (g->debug_level > 3 && n != 0) fprintf (stderr, "\n");
   if (g->debug_level > 2)
-    fprintf (stderr, "++++GC finish: before nodes %llu, kept %llu, removed %d; node htab size = %u\n",
-             (unsigned long long) nodes_num, (unsigned long long) last, removed,
-             (unsigned) hash_table_size (g->nodes_htab));
+    fprintf (stderr, "++++GC finish: before nodes %llu, kept %llu, removed %d\n",
+             (unsigned long long) nodes_num, (unsigned long long) last, removed);
 #endif
 }
 
@@ -2835,13 +2731,12 @@ finish:
   VLO_NULLIFY (g->new_stacks);
   VLO_NULLIFY (g->curr_stacks);
   token_buff_reset (g);
-  tree_nodes_reset (g);
   return res;
 }
 
 #ifndef NO_GP_DEBUG_PRINT
 
-struct print_arg { /* parse traverse arg used to print parse tree (DAG): */
+struct print_arg { /* parse traverse arg used to print parse tree: */
   struct grammar *g;
   FILE *f;
 };
@@ -3035,7 +2930,6 @@ static void grammar_init (struct grammar *g) { /* initialize grammar G: */
   g->start_set = NULL;
   stack_init (g);
   token_buff_init (g);
-  tree_nodes_init (g);
   VLO_CREATE (g->curr_stacks, g->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (g->new_stacks, g->alloc, 2 * sizeof (vlo_t));
   VLO_CREATE (g->failed_stacks, g->alloc, 0);
@@ -3099,7 +2993,6 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   VLO_DELETE (g->curr_stacks);
   stack_finish (g);
   token_buff_finish (g);
-  tree_nodes_finish (g);
 }
 
 void gp_fin (struct grammar *g) { /* API: free memory allocated for the grammar. */

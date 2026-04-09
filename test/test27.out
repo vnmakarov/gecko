@@ -1,9 +1,9 @@
 Syntax error in F on token '*' (pos=5) and stopping on token 'a' (pos=6)
-     10: ABSTRACT: plus ( 1 9 )
+     12: ABSTRACT: plus ( 1 11 )
       1: TERMINAL: code=97, repr='a'
-      9: ABSTRACT: mult ( 2 7 )
+     11: ABSTRACT: mult ( 2 8 )
       2: TERMINAL: code=97, repr='a'
-      7: ABSTRACT: plus ( 3 6 )
+      8: ABSTRACT: plus ( 3 7 )
       3: TERMINAL: code=97, repr='a'
-      6: TERMINAL: code=97, repr='a'
+      7: TERMINAL: code=97, repr='a'
 

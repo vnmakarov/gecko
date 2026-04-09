@@ -62,7 +62,7 @@
   * Gecko permits shorter grammars by supporting operator grammars (operator associativity
     and precedence) analogously to YACC/Bison
   * YAEP is faster on highly ambiguous grammars when all possible translations or minimal cost translation
-    are required.  It also generates a much smaller DAG for all possible translations of highly ambiguous grammars
+    are required.  It also generates a much smaller parse tree (DAG) for all possible translations of highly ambiguous grammars
 
 # Gecko usage example:
 

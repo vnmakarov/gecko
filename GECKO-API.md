@@ -526,8 +526,8 @@ void gp_traverse_tree(struct grammar *grammar, struct gp_tree_node *root,
                        void *arg);
 ```
 
-Traverse the parse tree rooted at `root` without using recursion (the parse tree, which in the common
-case is a DAG, can be very unbalanced, so recursive traversal may cause stack overflow). Calls `preorder`
+Traverse the parse tree rooted at `root` without using recursion (the parse tree can be very
+unbalanced, so recursive traversal may cause stack overflow). Calls `preorder`
 and `postorder` functions (if non-NULL) before and after processing all children of each node,
 respectively. `arg` is passed through to both callback functions. If `preorder` returns `false` for a
 node, its children are not processed.
