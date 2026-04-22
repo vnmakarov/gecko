@@ -2,7 +2,8 @@
 
 # Gecko: A standalone GLR parser library
   * Gecko is licensed under the MIT license
-
+  * More details about Gecko can be found in [blogpost](https://vnmakarov.github.io/parsing/compilers/c/open-source/2026/04/22/gecko-glr.html)
+  
 ## Features
 
 * Parse inputs described by **unambiguous and ambiguous grammars**
