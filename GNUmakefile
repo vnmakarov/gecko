@@ -113,6 +113,8 @@ test: gecko-test
 $(BUILD_DIR)/libgecko.$(LIBSUFF): $(BUILD_DIR)/gecko.$(OBJSUFF)
 ifeq ($(OS),Windows_NT)
 	lib -nologo $^ -OUT:$@
+else ifeq ($(UNAME_S),Darwin)
+	libtool -static -o $@ $^
 else
 	$(AR) rcs $@ $^
 endif
