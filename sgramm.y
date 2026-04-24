@@ -313,7 +313,7 @@ int yylex (void *g) {
           char str[100];
 
           if (isprint (c)) {
-            sprintf (str, "invalid input character '%c'", c);
+            snprintf (str, sizeof (str), "invalid input character '%c'", c);
             yyerror (g, str);
           } else
             yyerror (g, "invalid input character");

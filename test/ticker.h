@@ -103,7 +103,7 @@ static inline double active_time (ticker_t ticker) {
 
 static inline const char *active_time_string (ticker_t ticker) {
   static char str[40];
-  sprintf (str, "%.6f", active_time (ticker));
+  snprintf (str, sizeof (str), "%.6f", active_time (ticker));
   return str;
 }
 

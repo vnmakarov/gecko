@@ -440,7 +440,7 @@ static inline void term_set_clear (struct grammar *g, term_set_el_t *set) { /* m
 }
 
 /* Copy SRC into DEST */
-static inline void term_set_copy (struct grammar *g, term_set_el_t *dest, term_set_el_t *src) {
+static inline GP_UNUSED void term_set_copy (struct grammar *g, term_set_el_t *dest, term_set_el_t *src) {
   int size = (g->symbs->n_terms + TERM_SET_EL_BITS - 1) / (TERM_SET_EL_BITS);
   term_set_el_t *bound = dest + size;
   while (dest < bound) *dest++ = *src++;
@@ -478,7 +478,7 @@ static inline int term_set_test (struct grammar *g, term_set_el_t *set, int num)
 }
 
 /* Return set which is in the table with number NUM. */
-static inline term_set_el_t *term_set_from_table (struct grammar *g, int num) {
+static inline GP_UNUSED term_set_el_t *term_set_from_table (struct grammar *g, int num) {
   assert ((size_t) num < VLO_LENGTH (g->term_sets->tab_term_set_vlo) / sizeof (struct tab_term_set *));
   return ((struct tab_term_set **) VLO_BEGIN (g->term_sets->tab_term_set_vlo))[num]->set;
 }
@@ -931,9 +931,8 @@ static void error (struct grammar *g, int code, const char *format, ...) {
   va_list arguments;
   g->error_code = code;
   va_start (arguments, format);
-  vsprintf (g->error_message, format, arguments);
+  vsnprintf (g->error_message, sizeof (g->error_message), format, arguments);
   va_end (arguments);
-  assert (strlen (g->error_message) < GP_MAX_ERROR_MESSAGE_LENGTH);
   longjmp (g->error_longjump_buff, code);
 }
 
@@ -1615,7 +1614,7 @@ struct stack {                    /* a parse stack: */
 };
 
 static void stack_init (struct grammar *g) { /* initialize work with the stacks: */
-  static_assert (TOKS_BIT_NUM < sizeof (size_t) * 8);
+  static_assert (TOKS_BIT_NUM < sizeof (size_t) * 8, "wrong value of TOKS_BIT_NUM");
   VLO_CREATE (g->free_stacks, g->alloc, 16);
   g->n_stacks = 0;
 #ifndef NO_GP_DEBUG_PRINT
@@ -1868,6 +1867,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int c
   term_node->val.term.code = code;
   term_node->val.term.attr = attr;
   term_node->num = g->n_parse_nodes++;
+  g->n_parse_term_nodes++;
   VLO_ADD_MEMORY (g->all_nodes, &term_node, sizeof (struct gp_tree_node *));
   return term_node;
 }
@@ -1899,7 +1899,6 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   anode->type = GP_ANODE;
   anode->val.anode.name = name;
   anode->val.anode.children_num = children_num;
-  anode->val.anode.children = children;
   anode->num = g->n_parse_nodes++;
   anode->val.anode.children = parse_alloc (g, (size_t) children_num * sizeof (struct gp_tree_node *));
   memcpy (anode->val.anode.children, children, (size_t) children_num * sizeof (struct gp_tree_node *));
@@ -2211,7 +2210,7 @@ static void update_recovery_nonterm (struct stack *stack, bool reduce_p) {
   assert (stack->recovery != NULL);
   stack_el_t *top_el = stack_get_top_el (stack);
   if (reduce_p && (stack->recovery->u.info.nonterm == NULL || stack->recovery->u.info.after_p)
-      && top_el->ntoks <= stack->recovery->u.info.err_ntoks) {
+      && top_el->ntoks <= (size_t) stack->recovery->u.info.err_ntoks) {
     stack->recovery->u.info.after_p = false;
     stack->recovery->u.info.nonterm = top_el->set->symb;
     return;
@@ -2219,7 +2218,7 @@ static void update_recovery_nonterm (struct stack *stack, bool reduce_p) {
   if (stack->recovery->u.info.nonterm != NULL) return;
   for (ptrdiff_t i = (ptrdiff_t) (VLO_LENGTH (stack->els) / sizeof (stack_el_t)) - 1; i >= 0; i--) {
     stack_el_t *el = &((stack_el_t *) VLO_BEGIN (stack->els))[i];
-    if (!el->set->symb->term_p && el->ntoks <= stack->recovery->u.info.err_ntoks) {
+    if (!el->set->symb->term_p && el->ntoks <= (size_t) stack->recovery->u.info.err_ntoks) {
       stack->recovery->u.info.after_p = true;
       stack->recovery->u.info.nonterm = el->set->symb;
       break;
@@ -2711,7 +2710,6 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
 #endif
   }
 finish:
-  bool res = false;
   assert (VLO_LENGTH (g->curr_stacks) == sizeof (struct stack *));
   struct stack *final_stack = ((struct stack **) VLO_BEGIN (g->curr_stacks))[0];
   struct set *set = stack_get_top_set (final_stack);
@@ -2721,7 +2719,6 @@ finish:
   stack_el_t *el = &((stack_el_t *) VLO_BEGIN (final_stack->els))[1];
   assert (!el->attr_p);
   *transl = (struct gp_tree_node *) el->anode_attr;
-  res = true;
   *ambiguity = final_stack->ambiguity;
   if (g->parse_free != NULL) gc (g, &g->curr_stacks); /* free all unused nodes */
   VLO_NULLIFY (g->all_nodes);
@@ -2731,7 +2728,7 @@ finish:
   VLO_NULLIFY (g->new_stacks);
   VLO_NULLIFY (g->curr_stacks);
   token_buff_reset (g);
-  return res;
+  return true;
 }
 
 #ifndef NO_GP_DEBUG_PRINT
