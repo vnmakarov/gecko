@@ -123,8 +123,7 @@ GP_BUILD:=$(GP_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.$(OBJSUFF))
 
 $(GP_BUILD): $(BUILD_DIR)/sgramm.c
 $(BUILD_DIR)/sgramm.c: $(SRC_DIR)/sgramm.y
-	$(YACC) $(SRC_DIR)/sgramm.y
-	mv y.tab.c $@
+	$(YACC) -o $@ $< 2>/dev/null || ($(YACC) $< && mv y.tab.c $@)
 
 .PHONY: clean-gecko
 clean-gecko:

@@ -7,6 +7,7 @@
    read_rule imported by Gecko (GLR parser).  */
 
 %{
+#include <stdio.h>
 #include <ctype.h>
 #include <assert.h>
 
@@ -33,11 +34,6 @@
 #define yycheck gp_yycheck
 #define yyss gp_yyss
 #define yyvs gp_yyvs
-
-#define YYLEX_PARAM g
-#define YYPARSE_PARAM g
-#define YYERROR_DECL() yyerror(void *, const char *s)
-#define YYERROR_CALL(msg) yyerror(g, msg)
 
 /* The following structure describes syntax grammar terminal. */
   struct sterm {
@@ -83,11 +79,15 @@
   static char *slhs;
 
   /* Forward declarations. */
-  extern int yyerror (void *arg, const char *str);
+  static void add_assoc (const char *repr, int priority, enum gp_assoc assoc);
+  extern int yyerror (void *g, const char *str);
   extern int yylex (void *);
   extern int yyparse (void *);
 
 %}
+
+%parse-param {void *g}
+%lex-param {void *g}
 
 %union {
   void *ref;
