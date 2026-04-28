@@ -2675,6 +2675,8 @@ static bool parse (struct grammar *g, int *ambiguity, struct gp_tree_node **tran
       if (process_term_for_stack (g, curr_stack, term, attr)) shift_p = true;
     }
     if (!shift_p) { /* error: */
+      if (VLO_LENGTH (g->failed_stacks) == 0)
+        error (g, GP_BAD_RULE_GUARDS, "grammar is overconstrained by rule guards -- can do nothing");
       single_stack = recovery (g, code, attr);
       code = token_buff_get (g, (ptrdiff_t) g->curr_buff_token_ind - 1, &attr); /* last read token */
     }
