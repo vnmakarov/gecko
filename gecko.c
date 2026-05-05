@@ -114,6 +114,9 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   struct set *start_set; /* start set of the grammar */
 
+  os_t anode_name_code_os;          /* container for anode_name_code structures  */
+  hash_table_t anode_name_code_tab; /* table of anode_name_code structures  */
+
   void *rule_guard_arg; /* arg passed to rule guards */
 
   size_t contexts_num; /* last context number */
@@ -526,7 +529,8 @@ struct rule {                 /* rule of the grammar: */
      symbols and right hand side symbols of the rules are stored in array. Then the following member
      is index of the rule lhs in the array. */
   int rule_start_offset;
-  char *caller_anode; /* the same string as anode but memory allocated in parse_alloc */
+  char *caller_anode;    /* the same string as anode but memory allocated in parse_alloc */
+  int caller_anode_code; /* corresponding code */
 };
 
 struct rules {             /* container for the abstract data */
@@ -1254,6 +1258,58 @@ int gp_read_grammar (struct grammar *g, bool strict_p,
   return 0;
 }
 
+struct anode_name_code {
+  const char *name; /* key */
+  int code;
+};
+
+static uint64_t anode_name_code_hash (hash_table_entry_t a) { /* return hash of anode code */
+  const char *str = ((struct anode_name_code *) a)->name;
+  return hash (str, strlen (str), 42);
+}
+
+static bool anode_name_code_eq (hash_table_entry_t a1, hash_table_entry_t a2) { /* Equality of anode code. */
+  return strcmp (((struct anode_name_code *) a1)->name, ((struct anode_name_code *) a2)->name) == 0;
+}
+
+/* Get code (used aux node of gp_tree_node) for anode with NAME.  By default the code is -1.  */
+static int get_anode_code (struct grammar *g, const char *name) {
+  struct anode_name_code anode_name_code, *tab_el;
+  anode_name_code.name = name;
+  tab_el
+    = (struct anode_name_code *) *find_hash_table_entry (g->anode_name_code_tab, &anode_name_code, false);
+  return tab_el == NULL ? -1 : tab_el->code;
+}
+
+/* Set code (used aux node of gp_tree_node) for anode with NAME.  By default the code is -1.  */
+void gp_set_anode_code (struct grammar *g, const char *name, int code) {
+  assert (g != NULL);
+  struct anode_name_code anode_name_code;
+  anode_name_code.name = name;
+  hash_table_entry_t *entry = find_hash_table_entry (g->anode_name_code_tab, &anode_name_code, true);
+  if (*entry != NULL) { /* redefine code */
+    ((struct anode_name_code *) *entry)->code = code;
+  } else {
+    OS_TOP_ADD_MEMORY (g->anode_name_code_os, name, strlen (name) + 1);
+    anode_name_code.name = OS_TOP_BEGIN (g->anode_name_code_os);
+    OS_TOP_FINISH (g->anode_name_code_os);
+    anode_name_code.code = code;
+    OS_TOP_ADD_MEMORY (g->anode_name_code_os, &anode_name_code, sizeof (struct anode_name_code));
+    *entry = OS_TOP_BEGIN (g->anode_name_code_os);
+    OS_TOP_FINISH (g->anode_name_code_os);
+  }
+}
+
+static void anode_name_code_tab_init (struct grammar *g) {
+  OS_CREATE (g->anode_name_code_os, g->alloc, 0);
+  g->anode_name_code_tab = create_hash_table (g->alloc, 300, anode_name_code_hash, anode_name_code_eq);
+}
+
+static void anode_name_code_tab_fin (struct grammar *g) {
+  OS_DELETE (g->anode_name_code_os);
+  delete_hash_table (g->anode_name_code_tab);
+}
+
 #include "sgramm.c"
 
 /* Some Gecko API functions: */
@@ -1864,6 +1920,7 @@ static FORCE_INLINE struct set *stack_shift (struct grammar *g, struct stack *st
 static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int code, void *attr) {
   struct gp_tree_node *term_node = parse_alloc (g, sizeof (struct gp_tree_node));
   term_node->type = GP_TERM;
+  term_node->aux = -1;
   term_node->val.term.code = code;
   term_node->val.term.attr = attr;
   term_node->num = g->n_parse_nodes++;
@@ -1877,6 +1934,7 @@ static FORCE_INLINE struct gp_tree_node *get_empty_node (struct grammar *g) {
   if (g->empty_node == NULL) {
     g->empty_node = (struct gp_tree_node *) parse_alloc (g, sizeof (struct gp_tree_node));
     g->empty_node->type = GP_NIL;
+    g->empty_node->aux = -1;
     g->empty_node->num = 0; /* always zero */
     VLO_ADD_MEMORY (g->all_nodes, &g->empty_node, sizeof (struct gp_tree_node *));
   }
@@ -1889,14 +1947,15 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (struct grammar *g,
   return get_term_node (g, el->set->symb->u.term.code, el->anode_attr);
 }
 
-/* Return abstract node (GP_ANODE) with given NAME, and CHILDREN. Create it if necessary.  */
-static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int children_num,
+/* Return abstract node (GP_ANODE) with given NAME, CODE, and CHILDREN. Create it if necessary.  */
+static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int code, int children_num,
                                        struct gp_tree_node **children) {
   struct gp_tree_node *anode = parse_alloc (g, sizeof (struct gp_tree_node));
 #if !defined(NO_GP_DEBUG_PRINT)
   g->n_parse_abstract_nodes++;
 #endif
   anode->type = GP_ANODE;
+  anode->aux = code;
   anode->val.anode.name = name;
   anode->val.anode.children_num = children_num;
   anode->num = g->n_parse_nodes++;
@@ -1911,6 +1970,7 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
 static struct gp_tree_node *get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
                                               struct gp_tree_node *second, size_t context_num) {
   struct gp_tree_node *res = parse_alloc (g, sizeof (struct gp_tree_node));
+  res->aux = -1;
 #ifndef NO_GP_DEBUG_PRINT
   context_num > 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
 #endif
@@ -1962,6 +2022,7 @@ static NO_INLINE struct gp_tree_node *get_reduce_node (struct grammar *g, stack_
     rule->caller_anode = ((char *) parse_alloc (g, strlen (rule->anode) + 1));
     VLO_ADD_MEMORY (g->caller_anode_names, &rule->caller_anode, sizeof (rule->caller_anode));
     strcpy (rule->caller_anode, rule->anode);
+    rule->caller_anode_code = get_anode_code (g, rule->anode);
   }
   VLO_NULLIFY (g->temp_nodes_vlo);
   VLO_EXPAND (g->temp_nodes_vlo, sizeof (struct gp_tree_node *) * (size_t) rule->trans_len);
@@ -1975,7 +2036,7 @@ static NO_INLINE struct gp_tree_node *get_reduce_node (struct grammar *g, stack_
     if (el->attr_p) anode = get_stack_term_node (g, el);
     children[disp] = anode;
   }
-  return get_anode (g, rule->caller_anode, rule->trans_len, children);
+  return get_anode (g, rule->caller_anode, rule->caller_anode_code, rule->trans_len, children);
 }
 
 /* Reduce STACK by RULE and create node representing the rule translation if necessary and return it. */
@@ -2927,6 +2988,7 @@ static void grammar_init (struct grammar *g) { /* initialize grammar G: */
   VLO_CREATE (g->actions_vlo, g->alloc, 16);
   VLO_CREATE (g->temp_nodes_vlo, g->alloc, 16);
   g->start_set = NULL;
+  anode_name_code_tab_init (g);
   stack_init (g);
   token_buff_init (g);
   VLO_CREATE (g->curr_stacks, g->alloc, 2 * sizeof (vlo_t));
@@ -2982,6 +3044,7 @@ static void grammar_finish (struct grammar *g) { /* Free memory allocated for th
   symb_fin (g, g->symbs);
   set_fin (g);
   sit_fin (g);
+  anode_name_code_tab_fin (g);
   stack_tab_fin (g);
   VLO_DELETE (g->symb_sits);
   VLO_DELETE (g->actions_vlo);
@@ -3139,9 +3202,14 @@ static int test_read_wrong_token (void **attr) {
   return -1;
 }
 
+#define ANODES X (plus) X (mult)
+
+#define X(a) " " #a
 static const char *description /* the test grammar */
   = "\n"
     "TERM;\n"
+    "ANODE" ANODES
+    ";\n"
     "E : T         # 0\n"
     "  | E '+' T   # plus (0 2)\n"
     "  ;\n"
@@ -3151,6 +3219,11 @@ static const char *description /* the test grammar */
     "F : 'a'       # 0\n"
     "  | '(' E ')' # 1\n"
     "  ;\n";
+
+#undef X
+
+#define X(a) AN_##a,
+enum anode_code { ANODES };
 
 /* Run test for the above grammar */
 static void use_description (int argc, char **argv, int (*read_fn) (void **)) {

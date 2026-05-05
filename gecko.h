@@ -38,16 +38,17 @@ struct grammar;
 #define GP_REPEATED_TERM_ASSOC 10
 #define GP_UNDEFINED_TERM_ASSOC 11
 #define GP_WRONG_TERM_ASSOC 12
-#define GP_NO_RULES 13
-#define GP_TERM_IN_RULE_LHS 14
-#define GP_INCORRECT_TRANSLATION 15
-#define GP_INCORRECT_SYMBOL_NUMBER 16
-#define GP_REPEATED_SYMBOL_NUMBER 17
-#define GP_UNACCESSIBLE_NONTERM 18
-#define GP_NONTERM_DERIVATION 19
-#define GP_LOOP_NONTERM 20
-#define GP_INVALID_TOKEN_CODE 21
-#define GP_BAD_RULE_GUARDS 22
+#define GP_REPEATED_ANODE_CODE 13
+#define GP_NO_RULES 14
+#define GP_TERM_IN_RULE_LHS 15
+#define GP_INCORRECT_TRANSLATION 16
+#define GP_INCORRECT_SYMBOL_NUMBER 17
+#define GP_REPEATED_SYMBOL_NUMBER 18
+#define GP_UNACCESSIBLE_NONTERM 19
+#define GP_NONTERM_DERIVATION 20
+#define GP_LOOP_NONTERM 21
+#define GP_INVALID_TOKEN_CODE 22
+#define GP_BAD_RULE_GUARDS 23
 
 enum gp_assoc { GP_NON_ASSOC, GP_LEFT_ASSOC, GP_RIGHT_ASSOC };
 
@@ -85,6 +86,7 @@ struct gp_opt {       /* context-dependent alternative translations: */
 
 struct gp_tree_node {          /* the generalized node of the parse tree: */
   enum gp_tree_node_type type; /* the type of node */
+  int aux;                     /* for anode it is number of anode name */
   size_t num;                  /* node number */
   union {                      /* the node itself */
     struct gp_nil nil;
@@ -133,6 +135,9 @@ extern int gp_read_grammar (struct grammar *g, bool strict_p,
                             const char *(*read_terminal) (int *code, int *priority, enum gp_assoc *assoc),
                             const char *(*read_rule) (const char ***rhs, const char **abs_node, int **transl,
                                                       int *guard_num));
+
+/* Set code (see aux node of gp_tree_node) for anode with NAME.  By default the code is -1.  */
+extern void gp_set_anode_code (struct grammar *g, const char *name, int code);
 
 /* Analogous to the previous one but it parses grammar description. */
 extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *description);

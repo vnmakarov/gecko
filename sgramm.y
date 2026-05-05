@@ -35,7 +35,7 @@
 #define yyss gp_yyss
 #define yyvs gp_yyvs
 
-/* The following structure describes syntax grammar terminal. */
+  /* The following structure describes syntax grammar terminal. */
   struct sterm {
     char *repr; /* terminal representation. */
     int code;   /* terminal code. */
@@ -50,6 +50,13 @@
     enum gp_assoc assoc;
     int priority;
     bool used_p;
+  };
+
+  /* The following structure describes abstract node. */
+  struct sanode {
+    char *name; /* anode name. */
+    int code;    /* anode code. */
+    int num;    /* order number. */
   };
 
   /* The following structure describes syntax grammar rule. */
@@ -67,8 +74,8 @@
   /* Current priority for terminal associativity */
   static int curr_priority;
   
-  /* The following vlos contain all syntax terminal, assoc, and rule structures. */
-  static vlo_t sterms, assocs, srules;
+  /* The following vlos contain all syntax terminal, assoc, anode, and rule structures. */
+  static vlo_t sterms, assocs, sanodes, srules;
   static os_t assocs_os; /* container for sassocs */
   
   /* The following contain all right hand sides and translations arrays.
@@ -97,14 +104,16 @@
 
 %token<ref> IDENT SEM_IDENT CHAR
 %token<num> NUMBER
-%token TERM LEFT RIGHT NONASSOC
+%token TERM LEFT RIGHT NONASSOC ANODE
 %type<assoc> assocs
 %type<ref> trans
 %type<num> number guard
 
 %%
 
-file : file terms opt_sem | file assocs opt_sem | file rule | terms opt_sem | assocs opt_sem | rule;
+file : file terms opt_sem | file assocs opt_sem | file anodes opt_sem | file rule
+     | terms opt_sem | assocs opt_sem | anodes opt_sem | rule
+     ;
 
 opt_sem :
         | ';';
@@ -119,6 +128,16 @@ terms : terms IDENT number {
 	  VLO_ADD_MEMORY (sterms, &term, sizeof (term));
         }
      | TERM
+     ;
+
+anodes : anodes IDENT number {
+          struct sanode anode;
+          anode.name = (char *) $2;
+          anode.code = $3;
+          anode.num = (int) (VLO_LENGTH (sanodes) / sizeof (anode));
+	  VLO_ADD_MEMORY (sanodes, &anode, sizeof (anode));
+        }
+     | ANODE
      ;
 
 assocs : assocs IDENT {
@@ -294,6 +313,10 @@ int yylex (void *g) {
           OS_TOP_NULLIFY (stoks);
           return NONASSOC;
         }
+        if (strcmp ((char *) yylval.ref, "ANODE") == 0) {
+          OS_TOP_NULLIFY (stoks);
+          return ANODE;
+        }
         OS_TOP_FINISH (stoks);
         while ((c = *curr_ch++) != '\0')
           if (c == '\n')
@@ -373,6 +396,16 @@ static void insert_assoc (struct sassoc *assoc) {
   *entry = (hash_table_entry_t) assoc;
 }
 
+/* The following function is used to sort array of anodes by names. */
+static int sanode_name_cmp (const void *t1, const void *t2) {
+  return strcmp (((struct sanode *) t1)->name, ((struct sanode *) t2)->name);
+}
+
+/* The following function is used to sort array of anodes by order number. */
+static int sanode_num_cmp (const void *t1, const void *t2) {
+  return ((struct sanode *) t1)->num - ((struct sanode *) t2)->num;
+}
+
 static void free_sgrammar (void);
 
 /* The following is major function which parses the description and transforms it into IR. */
@@ -391,6 +424,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   VLO_CREATE (sterms, g->alloc, 0);
   VLO_CREATE (assocs, g->alloc, 0);
   OS_CREATE (assocs_os, g->alloc, 0);
+  VLO_CREATE (sanodes, g->alloc, 0);
   VLO_CREATE (srules, g->alloc, 0);
   OS_CREATE (srhs, g->alloc, 0);
   OS_CREATE (strans, g->alloc, 0);
@@ -413,8 +447,9 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
       strncpy (str, prev->repr, sizeof (str));
       str[sizeof (str) - 1] = '\0';
       error (g, GP_REPEATED_TERM_CODE, "term %s described repeatedly with different code", str);
-    } else if (prev->code != -1)
+    } else if (prev->code != -1) {
       prev->code = term->code;
+    }
   }
   VLO_SHORTEN (sterms, (size_t) (num - j) * sizeof (struct sterm));
   num = j;
@@ -445,6 +480,36 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
       error (g, GP_UNDEFINED_TERM_ASSOC, "term %s described in associtivity clause is not defined", assoc->repr);
   }
   nsterm = nsrule = 0;
+
+  /* sort array of syntax anodes by names. */
+  struct sanode *anode, *prev_anode;
+  num = (int) (VLO_LENGTH (sanodes) / sizeof (struct sanode));
+  qsort (VLO_BEGIN (sanodes), (size_t) num, sizeof (struct sanode), sanode_name_cmp);
+  /* Check different codes for the same anodes and remove duplicates. */
+  for (i = j = 0, prev_anode = NULL; i < num; i++) {
+    anode = (struct sanode *) VLO_BEGIN (sanodes) + i;
+    if (prev_anode == NULL || strcmp (prev_anode->name, anode->name) != 0) {
+      prev_anode = anode;
+      ((struct sanode *) VLO_BEGIN (sanodes))[j++] = *anode;
+    } else if (anode->code != -1 && prev_anode->code != -1 && prev_anode->code != anode->code) {
+      char str[GP_MAX_ERROR_MESSAGE_LENGTH / 2];
+      strncpy (str, prev_anode->name, sizeof (str));
+      str[sizeof (str) - 1] = '\0';
+      error (g, GP_REPEATED_ANODE_CODE, "anode %s described repeatedly with different code", str);
+    } else if (prev_anode->code != -1) {
+      prev_anode->code = anode->code;
+    }
+  }
+  VLO_SHORTEN (sanodes, (size_t) (num - j) * sizeof (struct sanode));
+  num = j;
+  /* sort array of anodes by order number. */
+  int anode_code = 0;
+  qsort (VLO_BEGIN (sanodes), (size_t) num, sizeof (struct sanode), sanode_num_cmp);
+  /* Assign anode codes */
+  for (i = 0; i < num; i++) {
+    anode = (struct sanode *) VLO_BEGIN (sanodes) + i;
+    if (anode->code < 0) anode->code = anode_code++;
+  }
   return 0;
 }
 
@@ -457,6 +522,7 @@ static void free_sgrammar (void) {
   OS_DELETE (assocs_os);
   delete_hash_table (assoc_htab);
   VLO_DELETE (sterms);
+  VLO_DELETE (sanodes);
   OS_DELETE (stoks);
 }
 
@@ -498,6 +564,11 @@ int gp_parse_grammar (struct grammar *g, bool strict_p, const char *description)
   assert (g != NULL);
   if ((code = set_sgrammar (g, description)) != 0) return code;
   code = gp_read_grammar (g, strict_p, sread_terminal, sread_rule);
+  int num = (int) (VLO_LENGTH (sanodes) / sizeof (struct sanode));
+  for (int i = 0; i < num; i++) {
+    struct sanode *anode = (struct sanode *) VLO_BEGIN (sanodes) + i;
+    gp_set_anode_code (g, anode->name, anode->code);
+  }
   free_sgrammar ();
   return code;
 }

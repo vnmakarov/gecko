@@ -28,16 +28,17 @@ recovery and syntax-directed translation.
 | `GP_REPEATED_TERM_ASSOC`           | 10    | Repeated terminal associativity      |
 | `GP_UNDEFINED_TERM_ASSOC`          | 11    | Undefined terminal associativity     |
 | `GP_WRONG_TERM_ASSOC`              | 12    | Wrong terminal associativity         |
-| `GP_NO_RULES`                      | 13    | No rules defined                     |
-| `GP_TERM_IN_RULE_LHS`              | 14    | Terminal used in rule left-hand side |
-| `GP_INCORRECT_TRANSLATION`         | 15    | Incorrect translation specification  |
-| `GP_INCORRECT_SYMBOL_NUMBER`       | 16    | Incorrect symbol number              |
-| `GP_REPEATED_SYMBOL_NUMBER`        | 17    | Repeated symbol number               |
-| `GP_UNACCESSIBLE_NONTERM`          | 18    | Inaccessible nonterminal             |
-| `GP_NONTERM_DERIVATION`            | 19    | Nonterminal derivation issue         |
-| `GP_LOOP_NONTERM`                  | 20    | Looping nonterminal                  |
-| `GP_INVALID_TOKEN_CODE`            | 21    | Invalid token code                   |
-| `GP_BAD_RULE_GUARDS`               | 22    | Rule guards prevent any parse advance|
+| `GP_REPEATED_ANODE_CODE`           | 13    | Repeated anode code                  |
+| `GP_NO_RULES`                      | 14    | No rules defined                     |
+| `GP_TERM_IN_RULE_LHS`              | 15    | Terminal used in rule left-hand side |
+| `GP_INCORRECT_TRANSLATION`         | 16    | Incorrect translation specification  |
+| `GP_INCORRECT_SYMBOL_NUMBER`       | 17    | Incorrect symbol number              |
+| `GP_REPEATED_SYMBOL_NUMBER`        | 18    | Repeated symbol number               |
+| `GP_UNACCESSIBLE_NONTERM`          | 19    | Inaccessible nonterminal             |
+| `GP_NONTERM_DERIVATION`            | 20    | Nonterminal derivation issue         |
+| `GP_LOOP_NONTERM`                  | 21    | Looping nonterminal                  |
+| `GP_INVALID_TOKEN_CODE`            | 22    | Invalid token code                   |
+| `GP_BAD_RULE_GUARDS`               | 23    | Rule guards prevent any parse advance|
 
 ## Enumerations
 
@@ -72,6 +73,7 @@ The generalized node of the parse tree. All parse tree nodes use this structure 
 ```c
 struct gp_tree_node {
   enum gp_tree_node_type type; /* the type of node */
+  int aux;                     /* for anode: anode code; -1 by default */
   size_t num;                  /* node number */
   union {
     struct gp_nil nil;
@@ -82,6 +84,9 @@ struct gp_tree_node {
   } val;
 };
 ```
+
+The `aux` field holds the anode code for `GP_ANODE` nodes (set via `gp_set_anode_code` or the `ANODE` grammar description).
+For all other node types, `aux` is `-1`.
 
 ### `struct gp_nil`
 
@@ -218,6 +223,17 @@ int gp_parse_grammar(struct grammar *g, bool strict_p, const char *description);
 Analogous to `gp_read_grammar` but parses a textual grammar description string.  See the
 [Grammar Description Format](#grammar-description-format) section below.
 
+#### `gp_set_anode_code`
+
+```c
+void gp_set_anode_code(struct grammar *g, const char *name, int code);
+```
+
+Set the code for abstract nodes with the given name.  The code is stored in the `aux` field
+of `GP_ANODE` parse tree nodes created during parsing.  By default the code is `-1`.
+Can be called after `gp_read_grammar` or `gp_parse_grammar` but before `gp_parse`.
+Calling it again with the same name redefines the code.
+
 ### Grammar Description Format
 
 The grammar description is a text string consisting of three kinds of declarations: **terminal declarations**,
@@ -258,6 +274,25 @@ NONASSOC EQ NEQ ;
 Each declaration applies to one or more terminal names or character literals listed after the keyword.
 Declarations appearing later have higher precedence.  A terminal must not appear in more than one
 associativity declaration.
+
+#### Abstract Node Code Declarations
+
+Abstract node code declarations assign integer codes to abstract node names.  These codes are
+stored in the `aux` field of `GP_ANODE` parse tree nodes, enabling efficient identification of
+node types without string comparison:
+
+```
+ANODE plus=10 mult=20 ;
+ANODE unary_minus ;
+```
+
+- Each name is an identifier matching an abstract node name used in rule translations
+- An optional `= NUMBER` after a name assigns a specific integer code to that node name
+- Names without an explicit code are automatically assigned sequential codes starting from 0
+- A name must not appear more than once with different codes
+- Abstract node names not listed in an `ANODE` declaration get the default code of `-1`
+
+The same effect can be achieved programmatically via `gp_set_anode_code` after `gp_parse_grammar`.
 
 #### Rules
 
