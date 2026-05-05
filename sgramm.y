@@ -412,7 +412,7 @@ static void free_sgrammar (void);
 static int set_sgrammar (struct grammar *g, const char *grammar_name) {
   int i, j, num;
   struct sterm *term, *prev, *arr;
-  int code = 256;
+  int code;
 
   ln = 1;
   if ((code = setjmp (g->error_longjump_buff)) != 0) {
@@ -465,6 +465,7 @@ static int set_sgrammar (struct grammar *g, const char *grammar_name) {
     }
   }
   /* Assign codes and priories */
+  code = 256;
   for (i = 0; i < num; i++) {
     term = (struct sterm *) VLO_BEGIN (sterms) + i;
     if (term->code < 0) term->code = code++;
