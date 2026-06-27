@@ -2531,6 +2531,20 @@ static struct stack *recovery (struct grammar *g, int code, void *attr) {
     if (UNLIKELY (g->debug_level > 3)) print_stacks (stderr, "+++New recovery stacks", &g->new_stacks, 0);
 #endif
     struct stack *min_cost_stack = NULL;
+    /* No shifts happened.  Failed stacks that only reduce will cycle forever with increasing cost.
+       Salvage one at EOF if possible and discard the rest to break the cycle. */
+    if (VLO_LENGTH (g->new_stacks) == 0 && VLO_LENGTH (g->failed_stacks) != 0) {
+      for (size_t i = 0; i < VLO_LENGTH (g->failed_stacks) / sizeof (struct stack *); i++) {
+        struct stack *stack = ((struct stack **) VLO_BEGIN (g->failed_stacks))[i];
+        int fcode = token_buff_get (g, stack->recovery->u.info.buff_token_ind, &attr);
+        if (fcode == END_MARKER_CODE && eof_stack == NULL) {
+          eof_stack = stack;
+        } else {
+          stack_free (g, stack);
+        }
+      }
+      VLO_NULLIFY (g->failed_stacks);
+    }
     if (VLO_LENGTH (g->new_stacks) == 0 && VLO_LENGTH (g->failed_stacks) == 0) {
       if (eof_stack == NULL) {
         error (g, GP_BAD_RULE_GUARDS, "grammar is overconstrained by rule guards -- can do nothing");

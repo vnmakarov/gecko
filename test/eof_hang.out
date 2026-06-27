@@ -1,0 +1,3 @@
+calling gp_parse...
+syntax error after program on $eof
+gp_parse returned 0

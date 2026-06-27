@@ -46,6 +46,15 @@ for i in 41 42 44; do
 	fi
 done
 
+for i in eof_hang eof_hang2; do
+	if $GCC -I$SRCDIR/.. -I$SRCDIR $SRCDIR/$i.c $SRCDIR/../gecko.c -o $outfile && timeout 4 $outfile 2>&1 | diff -up - $SRCDIR/$i.out; then
+		echo $i -- ok
+	else
+		echo $i -- FAIL
+		exit 1
+	fi
+done
+
 if type flex >/dev/null 2>&1; then
 	i=40
 	flex -o ansic.c $SRCDIR/ansic.l
