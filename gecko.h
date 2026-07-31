@@ -146,7 +146,8 @@ extern int gp_parse_grammar (struct grammar *g, bool strict_p, const char *descr
    return the previous parameter value.
 
    * parse_alloc is used to allocate memory for parse tree representation.  By default it is malloc.
-     It should always be non-NULL.
+     It should always be non-NULL.  By default the parse-tree arena (see gp_set_parse_arena) is enabled,
+     so parse_alloc is called for arena chunks rather than for each node individually.
 
    * parse_free is used to free memory for parse tree representation.  By default it is free.
      NULL value means no freeing.  It is not safe to change parse_alloc and parse_free functions after
@@ -192,6 +193,15 @@ typedef void *(*gp_parse_alloc_func_t) (size_t);
 typedef void (*gp_parse_free_func_t) (void *);
 extern gp_parse_alloc_func_t gp_set_parse_alloc (struct grammar *g, gp_parse_alloc_func_t fn);
 extern gp_parse_free_func_t gp_set_parse_free (struct grammar *g, gp_parse_free_func_t fn);
+
+/* Enable/disable the internal parse-tree arena (on by default).  When enabled, parse-tree nodes
+   and anode children arrays are allocated from large arenas and recycled, which reduces malloc
+   traffic on grammars that create many nodes.  The returned parse tree stays valid until gp_fin
+   (or until gp_free_tree): the arena is freed in bulk at gp_fin, so a returned tree must be
+   consumed (or passed to gp_free_tree) before gp_fin.  Pass false to disable the arena and revert
+   to per-node allocation via parse_alloc.  Must be called before gp_parse.  Returns the previous
+   setting. */
+extern bool gp_set_parse_arena (struct grammar *g, bool on);
 
 /* The syntax error reporting function type. */
 typedef void (*gp_syntax_error_func_t) (const char *err_nonterm_repr, bool after_p, const char *err_tok_repr,

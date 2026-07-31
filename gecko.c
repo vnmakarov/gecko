@@ -49,6 +49,32 @@ struct sit;
 struct set;
 struct action_desc;
 
+/* Arena for parse-tree memory.  Fixed-size gp_tree_node slots are bump-allocated from large chunks and
+   recycled via a free list.  Anode children arrays (variable size) are rounded up to a power-of-two size
+   class, served from per-class free lists and bump chunks. All arena chunks are freed in bulk at gp_fin.
+   Enabled/disabled by gp_set_parse_arena; on by default.  In off case, every allocation is the legacy single
+   parse_alloc. */
+#define GP_ARENA_CHUNK_NODES 256 /* parse-tree nodes per arena chunk */
+
+#define GP_CHILDREN_MAX 16          /* largest children array served from the arena */
+#define GP_CHILDREN_NCLASS 5        /* classes: 1, 2, 4, 8, 16 (index = log2 of the rounded count) */
+#define GP_CHILDREN_CHUNK_SIZE 4096 /* bytes per children-array bump chunk */
+struct arena_chunk {
+  struct arena_chunk *next;
+  struct gp_tree_node nodes[GP_ARENA_CHUNK_NODES];
+};
+struct gp_arena {
+  bool enabled;
+  /* fixed-size node arena: */
+  struct gp_tree_node *free_list;       /* recycled nodes; the link is stored in the node bytes */
+  struct arena_chunk *chunks;           /* all node chunks, freed in bulk at gp_fin */
+  struct gp_tree_node *bump, *bump_end; /* allocation cursor within the current node chunk */
+  /* variable-size children-array arena (size-classed): */
+  void *child_free[GP_CHILDREN_NCLASS]; /* per-class free lists; the link is stored in the block */
+  char *child_chunks;                   /* linked children chunks; first 8 bytes of each hold the next ptr */
+  char *child_bump, *child_bump_end;    /* allocation cursor within the current children chunk */
+};
+
 struct grammar {    /* major structure which stores information about grammar: */
   bool undefined_p; /* true for undefined or erroneous grammar */
   int error_code;   /* the last occurred error code for given grammar */
@@ -123,6 +149,7 @@ struct grammar {    /* major structure which stores information about grammar: *
 
   vlo_t all_nodes;       /* all parse tree nodes */
   bitmap_t marked_nodes; /* it is used in GC to find nodes reached from curr stacks */
+  struct gp_arena arena; /* optional arena allocator for parse-tree nodes (gp_set_parse_arena) */
 
   struct gp_tree_node temp_node; /* used for insertion of node into the table */
 
@@ -966,6 +993,109 @@ static FORCE_INLINE void parse_free (struct grammar *g, void *mem) { /* a wrappe
   if (mem != NULL && g->parse_free != NULL) g->parse_free (mem);
 }
 
+/* Allocate one parse-tree node.  With the arena enabled the node comes from the arena (a
+   recycled free node, or a fresh slot bumped from the current chunk, allocating a new chunk
+   via parse_alloc when exhausted); otherwise it is a single parse_alloc, as before. */
+static FORCE_INLINE struct gp_tree_node *node_alloc (struct grammar *g) {
+  if (g->arena.enabled) {
+    if (g->arena.free_list != NULL) {
+      struct gp_tree_node *node = g->arena.free_list, *next;
+      memcpy (&next, node, sizeof (next)); /* read intrusive link (aliasing-safe) */
+      g->arena.free_list = next;
+      return node;
+    }
+    if (g->arena.bump >= g->arena.bump_end) {
+      struct arena_chunk *chunk = parse_alloc (g, sizeof (struct arena_chunk));
+      chunk->next = g->arena.chunks;
+      g->arena.chunks = chunk;
+      g->arena.bump = chunk->nodes;
+      g->arena.bump_end = chunk->nodes + GP_ARENA_CHUNK_NODES;
+    }
+    return g->arena.bump++;
+  }
+  return parse_alloc (g, sizeof (struct gp_tree_node));
+}
+
+/* Free one parse-tree node.  With the arena enabled the node is recycled to the arena free
+   list (the link is stored in the dead node's bytes); otherwise it is parse_free, as before. */
+static FORCE_INLINE void node_free (struct grammar *g, struct gp_tree_node *node) {
+  if (node != NULL && g->arena.enabled) {
+    struct gp_tree_node *next = g->arena.free_list;
+    memcpy (node, &next, sizeof (next)); /* write intrusive link (aliasing-safe) */
+    g->arena.free_list = node;
+  } else {
+    parse_free (g, node);
+  }
+}
+
+/* Round CHILDREN_NUM up to a power-of-two size-class index (0..4 => 1,2,4,8,16), or return -1
+   for arrays larger than GP_CHILDREN_MAX (handled by parse_alloc directly). */
+static FORCE_INLINE int children_class_index (size_t children_num) {
+  if (children_num <= 1) return 0;
+  if (children_num <= 2) return 1;
+  if (children_num <= 4) return 2;
+  if (children_num <= 8) return 3;
+  if (children_num <= 16) return 4;
+  return -1;
+}
+
+/* Allocate and link a fresh children-array bump chunk; returns its usable region (after the
+   pointer-sized next link).  NO_INLINE as it is cold. */
+static NO_INLINE char *arena_new_children_chunk (struct grammar *g) {
+  char *chunk = parse_alloc (g, sizeof (char *) + GP_CHILDREN_CHUNK_SIZE);
+  void *next = g->arena.child_chunks;
+  memcpy (chunk, &next, sizeof (next)); /* chunk[0..8) = link to previous chunk */
+  g->arena.child_chunks = chunk;
+  return chunk + sizeof (char *);
+}
+
+/* Allocate a children array for CHILDREN_NUM entries.  With the arena enabled, small arrays come
+   from a size-classed free list or a bump chunk; large arrays are plain parse_alloc'd.  With the
+   arena off, it is a single parse_alloc (the legacy behavior). */
+static FORCE_INLINE struct gp_tree_node **children_alloc (struct grammar *g, size_t children_num) {
+  size_t bytes = children_num * sizeof (struct gp_tree_node *);
+  if (!g->arena.enabled) return parse_alloc (g, bytes);
+  int index = children_class_index (children_num);
+  if (index < 0) { /* large array: direct malloc */
+    return parse_alloc (g, bytes);
+  }
+  size_t rounded = (size_t) 1 << index;
+  size_t need = rounded * sizeof (struct gp_tree_node *);
+  char *block = g->arena.child_free[index];
+  if (block != NULL) {
+    void *next;
+    memcpy (&next, block, sizeof (next)); /* pop intrusive link */
+    g->arena.child_free[index] = next;
+    return (struct gp_tree_node **) block;
+  } else {
+    if (g->arena.child_bump + need > g->arena.child_bump_end) {
+      g->arena.child_bump = arena_new_children_chunk (g);
+      g->arena.child_bump_end = g->arena.child_bump + GP_CHILDREN_CHUNK_SIZE;
+    }
+    block = g->arena.child_bump;
+    g->arena.child_bump += need;
+    return (struct gp_tree_node **) block;
+  }
+}
+
+/* Free a children array returned by children_alloc. */
+static FORCE_INLINE void children_free (struct grammar *g, struct gp_tree_node **children, size_t children_num) {
+  if (children == NULL) return;
+  if (!g->arena.enabled) {
+    parse_free (g, children);
+    return;
+  }
+  int index = children_class_index (children_num);
+  if (index < 0) { /* large array: direct free */
+    parse_free (g, children);
+    return;
+  }
+  char *block = (char *) children;
+  void *head = g->arena.child_free[index];
+  memcpy (block, &head, sizeof (head)); /* push link */
+  g->arena.child_free[index] = block;
+}
+
 static void syntax_error_default (const char *err_nonterm_repr, bool after_p, const char *err_tok_repr,
                                   void *err_tok_attr GP_UNUSED, const char *stop_tok_repr,
                                   void *stop_tok_attr GP_UNUSED) {
@@ -1326,6 +1456,16 @@ gp_parse_free_func_t gp_set_parse_free (struct grammar *g, gp_parse_free_func_t 
   assert (g != NULL);
   gp_parse_free_func_t old = g->parse_free;
   g->parse_free = fn;
+  return old;
+}
+
+/* API: enable/disable the internal parse-node arena.  When enabled, parse-tree nodes are
+   allocated from large arenas and recycled, reducing malloc traffic; the returned parse tree
+   stays valid until gp_fin (or gp_free_tree).  Must be called before gp_parse.  */
+bool gp_set_parse_arena (struct grammar *g, bool on) {
+  assert (g != NULL);
+  bool old = g->arena.enabled;
+  g->arena.enabled = on;
   return old;
 }
 
@@ -1918,7 +2058,7 @@ static FORCE_INLINE struct set *stack_shift (struct grammar *g, struct stack *st
 }
 
 static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int code, void *attr) {
-  struct gp_tree_node *term_node = parse_alloc (g, sizeof (struct gp_tree_node));
+  struct gp_tree_node *term_node = node_alloc (g);
   term_node->type = GP_TERM;
   term_node->aux = -1;
   term_node->val.term.code = code;
@@ -1932,7 +2072,7 @@ static FORCE_INLINE struct gp_tree_node *get_term_node (struct grammar *g, int c
 /* Return empty node (GP_NIL), create it if there is no such node yet. */
 static FORCE_INLINE struct gp_tree_node *get_empty_node (struct grammar *g) {
   if (g->empty_node == NULL) {
-    g->empty_node = (struct gp_tree_node *) parse_alloc (g, sizeof (struct gp_tree_node));
+    g->empty_node = node_alloc (g);
     g->empty_node->type = GP_NIL;
     g->empty_node->aux = -1;
     g->empty_node->num = 0; /* always zero */
@@ -1950,7 +2090,7 @@ static FORCE_INLINE struct gp_tree_node *get_stack_term_node (struct grammar *g,
 /* Return abstract node (GP_ANODE) with given NAME, CODE, and CHILDREN. Create it if necessary.  */
 static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int code, int children_num,
                                        struct gp_tree_node **children) {
-  struct gp_tree_node *anode = parse_alloc (g, sizeof (struct gp_tree_node));
+  struct gp_tree_node *anode = node_alloc (g);
 #if !defined(NO_GP_DEBUG_PRINT)
   g->n_parse_abstract_nodes++;
 #endif
@@ -1959,7 +2099,7 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
   anode->val.anode.name = name;
   anode->val.anode.children_num = children_num;
   anode->num = g->n_parse_nodes++;
-  anode->val.anode.children = parse_alloc (g, (size_t) children_num * sizeof (struct gp_tree_node *));
+  anode->val.anode.children = children_alloc (g, (size_t) children_num);
   memcpy (anode->val.anode.children, children, (size_t) children_num * sizeof (struct gp_tree_node *));
   VLO_ADD_MEMORY (g->all_nodes, &anode, sizeof (struct gp_tree_node *));
   return anode;
@@ -1969,7 +2109,7 @@ static struct gp_tree_node *get_anode (struct grammar *g, const char *name, int 
    given fields. Create it if necessary. */
 static struct gp_tree_node *get_alt_opt_node (struct grammar *g, struct gp_tree_node *first,
                                               struct gp_tree_node *second, size_t context_num) {
-  struct gp_tree_node *res = parse_alloc (g, sizeof (struct gp_tree_node));
+  struct gp_tree_node *res = node_alloc (g);
   res->aux = -1;
 #ifndef NO_GP_DEBUG_PRINT
   context_num > 0 ? g->n_parse_opt_nodes++ : g->n_parse_alt_nodes++;
@@ -2658,8 +2798,8 @@ static void gc (struct grammar *g, vlo_t *stacks) {
         }
       }
 #endif
-      if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
-      parse_free (g, node);
+      if (node->type == GP_ANODE) children_free (g, node->val.anode.children, node->val.anode.children_num);
+      node_free (g, node);
     }
   }
   VLO_SHORTEN (g->all_nodes, VLO_LENGTH (g->all_nodes) - last * sizeof (struct gp_tree_node *));
@@ -2981,6 +3121,8 @@ static void grammar_init (struct grammar *g) { /* initialize grammar G: */
   *g->error_message = '\0';
   g->parse_alloc = parse_alloc_default;
   g->parse_free = parse_free_default;
+  memset (&g->arena, 0, sizeof (g->arena)); /* zero all free lists and bump cursors */
+  g->arena.enabled = true; /* arena allocator on by default; disable with gp_set_parse_arena */
   g->syntax_error = syntax_error_default;
   g->debug_level = 0;
   g->recovery_token_matches = DEFAULT_RECOVERY_TOKEN_MATCHES;
@@ -3034,16 +3176,42 @@ struct grammar *gp_create_grammar (void) { /* API: Allocate memory for new gramm
   return g;
 }
 
+/* Free all arena chunks (via parse_free) and reset the arena state.  Nodes and small children
+   arrays are never freed individually: they live inside the chunks freed here.  Large children
+   arrays are parse_free'd individually at children_free time. */
+static void arena_finish (struct grammar *g) {
+  if (g->parse_free != NULL) {
+    for (struct arena_chunk *chunk = g->arena.chunks; chunk != NULL;) {
+      struct arena_chunk *next = chunk->next;
+      parse_free (g, chunk);
+      chunk = next;
+    }
+    for (char *chunk = g->arena.child_chunks; chunk != NULL;) {
+      void *next;
+      memcpy (&next, chunk, sizeof (next)); /* chunk[0..8) = link */
+      parse_free (g, chunk);
+      chunk = next;
+    }
+  }
+  g->arena.chunks = NULL;
+  g->arena.free_list = NULL;
+  g->arena.bump = g->arena.bump_end = NULL;
+  g->arena.child_chunks = NULL;
+  g->arena.child_bump = g->arena.child_bump_end = NULL;
+  for (int i = 0; i < GP_CHILDREN_NCLASS; i++) g->arena.child_free[i] = NULL;
+}
+
 static void grammar_finish (struct grammar *g) { /* Free memory allocated for the grammar data */
   bitmap_destroy (&g->marked_nodes);
   size_t nodes_num = VLO_LENGTH (g->all_nodes) / sizeof (struct gp_tree_node *);
   if (g->parse_free != NULL) {
     for (size_t i = 0; i < nodes_num; i++) { /* nodes existing in case of an error */
       struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BEGIN (g->all_nodes))[i];
-      if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
-      parse_free (g, node);
+      if (node->type == GP_ANODE) children_free (g, node->val.anode.children, node->val.anode.children_num);
+      node_free (g, node);
     }
   }
+  arena_finish (g);
   VLO_DELETE (g->all_nodes);
   VLO_DELETE (g->temp_vlo);
   if (g->parse_free != NULL) {
@@ -3099,8 +3267,8 @@ void gp_free_tree (struct grammar *g, struct gp_tree_node *root) { /* API: free 
   while (VLO_LENGTH (g->temp_nodes_vlo) != 0) {
     struct gp_tree_node *node = ((struct gp_tree_node **) VLO_BOUND (g->temp_nodes_vlo))[-1];
     VLO_SHORTEN (g->temp_nodes_vlo, sizeof (struct gp_tree_node *));
-    if (node->type == GP_ANODE) parse_free (g, node->val.anode.children);
-    parse_free (g, node);
+    if (node->type == GP_ANODE) children_free (g, node->val.anode.children, node->val.anode.children_num);
+    node_free (g, node);
   }
 }
 

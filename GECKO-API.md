@@ -389,6 +389,20 @@ as some data allocated by `parse_alloc` in `gp_parse` can be freed in `gp_fin` a
 
 **Type:** `typedef void (*gp_parse_free_func_t)(void *);`
 
+#### `gp_set_parse_arena`
+
+```c
+bool gp_set_parse_arena(struct grammar *g, bool on);
+```
+
+Enable/disable the internal parse-tree arena (**on by default**). When enabled, parse-tree
+nodes and anode children arrays are allocated from large arenas and recycled (nodes via a
+free list; children arrays via size-classed free lists), which reduces `malloc` traffic for
+grammars that build many nodes. The returned parse tree stays valid until `gp_fin` (or until
+`gp_free_tree`): the arena is freed in bulk at `gp_fin`, so consume the tree (or call
+`gp_free_tree`) before `gp_fin`. Pass `false` to disable the arena and revert to per-node
+allocation via `parse_alloc`. Must be called before `gp_parse`.
+
 #### `gp_set_syntax_error`
 
 ```c

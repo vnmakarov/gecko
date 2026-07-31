@@ -129,7 +129,7 @@ $(BUILD_DIR)/sgramm.c: $(SRC_DIR)/sgramm.y
 
 .PHONY: clean-gecko
 clean-gecko:
-	$(RM) $(GP_BUILD) $(GP_BUILD:.$(OBJSUFF)=.d) $(BUILD_DIR)/sgramm.c $(BUILD_DIR)/libgecko.$(LIBSUFF)
+	$(RM) $(GP_BUILD) $(GP_BUILD:.$(OBJSUFF)=.d) $(BUILD_DIR)/sgramm.c $(BUILD_DIR)/libgecko.$(LIBSUFF) $(BUILD_DIR)/bench-arena$(EXE)
 
 -include $(GP_BUILD:.$(OBJSUFF)=.d)
 
@@ -161,8 +161,15 @@ more-tests:
 bench: $(BUILD_DIR)/libgecko.$(LIBSUFF)
 	$(SRC_DIR)/test/compare.sh --all
 
-bench-gecko: $(BUILD_DIR)/libgecko.$(LIBSUFF)
+bench-gecko: $(BUILD_DIR)/libgecko.$(LIBSUFF) bench-arena
 	$(SRC_DIR)/test/compare.sh --gecko
+
+# Arena vs non-arena allocation benchmark (tree-building grammar, so the arena effect is visible).
+.PHONY: bench-arena
+bench-arena: $(BUILD_DIR)/libgecko.$(LIBSUFF)
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -I$(SRC_DIR)/test $(SRC_DIR)/test/bench-arena.c $(BUILD_DIR)/libgecko.$(LIBSUFF) $(LDLIBS) \
+		-o $(BUILD_DIR)/bench-arena$(EXE)
+	$(BUILD_DIR)/bench-arena$(EXE)
 
 # ------------------ miscellaneous ----------------------
 
